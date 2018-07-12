@@ -5,12 +5,14 @@ import (
 	"strings"
 	"github.com/pkg/errors"
 	"os"
-	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
+	"io/ioutil"
+	"golang.org/x/crypto/ssh"
+	goGitSsh "gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 )
 
 var gitCloneMethod = gitClone
 
-func readConfigurationFromGit(url string, username string, password string) (map[string]string, error) {
+func readConfigurationFromGit(url string, confPath string, privateKeyFilePath string) (map[string]interface{}, error) {
 	var tmpDir = os.TempDir()
 
 	err := os.MkdirAll(tmpDir, 0755)
@@ -26,10 +28,10 @@ func readConfigurationFromGit(url string, username string, password string) (map
 		return nil, err
 	}
 
-	err = gitCloneMethod(url, username, password)
+	err = gitCloneMethod(url, privateKeyFilePath)
 
 	configuration, err := parseConfiguration(tmpDir + string(os.PathSeparator) + directoryName +
-		string(os.PathSeparator) + "marid.conf")
+		string(os.PathSeparator) + confPath)
 
 	if err != nil {
 		return nil, err
@@ -38,21 +40,37 @@ func readConfigurationFromGit(url string, username string, password string) (map
 	return configuration, nil
 }
 
-func gitClone(url string, username string, password string) error {
-	_, err := git.PlainClone("" + string(os.PathSeparator) + "", false, &git.CloneOptions{
-		URL:               url,
-		RecurseSubmodules: git.DefaultSubmoduleRecursionDepth,
-		Auth: &http.BasicAuth{
-			Username: username,
-			Password: password,
-		},
-	})
+func gitClone(gitUrl string, privateKeyFilePath string) error {
+	cloneOptions, err := getCloneOptions(gitUrl, privateKeyFilePath)
 
 	if err != nil {
 		return err
-	} else {
-		return nil
 	}
+
+	_, err = git.PlainClone(""+string(os.PathSeparator)+"", false, &cloneOptions)
+
+	return err
+}
+func getCloneOptions(gitUrl, privateKeyFilePath string) (git.CloneOptions, error) {
+	file, err := ioutil.ReadFile(privateKeyFilePath)
+
+	if err != nil {
+		return git.CloneOptions{}, err
+	}
+
+	signer, err := ssh.ParsePrivateKey(file)
+
+	if err != nil {
+		return git.CloneOptions{}, err
+	}
+
+	auth := goGitSsh.PublicKeys{User: "git", Signer: signer}
+
+	return git.CloneOptions{
+		URL:               gitUrl,
+		RecurseSubmodules: git.DefaultSubmoduleRecursionDepth,
+		Auth:              &auth,
+	}, nil
 }
 
 func parseDirectoryNameFromUrl(url string) (string, error) {

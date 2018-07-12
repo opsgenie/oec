@@ -1,42 +1,51 @@
 package conf
 
 import (
-	"strings"
-	"bufio"
-	"os"
 	"os/user"
 	"encoding/json"
+	"path/filepath"
+	"github.com/pkg/errors"
+	"io/ioutil"
+	"gopkg.in/yaml.v2"
 )
 
-func parseConfiguration(path string) (map[string]string, error) {
-	var configMap = make(map[string]string)
+func parseConfiguration(path string) (map[string]interface{}, error) {
+	extension := filepath.Ext(path)
 
-	file, err := os.Open(path)
-	defer file.Close()
+	if extension == ".json" {
+		file, err := ioutil.ReadFile(path)
 
-	if err != nil {
-		return nil, err
-	}
-
-	scanner := bufio.NewScanner(file)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		line = strings.TrimSpace(line)
-
-		if !strings.HasPrefix(line, "#") && line != "" {
-			l := strings.SplitN(line, "=", 2)
-			l[0] = strings.TrimSpace(l[0])
-			l[1] = strings.TrimSpace(l[1])
-			configMap[l[0]] = l[1]
+		if err != nil {
+			return nil, err
 		}
-	}
 
-	if err = scanner.Err(); err != nil {
-		return nil, err
-	}
+		return parseJsonConfiguration(file)
+	} else if extension == ".yml" || extension == ".yaml" {
+		file, err := ioutil.ReadFile(path)
 
-	return configMap, nil
+		if err != nil {
+			return nil, err
+		}
+
+		return parseYamlConfiguration(file)
+	} else {
+		return nil, errors.New("Unknown configuration file extension [" + extension + "]. Only json and yml" +
+			" types are allowed.")
+	}
+}
+
+func parseJsonConfiguration(content []byte) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	err := json.Unmarshal(content, &result)
+
+	return result, err
+}
+
+func parseYamlConfiguration(content []byte) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	err := yaml.Unmarshal(content, &result)
+
+	return result, err
 }
 
 func getHomePath() (string, error) {
@@ -49,7 +58,7 @@ func getHomePath() (string, error) {
 	return currentUser.HomeDir, nil
 }
 
-func cloneStringMap(original map[string]string) (map[string]string, error) {
+func cloneMap(original map[string]interface{}) (map[string]interface{}, error) {
 	if original == nil {
 		return nil, nil
 	}
@@ -60,7 +69,7 @@ func cloneStringMap(original map[string]string) (map[string]string, error) {
 		return nil, err
 	}
 
-	copiedMap := make(map[string]string)
+	copiedMap := make(map[string]interface{})
 
 	err = json.Unmarshal(originalJson, &copiedMap)
 

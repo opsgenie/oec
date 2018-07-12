@@ -8,6 +8,8 @@ import (
 
 func TestReadConfigurationFromLocal(t *testing.T) {
 	homePath, err := getHomePath()
+	confPath := homePath + string(os.PathSeparator) + ".opsgenie" +
+		string(os.PathSeparator) + "maridConf.json"
 
 	if err != nil {
 		t.Error("Error occurred during obtaining user's home path. Error: " + err.Error())
@@ -17,26 +19,24 @@ func TestReadConfigurationFromLocal(t *testing.T) {
 		os.Mkdir(homePath + string(os.PathSeparator) + ".opsgenie", 0755)
 	}
 
-	testConfFile, err := os.OpenFile(homePath + string(os.PathSeparator) + ".opsgenie" +
-		string(os.PathSeparator) + "marid.conf", os.O_CREATE | os.O_WRONLY, 0755)
+	testConfFile, err := os.OpenFile(confPath, os.O_CREATE|os.O_WRONLY, 0755)
 
 	if err != nil {
 		t.Error("Error occurred during writing test Marid configuration file. Error: " + err.Error())
 	}
 
-	testConfFile.WriteString("tk1=tv1\ntk2=tv2\nemre=cicek")
+	testConfFile.WriteString("{\"tk1\": \"tv1\",\"tk2\": \"tv2\", \"emre\": \"cicek\"}")
 	testConfFile.Close()
-	configurationFromLocal, _ := readConfigurationFromLocal()
+	configurationFromLocal, _ := readConfigurationFromLocal(confPath)
 
-	defer os.Remove(homePath + string(os.PathSeparator) + ".opsgenie" + string(os.PathSeparator) +
-		"marid.conf")
+	defer os.Remove(confPath)
 
-	expectedConfig := map[string]string{
+	expectedConfig := map[string]interface{}{
 		"tk1": "tv1",
 		"tk2": "tv2",
 		"emre": "cicek",
 	}
 
-	assert.True(t, assert.ObjectsAreEqual(expectedConfig, configurationFromLocal),
+	assert.Equal(t, expectedConfig, configurationFromLocal,
 		"Actual config and expected config are not the same.")
 }

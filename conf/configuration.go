@@ -5,7 +5,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-var Configuration map[string]string
+var Configuration map[string]interface{}
+var RunbookActionMapping map[string]interface{}
 var readConfigurationFromGitFunction = readConfigurationFromGit
 var readConfigurationFromLocalFunction = readConfigurationFromLocal
 
@@ -13,36 +14,61 @@ func ReadConfFile() error {
 	confSource := os.Getenv("MARIDCONFSOURCE")
 
 	if confSource == "git" {
-		username := os.Getenv("MARIDCONFREPOUSERNAME")
-		password := os.Getenv("MARIDCONFREPOPASSWORD")
+		privateKeyFilePath := os.Getenv("MARIDCONFREPOPRIVATEKEYPATH")
 		gitUrl := os.Getenv("MARIDCONFREPOGITURL")
+		maridConfPath := os.Getenv("MARIDCONFGITFILEPATH")
 
-		gitConf, err := readConfigurationFromGitFunction(gitUrl, username, password)
+		gitConf, err := readConfigurationFromGitFunction(gitUrl, maridConfPath, privateKeyFilePath)
 
 		if err == nil {
-			copied, err := cloneStringMap(gitConf)
+			copied, err := cloneMap(gitConf)
 
 			if err != nil {
 				return err
 			}
 
 			Configuration = copied
+
+			if actionMappings, ok := copied["actionMappings"].(map[string]interface{}); ok {
+				RunbookActionMapping = actionMappings
+			} else {
+				return errors.New("Action mappings configuration is not found in the configuration file.")
+			}
 
 			return nil
 		} else {
 			return err
 		}
 	} else if confSource == "local" {
-		localConf, err := readConfigurationFromLocalFunction()
+		maridConfPath := os.Getenv("MARIDCONFLOCALFILEPATH")
+
+		if len(maridConfPath) <= 0 {
+			homePath, err := getHomePath()
+
+			if err != nil {
+				return err
+			}
+
+			maridConfPath = homePath + string(os.PathSeparator) + ".opsgenie" + string(os.PathSeparator) +
+				"maridConfig.json"
+		}
+
+		localConf, err := readConfigurationFromLocalFunction(maridConfPath)
 
 		if err == nil {
-			copied, err := cloneStringMap(localConf)
+			copied, err := cloneMap(localConf)
 
 			if err != nil {
 				return err
 			}
 
 			Configuration = copied
+
+			if actionMappings, ok := copied["actionMappings"].(map[string]interface{}); ok {
+				RunbookActionMapping = actionMappings
+			} else {
+				return errors.New("Action mappings configuration is not found in the configuration file.")
+			}
 
 			return nil
 		} else {
