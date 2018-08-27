@@ -1,10 +1,12 @@
 package runbook
 
 import (
-	"testing"
 	"github.com/opsgenie/marid2/conf"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"net/http"
+	"net/http/httptest"
+	"testing"
 )
 
 var testActionMappings = map[string]interface{}{
@@ -102,4 +104,102 @@ func TestExecuteRunbookLocal(t *testing.T) {
 	assert.True(t, executeRunbookFromLocalCalled)
 	executeRunbookFromLocalCalled = false
 	assert.False(t, executeRunbookFromGithubCalled)
+}
+
+func TestSendResultToOpsGenieWithParams(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+
+		if r.Method != "POST" {
+			t.Errorf("Expected ‘POST’ request, got ‘%s’", r.Method)
+		}
+
+		contentType := r.Header.Get("Content-Type")
+		if contentType != "application/x-www-form-urlencoded; charset=UTF-8" {
+			t.Errorf("Expected request to have ‘Content-Type=application/x-www-form-urlencoded; charset=UTF-8’, got: ‘%s’", contentType)
+		}
+
+		r.ParseForm()
+
+		alertAction := r.Form.Get("mappedAction")
+		if alertAction != "testAction" {
+			t.Errorf("Expected request to have ‘mappedAction=testAction’, got: ‘%s’", alertAction)
+		}
+
+		alertId := r.Form.Get("alertId")
+		if alertId != "testAlert" {
+			t.Errorf("Expected request to have ‘alertId=testAlert’, got: ‘%s’", alertId)
+		}
+
+		success := r.Form.Get("success")
+		if success != "true" {
+			t.Errorf("Expected request to have ‘success=true’, got: ‘%s’", success)
+		}
+
+		apiKey := r.Form.Get("apiKey")
+		if apiKey != "testKey" {
+			t.Errorf("Expected request to have ‘apiKey=testKey’, got: ‘%s’", apiKey)
+		}
+
+	}))
+	defer ts.Close()
+
+	params := make(map[string]interface{})
+
+	mappedAction := make(map[string]interface{})
+	mappedAction["name"] = "testAction"
+
+	params["mappedActionV2"] = mappedAction
+	params["alertId"] = "testAlert"
+
+	conf.Configuration = make(map[string]interface{})
+	conf.Configuration["apiKey"] = "testKey"
+	conf.Configuration["opsgenieApiUrl"] = ts.URL // To do: finalize it before releasing
+
+	sendResultToOpsGenie("createAlert", "123123", params, "")
+}
+
+func TestSendResultToOpsGenieWithoutParamsAndWithFailureMsg(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+
+		if r.Method != "POST" {
+			t.Errorf("Expected ‘POST’ request, got ‘%s’", r.Method)
+		}
+
+		contentType := r.Header.Get("Content-Type")
+		if contentType != "application/x-www-form-urlencoded; charset=UTF-8" {
+			t.Errorf("Expected request to have ‘Content-Type=application/x-www-form-urlencoded; charset=UTF-8’, got: ‘%s’", contentType)
+		}
+
+		r.ParseForm()
+
+		alertAction := r.Form.Get("alertAction")
+		if alertAction != "createAlert" {
+			t.Errorf("Expected request to have ‘alertAction=createAlert’, got: ‘%s’", alertAction)
+		}
+
+		failureMsg := r.Form.Get("failureMessage")
+		if failureMsg != "testFailureMessage" {
+			t.Errorf("Expected request to have ‘failureMessage=testFailureMessage’, got: ‘%s’", failureMsg)
+		}
+
+		success := r.Form.Get("success")
+		if success != "false" {
+			t.Errorf("Expected request to have ‘success=false’, got: ‘%s’", success)
+		}
+
+		apiKey := r.Form.Get("apiKey")
+		if apiKey != "testKey" {
+			t.Errorf("Expected request to have ‘apiKey=testKey’, got: ‘%s’", apiKey)
+		}
+
+	}))
+	defer ts.Close()
+
+	conf.Configuration = make(map[string]interface{})
+	conf.Configuration["apiKey"] = "testKey"
+	conf.Configuration["opsgenieApiUrl"] = ts.URL // To do: finalize it before releasing
+
+	sendResultToOpsGenie("createAlert", "123123", nil, "testFailureMessage")
 }
