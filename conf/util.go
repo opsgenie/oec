@@ -1,12 +1,12 @@
 package conf
 
 import (
-	"os/user"
 	"encoding/json"
-	"path/filepath"
 	"github.com/pkg/errors"
-	"io/ioutil"
 	"gopkg.in/yaml.v2"
+	"io/ioutil"
+	"os/user"
+	"path/filepath"
 )
 
 func parseConfiguration(path string) (map[string]interface{}, error) {
@@ -19,7 +19,7 @@ func parseConfiguration(path string) (map[string]interface{}, error) {
 			return nil, err
 		}
 
-		return parseJsonConfiguration(file)
+		return parseJson(file)
 	} else if extension == ".yml" || extension == ".yaml" {
 		file, err := ioutil.ReadFile(path)
 
@@ -34,7 +34,7 @@ func parseConfiguration(path string) (map[string]interface{}, error) {
 	}
 }
 
-func parseJsonConfiguration(content []byte) (map[string]interface{}, error) {
+func parseJson(content []byte) (map[string]interface{}, error) {
 	var result map[string]interface{}
 	err := json.Unmarshal(content, &result)
 

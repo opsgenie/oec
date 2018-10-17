@@ -1,13 +1,13 @@
 package queue
 
 import (
-	"net/http"
-	"io/ioutil"
 	"bytes"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"testing"
-	"github.com/stretchr/testify/assert"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"io/ioutil"
+	"net/http"
+	"testing"
 )
 
 func mockHttpGetError(url string) (*http.Response, error) {
@@ -20,7 +20,7 @@ func mockHttpGet(url string) (*http.Response, error) {
 		bytes.NewBufferString(`
 	{"Credentials": {"AccessKeyId": "testAccessKeyId", "SecretAccessKey": "secretkjndkf", "SessionToken": "kjhfds", "ExpireTimeMillis": 5},
 	"AssumedRole": {"Id": "id123", "Arn": "arnarnarn"},
-	"OGCredentials": {"SuccessRefreshPeriod": 20, "ErrorRefreshPeriod": 5, "SqsEndpoint": "us-east-2", "QueueUrl": "queueUrl"} }`))
+	"OGQueueConfiguration": {"SuccessRefreshPeriod": 20, "ErrorRefreshPeriod": 5, "SqsEndpoint": "us-east-2", "QueueUrl": "queueUrl"} }`))
 	return response, nil
 }
 
@@ -37,13 +37,13 @@ func TestGetToken(t *testing.T) {
 	httpGetMethod = mockHttpGet
 
 	mqp := MaridQueueProvider{
-		newTokenMethod:	newToken,
+		newTokenMethod: newToken,
 	}
 
-	assumeRoleResult, err := mqp.newToken(httpGetMethod)
+	ogPayload, err := mqp.newToken(httpGetMethod)
 
 	assert.Nil(t, err)
-	assert.Equal(t, assumeRoleResult.Credentials.AccessKeyId, "testAccessKeyId")
+	assert.Equal(t, ogPayload.Data.AssumeRoleResult.Credentials.AccessKeyId, "testAccessKeyId")
 }
 
 func TestGetTokenError(t *testing.T) {
@@ -51,7 +51,7 @@ func TestGetTokenError(t *testing.T) {
 	httpGetMethod = mockHttpGetError
 
 	mqp := MaridQueueProvider{
-		newTokenMethod:	newToken,
+		newTokenMethod: newToken,
 	}
 
 	_, err := mqp.newToken(httpGetMethod)
@@ -72,5 +72,3 @@ func TestNewClient(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, client)
 }*/
-
-

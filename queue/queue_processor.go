@@ -1,10 +1,10 @@
 package queue
 
 import (
-	"sync/atomic"
-	"sync"
 	"github.com/pkg/errors"
 	"log"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -14,7 +14,7 @@ const queueSize = 300
 const keepAliveTime = time.Second
 const monitoringPeriod = 10 * time.Second
 
-const pollingWaitInterval = time.Second *10
+const pollingWaitInterval = time.Second * 10
 const visibilityTimeoutInSeconds = int64(30)
 const maxNumberOfMessages = 10
 
@@ -24,41 +24,46 @@ type QueueProcessor interface {
 
 	IsWorking() bool
 
-	setMaxWorker(max uint32) 							QueueProcessor
-	setMinWorker(max uint32) 							QueueProcessor
-	setQueueSize(queueSize uint32) 						QueueProcessor
-	setKeepAliveTime(keepAliveTime time.Duration) 		QueueProcessor
+	setMaxWorker(max uint32) QueueProcessor
+	setMinWorker(max uint32) QueueProcessor
+	setQueueSize(queueSize uint32) QueueProcessor
+	setKeepAliveTime(keepAliveTime time.Duration) QueueProcessor
 	setMonitoringPeriod(monitoringPeriod time.Duration) QueueProcessor
 
-	setPollingWaitInterval(interval time.Duration) 		QueueProcessor
-	setMaxNumberOfMessages(max int64) 					QueueProcessor
+	setPollingWaitInterval(interval time.Duration) QueueProcessor
+	setMaxNumberOfMessages(max int64) QueueProcessor
 	setMessageVisibilityTimeout(timeoutInSeconds int64) QueueProcessor
 }
 
 type MaridQueueProcessor struct {
-	queueProvider QueueProvider	// todo move to poller
+	queueProvider QueueProvider // todo move to poller
 	workerPool    WorkerPool
 	poller        Poller
 
 	isWorking   atomic.Value
 	startStopMu *sync.Mutex
+
+	StartMethod func(qp *MaridQueueProcessor) error
 }
 
 func NewQueueProcessor() QueueProcessor {
 	qp := &MaridQueueProcessor{
 		startStopMu: &sync.Mutex{},
+		StartMethod: Start,
 	}
 	qp.isWorking.Store(false)
 	qp.queueProvider = NewQueueProvider()
 	qp.workerPool = NewWorkerPool(maxWorker, minWorker, queueSize, keepAliveTime, monitoringPeriod)
 	qp.poller = NewPoller(qp.workerPool, qp.queueProvider, pollingWaitInterval, visibilityTimeoutInSeconds, maxNumberOfMessages)
 
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds)	// todo move to main?
-
 	return qp
 }
 
 func (qp *MaridQueueProcessor) Start() error {
+	return qp.StartMethod(qp)
+}
+
+func Start(qp *MaridQueueProcessor) error {
 	defer qp.startStopMu.Unlock()
 	qp.startStopMu.Lock()
 

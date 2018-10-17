@@ -1,14 +1,15 @@
 package conf
 
 import (
-	"os"
 	"github.com/pkg/errors"
+	"os"
 )
 
 var Configuration map[string]interface{}
 var RunbookActionMapping map[string]interface{}
 var readConfigurationFromGitFunction = readConfigurationFromGit
 var readConfigurationFromLocalFunction = readConfigurationFromLocal
+var ParseJson = parseJson
 
 func ReadConfFile() error {
 	confSource := os.Getenv("MARIDCONFSOURCE")
@@ -78,4 +79,3 @@ func ReadConfFile() error {
 		return errors.New("Unknown configuration source [" + confSource + "].")
 	}
 }
-

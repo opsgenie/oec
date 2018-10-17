@@ -13,6 +13,7 @@ import (
 
 var executeRunbookFromGithubFunction = executeRunbookFromGithub
 var executeRunbookFromLocalFunction = executeRunbookFromLocal
+var ExecuteRunbookMethod = ExecuteRunbook
 
 func ExecuteRunbook(action string) (string, string, error) {
 	var mappedAction = conf.RunbookActionMapping[action].(map[string]interface{})
