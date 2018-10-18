@@ -22,6 +22,8 @@ type QueueProcessor interface {
 	Start() error
 	Stop() error
 
+	Wait()
+
 	IsWorking() bool
 
 	setMaxWorker(max uint32) QueueProcessor
@@ -43,6 +45,8 @@ type MaridQueueProcessor struct {
 	isWorking   atomic.Value
 	startStopMu *sync.Mutex
 
+	Wg *sync.WaitGroup
+
 	StartMethod func(qp *MaridQueueProcessor) error
 }
 
@@ -50,13 +54,18 @@ func NewQueueProcessor() QueueProcessor {
 	qp := &MaridQueueProcessor{
 		startStopMu: &sync.Mutex{},
 		StartMethod: Start,
+		Wg:          &sync.WaitGroup{},
 	}
 	qp.isWorking.Store(false)
 	qp.queueProvider = NewQueueProvider()
 	qp.workerPool = NewWorkerPool(maxWorker, minWorker, queueSize, keepAliveTime, monitoringPeriod)
-	qp.poller = NewPoller(qp.workerPool, qp.queueProvider, pollingWaitInterval, visibilityTimeoutInSeconds, maxNumberOfMessages)
+	qp.poller = NewPoller(qp.workerPool, qp.queueProvider, pollingWaitInterval, maxNumberOfMessages, visibilityTimeoutInSeconds)
 
 	return qp
+}
+
+func (mqp *MaridQueueProcessor) Wait() {
+	mqp.Wg.Wait()
 }
 
 func (qp *MaridQueueProcessor) Start() error {
@@ -78,6 +87,7 @@ func Start(qp *MaridQueueProcessor) error {
 	qp.workerPool.Start()
 	qp.poller.StartPolling()
 	qp.isWorking.Store(true)
+	qp.Wg.Add(1)
 	return nil
 }
 
@@ -93,7 +103,7 @@ func (qp *MaridQueueProcessor) Stop() error {
 	qp.workerPool.Stop()
 	qp.queueProvider.StopRefreshing()
 	qp.isWorking.Store(false)
-
+	qp.Wg.Done()
 	return nil
 }
 

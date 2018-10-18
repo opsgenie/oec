@@ -1,20 +1,20 @@
 package queue
 
 import (
-	"sync"
 	"github.com/google/uuid"
-	"time"
-	"log"
-	"sync/atomic"
 	"github.com/pkg/errors"
+	"log"
+	"sync"
+	"sync/atomic"
+	"time"
 )
 
 type WorkerPool interface {
-	GetAvailableWorker() 	uint32
-	GetIdleWorker() 		uint32
-	GetCurrentWorker() 		uint32
-	GetMaxWorker() 			uint32
-	GetMinWorker() 			uint32
+	GetAvailableWorker() uint32
+	GetIdleWorker() uint32
+	GetCurrentWorker() uint32
+	GetMaxWorker() uint32
+	GetMinWorker() uint32
 
 	SetMaxWorker(max uint32)
 	SetMinWorker(max uint32)
@@ -23,9 +23,9 @@ type WorkerPool interface {
 	SetMonitoringPeriod(monitoringPeriod time.Duration)
 
 	Submit(job Job) (bool, error)
-	Start()		error
-	Stop()		error
-	StopNow()	error
+	Start() error
+	Stop() error
+	StopNow() error
 	IsRunning() bool
 }
 
@@ -70,14 +70,14 @@ func (wp *WorkerPoolImpl) GetCurrentWorker() uint32 {
 }
 
 type WorkerPoolImpl struct {
-	maxWorker 		uint32
-	minWorker 		uint32
-	currentWorker 	uint32
-	activeWorker 	uint32
-	idleWorker 		uint32
+	maxWorker     uint32
+	minWorker     uint32
+	currentWorker uint32
+	activeWorker  uint32
+	idleWorker    uint32
 
-	keepAliveTime 		time.Duration
-	monitoringPeriod 	time.Duration
+	keepAliveTime    time.Duration
+	monitoringPeriod time.Duration
 
 	jobQueue *JobQueue
 	quit     chan struct{}
@@ -87,24 +87,24 @@ type WorkerPoolImpl struct {
 	mu          *sync.Mutex
 	startStopMu *sync.Mutex
 
-	isRunning 			atomic.Value
-	isPrintingMetrics 	atomic.Value // todo can remove
+	isRunning         atomic.Value
+	isPrintingMetrics atomic.Value // todo can remove
 }
 
 func NewWorkerPool(maxWorker uint32, minWorker uint32, queueSize uint32, keepAliveTime time.Duration, monitoringPeriod time.Duration) WorkerPool {
 	jobQueue := NewJobQueue(queueSize)
 
 	wp := &WorkerPoolImpl{
-		quit:          		make(chan struct{}),
-		stopNow:       		make(chan struct{}),
-		jobQueue:      		jobQueue,
-		maxWorker:     		maxWorker,
-		minWorker:     		minWorker,
-		wg:            		&sync.WaitGroup{},
-		mu:            		&sync.Mutex{},
-		startStopMu:   		&sync.Mutex{},
-		keepAliveTime: 		keepAliveTime,
-		monitoringPeriod: 	monitoringPeriod,
+		quit:             make(chan struct{}),
+		stopNow:          make(chan struct{}),
+		jobQueue:         jobQueue,
+		maxWorker:        maxWorker,
+		minWorker:        minWorker,
+		wg:               &sync.WaitGroup{},
+		mu:               &sync.Mutex{},
+		startStopMu:      &sync.Mutex{},
+		keepAliveTime:    keepAliveTime,
+		monitoringPeriod: monitoringPeriod,
 	}
 	wp.isRunning.Store(false)
 	wp.isPrintingMetrics.Store(false)
@@ -185,7 +185,7 @@ func (wp *WorkerPoolImpl) monitorMetrics(period time.Duration) {
 		select {
 		case <-ticker.C:
 			log.Printf("Idle workers: %d, Active workes: %d, Queue load: %d", wp.idleWorker, wp.activeWorker, wp.jobQueue.load)
-		case <- wp.quit:
+		case <-wp.quit:
 			log.Println("Monitor metrics has stopped.")
 			return
 		}
@@ -238,13 +238,13 @@ func (wp *WorkerPoolImpl) run() {
 
 	for {
 		select {
-		case <- wp.quit:
+		case <-wp.quit:
 			log.Println("Worker pool is waiting to quit.")
 			wp.jobQueue.Close()
 			wp.wg.Wait()
 			log.Println("Worker pool has stopped.")
 			return
-		case <- wp.stopNow:
+		case <-wp.stopNow:
 			log.Println("Worker pool has stopped immediately.")
 			return
 		}
@@ -254,14 +254,14 @@ func (wp *WorkerPoolImpl) run() {
 /******************************************************************************************/
 
 type Worker struct {
-	id uuid.UUID
+	id             uuid.UUID
 	routineManager *WorkerPoolImpl
 }
 
 func NewWorker(routineManager *WorkerPoolImpl) Worker {
 	return Worker{
-		routineManager:   routineManager,
-		id: 			  uuid.New(),
+		routineManager: routineManager,
+		id:             uuid.New(),
 	}
 }
 
@@ -283,10 +283,10 @@ func (w *Worker) work() {
 
 	for {
 		select {
-		case <- w.routineManager.stopNow:
+		case <-w.routineManager.stopNow:
 			log.Printf("Worker [%s] has stopped working.", w.id.String())
 			return
-		case job, isOpen := <- w.routineManager.jobQueue.GetQueue():
+		case job, isOpen := <-w.routineManager.jobQueue.GetQueue():
 			if !isOpen {
 				w.routineManager.decrementCurrentWorker()
 				log.Printf("Worker[%s] has done its job.", w.id.String())
@@ -298,13 +298,16 @@ func (w *Worker) work() {
 			atomic.AddUint32(&w.routineManager.idleWorker, ^uint32(0))
 			atomic.AddUint32(&w.routineManager.activeWorker, 1)
 			log.Printf("Job[%s] is being processed by Worker[%s].", job.GetJobId(), w.id.String())
-			job.Execute()
+			err := job.Execute()
+			if err != nil {
+				log.Println(err)
+			}
 			atomic.AddUint32(&w.routineManager.activeWorker, ^uint32(0))
 			atomic.AddUint32(&w.routineManager.idleWorker, 1)
 			log.Printf("Job[%s] has been processed by Worker[%s].", job.GetJobId(), w.id.String())
 
 			ticker = time.NewTicker(w.routineManager.keepAliveTime)
-		case <- ticker.C:
+		case <-ticker.C:
 			if w.routineManager.checkAndDecrementCurrentWorker() {
 				log.Println("Worker [" + w.id.String() + "] has killed itself.")
 				return
@@ -322,7 +325,7 @@ func (wp *WorkerPoolImpl) decrementCurrentWorker() {
 	atomic.AddUint32(&wp.currentWorker, ^uint32(0))
 }
 
-func (wp *WorkerPoolImpl) checkAndDecrementCurrentWorker() bool {	// todo check and remove atomic usage
+func (wp *WorkerPoolImpl) checkAndDecrementCurrentWorker() bool { // todo check and remove atomic usage
 
 	defer wp.mu.Unlock()
 	wp.mu.Lock()

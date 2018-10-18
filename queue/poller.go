@@ -1,21 +1,21 @@
 package queue
 
 import (
-	"time"
-	"log"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"sync/atomic"
-	"sync"
 	"github.com/pkg/errors"
+	"log"
+	"sync"
+	"sync/atomic"
+	"time"
 )
 
 type Poller interface {
 	StartPolling() error
 	StopPolling() error
 
-	setPollingWaitInterval(interval time.Duration) 	Poller
-	setMaxNumberOfMessages(max int64) 				Poller
-	setVisibilityTimeout(timeoutInSeconds int64) 	Poller
+	setPollingWaitInterval(interval time.Duration) Poller
+	setMaxNumberOfMessages(max int64) Poller
+	setVisibilityTimeout(timeoutInSeconds int64) Poller
 }
 
 type PollerImpl struct {
@@ -30,19 +30,19 @@ type PollerImpl struct {
 	quit        chan struct{}
 	wakeUpChan  chan struct{}
 
-	getAvailableWorker 		func() uint32	// todo change name
-	submit 					func(job Job) (bool, error)
-	receiveMessage 			func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error)
-	changeMessageVisibility func(message *sqs.Message, visibilityTimeout int64) (error)
-	isWorkerPoolRunning		func() bool
+	getAvailableWorker      func() uint32 // todo change name
+	submit                  func(job Job) (bool, error)
+	receiveMessage          func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error)
+	changeMessageVisibility func(message *sqs.Message, visibilityTimeout int64) error
+	isWorkerPoolRunning     func() bool
 
-	releaseMessagesMethod 	func(p *PollerImpl, messages []*sqs.Message)
-	waitMethod 				func(p *PollerImpl, pollingPeriod time.Duration)
-	runMethod 				func(p *PollerImpl)
-	wakeUpMethod 			func(p *PollerImpl)
-	StopPollingMethod 		func(p *PollerImpl) error
-	StartPollingMethod 		func(p *PollerImpl) error
-	pollMethod 				func(p *PollerImpl) (shouldWait bool)
+	releaseMessagesMethod func(p *PollerImpl, messages []*sqs.Message)
+	waitMethod            func(p *PollerImpl, pollingPeriod time.Duration)
+	runMethod             func(p *PollerImpl)
+	wakeUpMethod          func(p *PollerImpl)
+	StopPollingMethod     func(p *PollerImpl) error
+	StartPollingMethod    func(p *PollerImpl) error
+	pollMethod            func(p *PollerImpl) (shouldWait bool)
 }
 
 func NewPoller(workerPool WorkerPool, queueProvider QueueProvider, pollingWaitInterval time.Duration, maxNumberOfMessages int64, visibilityTimeoutInSeconds int64) Poller {
@@ -59,14 +59,14 @@ func NewPoller(workerPool WorkerPool, queueProvider QueueProvider, pollingWaitIn
 		changeMessageVisibility:    queueProvider.ChangeMessageVisibility,
 		getAvailableWorker:         workerPool.GetAvailableWorker,
 		submit:                     workerPool.Submit,
-		isWorkerPoolRunning:		workerPool.IsRunning,
+		isWorkerPoolRunning:        workerPool.IsRunning,
 		releaseMessagesMethod:      releaseMessages,
-		waitMethod:              	waitPolling,
-		runMethod:               	runPoller,
-		wakeUpMethod:            	wakeUpPoller,
-		StopPollingMethod:       	StopPolling,
-		StartPollingMethod:      	StartPolling,
-		pollMethod:              	poll,
+		waitMethod:                 waitPolling,
+		runMethod:                  runPoller,
+		wakeUpMethod:               wakeUpPoller,
+		StopPollingMethod:          StopPolling,
+		StartPollingMethod:         StartPolling,
+		pollMethod:                 poll,
 	}
 }
 
@@ -74,7 +74,7 @@ func (p *PollerImpl) releaseMessages(messages []*sqs.Message) {
 	p.releaseMessagesMethod(p, messages)
 }
 
-func (p *PollerImpl) poll() (shouldWait bool){
+func (p *PollerImpl) poll() (shouldWait bool) {
 	return p.pollMethod(p)
 }
 
@@ -90,7 +90,7 @@ func (p *PollerImpl) wakeUp() {
 	p.wakeUpMethod(p)
 }
 
-func (p *PollerImpl) StopPolling() error{
+func (p *PollerImpl) StopPolling() error {
 	return p.StopPollingMethod(p)
 }
 
@@ -150,7 +150,7 @@ func StartPolling(p *PollerImpl) error {
 }
 
 func releaseMessages(p *PollerImpl, messages []*sqs.Message) {
-	for i := 0; i < len(messages) ; i++ {
+	for i := 0; i < len(messages); i++ {
 		err := p.changeMessageVisibility(messages[i], 0)
 		if err != nil {
 			// todo
@@ -163,11 +163,11 @@ func releaseMessages(p *PollerImpl, messages []*sqs.Message) {
 func poll(p *PollerImpl) (shouldWait bool) {
 
 	availableWorkerCount := p.getAvailableWorker()
-	if  availableWorkerCount > 0 {
+	if availableWorkerCount > 0 {
 
 		maxNumberOfMessages := Min(p.maxNumberOfMessages, int64(availableWorkerCount))
 		messages, err := p.receiveMessage(maxNumberOfMessages, p.visibilityTimeoutInSeconds)
-		if err != nil {	// todo check wait time according to error / check error
+		if err != nil { // todo check wait time according to error / check error
 			log.Println(err.Error())
 			return true
 		}
@@ -177,7 +177,7 @@ func poll(p *PollerImpl) (shouldWait bool) {
 			return true
 		}
 
-		for i := int64(0) ; i < maxNumberOfMessages ; i++  {
+		for i := 0; i < len(messages); i++ {
 			job := NewSqsJob(NewMaridMessage(messages[i]), p.queueProvider, p.visibilityTimeoutInSeconds)
 			isSubmitted, err := p.submit(job)
 			if err != nil {
@@ -186,7 +186,7 @@ func poll(p *PollerImpl) (shouldWait bool) {
 			} else if isSubmitted {
 				continue
 			} else {
-				p.releaseMessages(messages[i:i+1])
+				p.releaseMessages(messages[i : i+1])
 			}
 		}
 	}
@@ -203,10 +203,10 @@ func waitPolling(p *PollerImpl, pollingWaitPeriod time.Duration) {
 	for {
 		ticker := time.NewTicker(pollingWaitPeriod)
 		select {
-		case <- p.wakeUpChan:
+		case <-p.wakeUpChan:
 			log.Println("Sleep interrupted while waiting for next polling.")
 			return
-		case <- ticker.C:
+		case <-ticker.C:
 			return
 		}
 	}
@@ -216,7 +216,7 @@ func runPoller(p *PollerImpl) {
 
 	for {
 		select {
-		case <- p.quit:
+		case <-p.quit:
 			log.Println("Poller has stopped to poll periodically.")
 			return
 		default:

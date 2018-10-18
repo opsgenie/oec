@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"encoding/json"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/opsgenie/marid2/conf"
 	"github.com/opsgenie/marid2/runbook"
@@ -29,11 +30,13 @@ func (mqm *MaridQueueMessage) GetMessage() *sqs.Message {
 }
 
 func Process(mqm *MaridQueueMessage) error {
-	payload, err := conf.ParseJson([]byte(*mqm.GetMessage().Body))
+	queuePayload := QueuePayload{}
+	err := json.Unmarshal([]byte(*mqm.GetMessage().Body), &queuePayload)
 	if err == nil {
-		if action, ok := payload["action"].(string); ok {
-			if mappedAction, ok := conf.Configuration[action].(string); ok {
-				commandOutput, errorOutput, err := runbook.ExecuteRunbookMethod(mappedAction)
+		if action := queuePayload.Params.Action; action != "" {
+			actionMappings := conf.Configuration["actionMappings"].(map[string]interface{})
+			if _, ok := actionMappings[action]; ok {
+				commandOutput, errorOutput, err := runbook.ExecuteRunbookMethod(action)
 				log.Println(commandOutput, errorOutput, err)
 			} else {
 				return errors.New("There is no mapped action found for [" + action + "]")

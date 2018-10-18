@@ -21,4 +21,5 @@ func main() {
 		return
 	}
 	// TODO: always on main
+	queueProcessor.Wait()
 }
