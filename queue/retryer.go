@@ -8,23 +8,23 @@ import (
 	"time"
 )
 
-const timeout = 1 * time.Second
+const timeout = 5 * time.Second
 
-var tokenClient = &http.Client{Timeout: timeout} // todo timeout decision
-var httpGetMethod = tokenClient.Get              // TODO: test uses for now
+var DefaultClient = &http.Client{Timeout: timeout} // todo timeout decision
 
 const maxWaitInterval = 5
-const maxRetryCount = 30
+const maxRetryCount = 5
 
 var retryStatusCodes = map[int]struct{}{
 	429: {},
 	//408: {},
 }
 
-type getMethod func(url string) (*http.Response, error)
+type getMethod func(retryer *Retryer, request *http.Request) (*http.Response, error)
 
 type Retryer struct {
 	getMethod getMethod
+	request *http.Request
 }
 
 func NewRetryer() *Retryer {
@@ -32,6 +32,10 @@ func NewRetryer() *Retryer {
 		getMethod: getWithExponentialBackoff,
 	}
 	return retryer
+}
+
+func (r *Retryer) Do(request *http.Request) (*http.Response, error) {
+	return r.getMethod(r, request)
 }
 
 func shouldRetry(statusCode int) bool {
@@ -49,19 +53,14 @@ func getWaitTime(retryCount int) time.Duration {
 	return time.Duration(waitTime) * time.Millisecond
 }
 
-func getWithExponentialBackoff(url string) (*http.Response, error) {
+func getWithExponentialBackoff(retryer *Retryer, request *http.Request) (*http.Response, error) {
 
 	for retryCount := 0; retryCount < maxRetryCount; retryCount++ {
 
 		waitDuration := getWaitTime(retryCount)
 		time.Sleep(waitDuration)
 
-		response, err := httpGetMethod(url)
-
-		/*request, err := http.NewRequest("GET", url, nil)
-		request.Header.Add("Authorization", "GenieKey apikey") //
-		client := &http.Client{}
-		response, err := client.Do(request)*/
+		response, err := DefaultClient.Do(request)
 
 		if err, isInstance := err.(net.Error); isInstance { // todo check err
 			if err.Timeout() {

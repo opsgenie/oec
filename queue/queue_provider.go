@@ -14,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"net/http"
+	"github.com/opsgenie/marid2/conf"
 )
 
 const tokenUrl = "https://app.opsgenie.com/v2/integrations/maridv2/credentials"
@@ -46,12 +48,10 @@ type MaridQueueProvider struct {
 	StartRefreshingMethod func(mqp *MaridQueueProvider) error
 	StopRefreshingMethod  func(mqp *MaridQueueProvider) error
 
-	refreshClientMethod func(mqp *MaridQueueProvider, fn getMethod) error
+	refreshClientMethod func(mqp *MaridQueueProvider) error
 	runMethod           func(mqp *MaridQueueProvider)
-	newTokenMethod      func(mqp *MaridQueueProvider, fn getMethod) (*OGPayload, error)
+	receiveTokenMethod  func(mqp *MaridQueueProvider) (*OGPayload, error)
 	newConfigMethod     func(mqp *MaridQueueProvider, ogPayload *OGPayload) *aws.Config
-
-	httpGetMethod getMethod
 }
 
 func NewQueueProvider() QueueProvider {
@@ -68,7 +68,7 @@ func NewQueueProvider() QueueProvider {
 		StopRefreshingMethod:          StopRefreshing,
 		refreshClientMethod:           refreshClient,
 		runMethod:                     runQueueProvider,
-		newTokenMethod:                newToken,
+		receiveTokenMethod:            receiveToken,
 		newConfigMethod:               newConfig,
 	}
 	qp.isRefreshing.Store(false)
@@ -116,16 +116,16 @@ func (mqp *MaridQueueProvider) ReceiveMessage(numOfMessage int64, visibilityTime
 	return mqp.ReceiveMessageMethod(mqp, numOfMessage, visibilityTimeout)
 }
 
-func (mqp *MaridQueueProvider) refreshClient(fn getMethod) error {
-	return mqp.refreshClientMethod(mqp, fn)
+func (mqp *MaridQueueProvider) refreshClient() error {
+	return mqp.refreshClientMethod(mqp)
 }
 
 func (mqp *MaridQueueProvider) run() {
 	mqp.runMethod(mqp)
 }
 
-func (mqp *MaridQueueProvider) newToken(fn getMethod) (*OGPayload, error) {
-	return mqp.newTokenMethod(mqp, fn)
+func (mqp *MaridQueueProvider) newToken() (*OGPayload, error) {
+	return mqp.receiveTokenMethod(mqp)
 }
 
 func (mqp *MaridQueueProvider) newConfig(ogPayload *OGPayload) *aws.Config {
@@ -141,7 +141,7 @@ func StartRefreshing(mqp *MaridQueueProvider) error {
 	}
 
 	log.Printf("Queue provider[%s] is starting to refresh client.", mqp.queueName)
-	if err := mqp.refreshClient(mqp.retryer.getMethod); err != nil {
+	if err := mqp.refreshClient(); err != nil {
 		log.Printf("Queue provider[%s] could not get initial token and will terminate.", mqp.queueName)
 		return err
 	}
@@ -237,8 +237,8 @@ func ReceiveMessage(mqp *MaridQueueProvider, maxNumOfMessage int64, visibilityTi
 	return result.Messages, nil
 }
 
-func refreshClient(mqp *MaridQueueProvider, fn getMethod) error {
-	ogPayload, err := mqp.newToken(fn)
+func refreshClient(mqp *MaridQueueProvider) error {
+	ogPayload, err := mqp.newToken()
 	if err != nil {
 		return err
 	}
@@ -270,7 +270,7 @@ func runQueueProvider(mqp *MaridQueueProvider) {
 			return
 		case <-ticker.C:
 			ticker.Stop()
-			err := mqp.refreshClient(mqp.retryer.getMethod)
+			err := mqp.refreshClient()
 			if err != nil {
 				log.Printf("Refresh cycle of queue provider[%s] has failed: %s", mqp.queueName, err.Error())
 				ticker = time.NewTicker(mqp.getErrorPeriod())
@@ -282,12 +282,16 @@ func runQueueProvider(mqp *MaridQueueProvider) {
 	}
 }
 
-func newToken(mqp *MaridQueueProvider, fn getMethod) (*OGPayload, error) { // todo change name of the function
-	if fn == nil {
-		errors.New("please provide http get method")
-	}
+func receiveToken(mqp *MaridQueueProvider) (*OGPayload, error) { // todo change name of the function
 
-	response, err := fn(tokenUrl)
+	request, err := http.NewRequest("GET", tokenUrl, nil)
+	if err != nil {
+		return nil, err
+	}
+	apiKey := conf.Configuration["apiKey"].(string)
+	request.Header.Add("Authorization", "GenieKey " + apiKey)
+
+	response, err := mqp.retryer.Do(request)
 	if err != nil {
 		return nil, err
 	}

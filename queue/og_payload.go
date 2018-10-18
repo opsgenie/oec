@@ -9,13 +9,13 @@ type OGPayload struct {
 }
 
 type Data struct {
-	AssumeRoleResult AssumeRoleResult `json:"assumeRoleResult,omitempty"`
+	AssumeRoleResult   AssumeRoleResult   `json:"assumeRoleResult,omitempty"`
+	QueueConfiguration QueueConfiguration `json:"queueConfigurationDto,omitempty"`
 }
 
 type AssumeRoleResult struct {
 	Credentials          Credentials          `json:"credentials,omitempty"`
 	AssumeRole           AssumeRole           `json:"assumeRole,omitempty"`
-	OGQueueConfiguration OGQueueConfiguration `json:"queueConfigurationDto,omitempty"`
 }
 
 type Credentials struct {
@@ -30,7 +30,7 @@ type AssumeRole struct {
 	Arn string `json:"arn,omitempty"`
 }
 
-type OGQueueConfiguration struct { // todo change name
+type QueueConfiguration struct {// todo change name
 	SuccessRefreshPeriod int64  `json:"credentialSuccessRefreshPeriod,omitempty"`
 	ErrorRefreshPeriod   int64  `json:"credentialErrorRefreshPeriod,omitempty"`
 	SqsEndpoint          string `json:"sqsEndpoint,omitempty"`
@@ -43,21 +43,21 @@ func (og *OGPayload) toString() string {
 }
 
 func (og *OGPayload) getEndpoint() string {
-	queueUrl := og.Data.AssumeRoleResult.OGQueueConfiguration.SqsEndpoint
+	queueUrl := og.Data.QueueConfiguration.SqsEndpoint
 	return queueUrl
 }
 
 func (og *OGPayload) getQueueUrl() string {
-	queueUrl := og.Data.AssumeRoleResult.OGQueueConfiguration.QueueUrl
+	queueUrl := og.Data.QueueConfiguration.QueueUrl
 	return queueUrl
 }
 
 func (og *OGPayload) getSuccessRefreshPeriod() int64 {
-	successRefreshPeriod := og.Data.AssumeRoleResult.OGQueueConfiguration.SuccessRefreshPeriod
+	successRefreshPeriod := og.Data.QueueConfiguration.SuccessRefreshPeriod
 	return successRefreshPeriod
 }
 
 func (og *OGPayload) getErrorRefreshPeriod() int64 {
-	errorRefreshPeriod := og.Data.AssumeRoleResult.OGQueueConfiguration.SuccessRefreshPeriod
+	errorRefreshPeriod := og.Data.QueueConfiguration.SuccessRefreshPeriod
 	return errorRefreshPeriod
 }

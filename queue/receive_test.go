@@ -7,7 +7,7 @@ import (
 func TestQueue(t *testing.T) {
 
 	qp := NewQueueProvider().(*MaridQueueProvider)
-	qp.refreshClient(qp.retryer.getMethod)
+	qp.refreshClient()
 	qp.ReceiveMessage(1, 10)
 
 }

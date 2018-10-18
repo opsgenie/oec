@@ -8,19 +8,40 @@ import (
 	"io/ioutil"
 	"net/http"
 	"testing"
+	"github.com/opsgenie/marid2/conf"
+	"encoding/json"
 )
 
-func mockHttpGetError(url string) (*http.Response, error) {
+var testMqp = NewQueueProvider().(*MaridQueueProvider)
+var defaultMqp = NewQueueProvider().(*MaridQueueProvider)
+
+
+func mockHttpGetError(retryer *Retryer, request *http.Request) (*http.Response, error) {
 	return nil, errors.New("Test http error has occurred while getting token.")
 }
 
-func mockHttpGet(url string) (*http.Response, error) {
+func mockHttpGet(retryer *Retryer, request *http.Request) (*http.Response, error) {
+
+	payload, _ := json.Marshal(OGPayload{
+		Data: Data{
+			AssumeRoleResult: AssumeRoleResult{
+				Credentials: Credentials{
+					AccessKeyId: "testAccessKeyId",
+					SecretAccessKey: "secret",
+					SessionToken: "session",
+					ExpireTimeMillis: 1234,
+				},
+			},
+			QueueConfiguration: QueueConfiguration{
+				SqsEndpoint: "us-east-2",
+			},
+		},
+	})
+	buff := bytes.NewBuffer(payload)
+
 	response := &http.Response{}
-	response.Body = ioutil.NopCloser(
-		bytes.NewBufferString(`
-	{"Credentials": {"AccessKeyId": "testAccessKeyId", "SecretAccessKey": "secretkjndkf", "SessionToken": "kjhfds", "ExpireTimeMillis": 5},
-	"AssumedRole": {"Id": "id123", "Arn": "arnarnarn"},
-	"OGQueueConfiguration": {"SuccessRefreshPeriod": 20, "ErrorRefreshPeriod": 5, "SqsEndpoint": "us-east-2", "QueueUrl": "queueUrl"} }`))
+	response.Body = ioutil.NopCloser(buff)
+
 	return response, nil
 }
 
@@ -32,29 +53,39 @@ func mockSuccessDelete(mqp *MaridQueueProvider, message *sqs.Message) error {
 	return nil
 }
 
-func TestGetToken(t *testing.T) {
+func TestReceiveToken(t *testing.T) {
 
-	httpGetMethod = mockHttpGet
+	defer func() {
+		testMqp.retryer.getMethod = defaultMqp.retryer.getMethod
+		conf.Configuration = make(map[string]interface{})
+	}()
 
-	mqp := MaridQueueProvider{
-		newTokenMethod: newToken,
+	testMqp.retryer.getMethod = mockHttpGet
+
+	conf.Configuration = map[string]interface{}{
+		"apiKey" : "",
 	}
 
-	ogPayload, err := mqp.newToken(httpGetMethod)
+	ogPayload, err := testMqp.newToken()
 
 	assert.Nil(t, err)
-	assert.Equal(t, ogPayload.Data.AssumeRoleResult.Credentials.AccessKeyId, "testAccessKeyId")
+	assert.Equal(t, "testAccessKeyId", ogPayload.Data.AssumeRoleResult.Credentials.AccessKeyId)
 }
 
-func TestGetTokenError(t *testing.T) {
+func TestReceiveTokenError(t *testing.T) {
 
-	httpGetMethod = mockHttpGetError
+	defer func() {
+		testMqp.retryer.getMethod = defaultMqp.retryer.getMethod
+		conf.Configuration = make(map[string]interface{})
+	}()
 
-	mqp := MaridQueueProvider{
-		newTokenMethod: newToken,
+	testMqp.retryer.getMethod = mockHttpGetError
+
+	conf.Configuration = map[string]interface{}{
+		"apiKey" : "",
 	}
 
-	_, err := mqp.newToken(httpGetMethod)
+	_, err := testMqp.newToken()
 
 	assert.NotNil(t, err)
 	assert.Equal(t, "Test http error has occurred while getting token.", err.Error())
