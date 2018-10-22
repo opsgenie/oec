@@ -27,17 +27,20 @@ func TestProcessSuccessfully(t *testing.T) {
 	defer func() { conf.ParseJson = oldParseJsonMethod }()
 	conf.ParseJson = mockParseJson
 
+	actionMap := make(map[string]interface{})
+	actionMap["doAction"] = "mappedAction"
 	conf.Configuration = make(map[string]interface{})
-	conf.Configuration["doAction"] = "mappedAction"
+	conf.Configuration["actionMappings"] = actionMap
 
 	oldExecuteRunbook := runbook.ExecuteRunbookMethod
 	defer func() { runbook.ExecuteRunbookMethod = oldExecuteRunbook }()
 	runbook.ExecuteRunbookMethod = mockExecuteRunbook
 
-	body := "{'action' : 'doAction'}"
+	body := `{"params":{"action":"doAction"}}`
 	queueMessage := NewMaridMessage(&sqs.Message{
 		Body: &body,
 	})
+
 	err := queueMessage.Process()
 	assert.Nil(t, err)
 }
@@ -47,13 +50,16 @@ func TestProcessMappedActionNotFound(t *testing.T) {
 	defer func() { conf.ParseJson = oldParseJsonMethod }()
 	conf.ParseJson = mockParseJson
 
+	actionMap := make(map[string]interface{})
+	actionMap["notAction"] = "mappedAction"
 	conf.Configuration = make(map[string]interface{})
-	conf.Configuration["doNotAction"] = "mappedAction"
+	conf.Configuration["actionMappings"] = actionMap
 
 	oldExecuteRunbook := runbook.ExecuteRunbookMethod
 	defer func() { runbook.ExecuteRunbookMethod = oldExecuteRunbook }()
 	runbook.ExecuteRunbookMethod = mockExecuteRunbook
-	body := "{'action' : 'doAction'}"
+
+	body := `{"params":{"action":"doAction"}}`
 	queueMessage := NewMaridMessage(&sqs.Message{
 		Body: &body,
 	})
@@ -62,43 +68,27 @@ func TestProcessMappedActionNotFound(t *testing.T) {
 	assert.Equal(t, expected, err.Error())
 }
 
-func TestProcessJSONFieldMissing(t *testing.T) {
+func TestProcessFieldMissing(t *testing.T) {
 	oldParseJsonMethod := conf.ParseJson
 	defer func() { conf.ParseJson = oldParseJsonMethod }()
-	conf.ParseJson = mockParseJsonEmpty
+	conf.ParseJson = mockParseJson
 
+	actionMap := make(map[string]interface{})
+	actionMap["doAction"] = "mappedAction"
 	conf.Configuration = make(map[string]interface{})
-	conf.Configuration["doAction"] = "mappedAction"
+	conf.Configuration["actionMappings"] = actionMap
 
 	oldExecuteRunbook := runbook.ExecuteRunbookMethod
 	defer func() { runbook.ExecuteRunbookMethod = oldExecuteRunbook }()
 	runbook.ExecuteRunbookMethod = mockExecuteRunbook
-	body := "{'action' : 'doAction'}"
+
+	body := `{"params":{"aktion":"doAction"}}`
 	queueMessage := NewMaridMessage(&sqs.Message{
 		Body: &body,
 	})
+
 	err := queueMessage.Process()
 	expected := errors.New("SQS message does not contain action property").Error()
-	assert.Equal(t, expected, err.Error())
-}
-
-func TestJSONError(t *testing.T) {
-	oldParseJsonMethod := conf.ParseJson
-	defer func() { conf.ParseJson = oldParseJsonMethod }()
-	conf.ParseJson = mockParseJsonWrong
-
-	conf.Configuration = make(map[string]interface{})
-	conf.Configuration["doAction"] = "mappedAction"
-
-	oldExecuteRunbook := runbook.ExecuteRunbookMethod
-	defer func() { runbook.ExecuteRunbookMethod = oldExecuteRunbook }()
-	runbook.ExecuteRunbookMethod = mockExecuteRunbook
-	body := "{'action' : 'doAction'}"
-	queueMessage := NewMaridMessage(&sqs.Message{
-		Body: &body,
-	})
-	err := queueMessage.Process()
-	expected := errors.New("JSON not parsed").Error()
 	assert.Equal(t, expected, err.Error())
 }
 
@@ -106,16 +96,6 @@ func mockParseJson(content []byte) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
 	result["action"] = "doAction"
 	return result, nil
-}
-
-func mockParseJsonEmpty(content []byte) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
-	return result, nil
-}
-
-func mockParseJsonWrong(content []byte) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
-	return result, errors.New("JSON not parsed")
 }
 
 func mockExecuteRunbook(action string) (string, string, error) {
