@@ -59,7 +59,7 @@ func NewSqsJob(queueMessage QueueMessage, queueProvider QueueProvider, timeoutIn
 		observePeriod:           	time.Second * time.Duration(timeoutInSeconds - 5),
 		state:                   	INITIAL,
 		mu:                      	&sync.Mutex{},
-		shouldObserve:           	true,
+		shouldObserve:           	false,
 		exceedCount:             	0,
 		changeMessageVisibility: 	queueProvider.ChangeMessageVisibility,
 		deleteMessage:           	queueProvider.DeleteMessage,
@@ -207,7 +207,14 @@ func (jq *JobQueue) GetLoad() uint32 {
 	return atomic.LoadUint32(&jq.load)
 }
 
+func (jq *JobQueue) GetSize() uint32 {
+	return atomic.LoadUint32(&jq.queueSize)
+}
+
 func (jq *JobQueue) GetLoadFactor() float32 {
+	if jq.queueSize == 0 {
+		return 1
+	}
 	return float32(atomic.LoadUint32(&jq.load) / jq.queueSize)
 }
 

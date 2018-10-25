@@ -1,105 +1,221 @@
 package queue
 
 import (
-	"bytes"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
-	"io/ioutil"
-	"net/http"
 	"testing"
-	"github.com/opsgenie/marid2/conf"
-	"encoding/json"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/stretchr/testify/assert"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/pkg/errors"
+	"strconv"
+	"time"
+	"math/rand"
 )
 
-var testMqp = NewQueueProvider().(*MaridQueueProvider)
-var defaultMqp = NewQueueProvider().(*MaridQueueProvider)
+var testMqp = NewQueueProvider("testQueueUrl").(*MaridQueueProvider)
+var defaultMqp = NewQueueProvider("testQueueUrl").(*MaridQueueProvider)
 
+var mockAssumeRoleResult = mockToken.Data.AssumeRoleResult
+var mockCreds = credentials.NewStaticCredentials(
+	mockAssumeRoleResult.Credentials.AccessKeyId,
+	mockAssumeRoleResult.Credentials.SecretAccessKey,
+	mockAssumeRoleResult.Credentials.SessionToken)
 
-func mockHttpGetError(retryer *Retryer, request *http.Request) (*http.Response, error) {
-	return nil, errors.New("Test http error has occurred while getting token.")
-}
-
-func mockHttpGet(retryer *Retryer, request *http.Request) (*http.Response, error) {
-
-	payload, _ := json.Marshal(OGPayload{
-		Data: Data{
-			AssumeRoleResult: AssumeRoleResult{
-				Credentials: Credentials{
-					AccessKeyId: "testAccessKeyId",
-					SecretAccessKey: "secret",
-					SessionToken: "session",
-					ExpireTimeMillis: 1234,
-				},
-			},
-			QueueConfiguration: QueueConfiguration{
-				SqsEndpoint: "us-east-2",
-			},
-		},
-	})
-	buff := bytes.NewBuffer(payload)
-
-	response := &http.Response{}
-	response.Body = ioutil.NopCloser(buff)
-
-	return response, nil
-}
-
-func mockSuccessChange(mqp *MaridQueueProvider, message *sqs.Message, visibilityTimeout int64) error {
+func mockChangeMessageVisibilitySuccessOfProvider(mqp *MaridQueueProvider, message *sqs.Message, visibilityTimeout int64) error {
 	return nil
 }
 
-func mockSuccessDelete(mqp *MaridQueueProvider, message *sqs.Message) error {
+func mockDeleteMessageSuccessOfProvider(mqp *MaridQueueProvider, message *sqs.Message) error {
 	return nil
 }
 
-func TestReceiveToken(t *testing.T) {
+func mockReceiveMessageSuccessOfProvider(mqp *MaridQueueProvider, numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
+	messages := make([]*sqs.Message, 0)
+	for i := int64(0); i < numOfMessage ; i++ {
+		sqsMessage := &sqs.Message{}
+		sqsMessage.SetMessageId(strconv.Itoa(int(i+1)))
+		messages = append(messages, sqsMessage)
+	}
+	return messages, nil
+}
 
-	defer func() {
-		testMqp.retryer.getMethod = defaultMqp.retryer.getMethod
-		conf.Configuration = make(map[string]interface{})
-	}()
+func mockReceiveZeroMessage(mqp *MaridQueueProvider, numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
+	return []*sqs.Message{}, nil
+}
 
-	testMqp.retryer.getMethod = mockHttpGet
+func mockReceiveMessageError(mqp *MaridQueueProvider, numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
+	return nil, errors.New("Test receive message error")
+}
 
-	conf.Configuration = map[string]interface{}{
-		"apiKey" : "",
+func mockPoll(p *PollerImpl) (shouldWait bool) {
+	for j:=0; j< 10 ; j++ {
+		for i := 0; i < 10 ; i++ {
+			if !p.isWorkerPoolRunning() {
+				return
+			}
+			sqsMessage := &sqs.Message{}
+			sqsMessage.SetMessageId(strconv.Itoa(j*10+(i+1)))
+			message := NewMaridMessage(sqsMessage)
+			job := NewSqsJob(message, p.queueProvider, 1)
+			p.submit(job)
+		}
+		time.Sleep(time.Millisecond * 10)
 	}
 
-	ogPayload, err := testMqp.newToken()
+	return rand.Intn(2) == 0
+}
+
+func TestGetQueueUrl(t *testing.T) {
+
+	url := testMqp.GetQueueUrl()
+
+	assert.Equal(t, "testQueueUrl", url)
+}
+
+func TestChangeMessageVisibility(t *testing.T) {
+
+	defer func() {
+		testMqp.awsChangeMessageVisibilityMethod = nil
+	}()
+
+	testMqp.awsChangeMessageVisibilityMethod = func(input *sqs.ChangeMessageVisibilityInput) (*sqs.ChangeMessageVisibilityOutput, error) {
+		result := &sqs.ChangeMessageVisibilityOutput{}
+		return result, nil
+	}
+
+	err := testMqp.ChangeMessageVisibility(&sqs.Message{ReceiptHandle: new(string)}, 15)
 
 	assert.Nil(t, err)
-	assert.Equal(t, "testAccessKeyId", ogPayload.Data.AssumeRoleResult.Credentials.AccessKeyId)
 }
 
-func TestReceiveTokenError(t *testing.T) {
+func TestTestChangeMessageVisibilityWithError(t *testing.T) {
 
 	defer func() {
-		testMqp.retryer.getMethod = defaultMqp.retryer.getMethod
-		conf.Configuration = make(map[string]interface{})
+		testMqp.awsChangeMessageVisibilityMethod = nil
 	}()
 
-	testMqp.retryer.getMethod = mockHttpGetError
-
-	conf.Configuration = map[string]interface{}{
-		"apiKey" : "",
+	testMqp.awsChangeMessageVisibilityMethod = func(input *sqs.ChangeMessageVisibilityInput) (*sqs.ChangeMessageVisibilityOutput, error) {
+		return nil, errors.New("Test change message visibility error")
 	}
 
-	_, err := testMqp.newToken()
+	err := testMqp.ChangeMessageVisibility(&sqs.Message{ReceiptHandle: new(string)}, 15)
 
 	assert.NotNil(t, err)
-	assert.Equal(t, "Test http error has occurred while getting token.", err.Error())
+	assert.Equal(t, "Test change message visibility error", err.Error())
 }
 
-/*func TestNewConfig(t *testing.T) {
-	var s SqsService
-	s.client,_ = s.newClient(s.newConfig(""))
+func TestDeleteMessage(t *testing.T) {
 
+	defer func() {
+		testMqp.awsDeleteMessageMethod = nil
+	}()
+
+	testMqp.awsDeleteMessageMethod = func(input *sqs.DeleteMessageInput) (*sqs.DeleteMessageOutput, error) {
+		result := &sqs.DeleteMessageOutput{}
+		return result, nil
+	}
+
+	err := testMqp.DeleteMessage(&sqs.Message{ReceiptHandle: new(string)})
+
+	assert.Nil(t, err)
 }
 
-func TestNewClient(t *testing.T) {
-	client, err := newClient()
-	credentials.newS
-	assert.NoError(t, err)
-	assert.NotNil(t, client)
-}*/
+func TestDeleteMessageWithError(t *testing.T) {
+
+	defer func() {
+		testMqp.awsDeleteMessageMethod = nil
+	}()
+
+	testMqp.awsDeleteMessageMethod = func(input *sqs.DeleteMessageInput) (*sqs.DeleteMessageOutput, error) {
+		return nil, errors.New("Test delete message error")
+	}
+
+	err := testMqp.DeleteMessage(&sqs.Message{ReceiptHandle: new(string)})
+
+	assert.NotNil(t, err)
+	assert.Equal(t, "Test delete message error", err.Error())
+}
+
+func TestReceiveMessage(t *testing.T) {
+
+	defer func() {
+		testMqp.awsReceiveMessageMethod = nil
+	}()
+
+	testMqp.awsReceiveMessageMethod = func(input *sqs.ReceiveMessageInput) (*sqs.ReceiveMessageOutput, error) {
+		result := &sqs.ReceiveMessageOutput{
+			Messages: []*sqs.Message{},
+		}
+		return result, nil
+	}
+
+	messages, err := testMqp.ReceiveMessage(5, 15)
+
+	assert.Nil(t, err)
+	assert.Equal(t, 0, len(messages))
+}
+
+func TestReceiveMessageWithError(t *testing.T) {
+
+	defer func() {
+		testMqp.awsReceiveMessageMethod = nil
+	}()
+
+	testMqp.awsReceiveMessageMethod = func(input *sqs.ReceiveMessageInput) (*sqs.ReceiveMessageOutput, error) {
+		return nil, errors.New("Test receive message error")
+	}
+
+	_, err := testMqp.ReceiveMessage(5, 15)
+
+	assert.NotNil(t, err)
+	assert.Equal(t, "Test receive message error", err.Error())
+}
+
+func TestRefreshClient(t *testing.T) {
+
+	err := testMqp.RefreshClient(&mockAssumeRoleResult)
+
+	assert.Nil(t, err)
+
+	expected := aws.NewConfig().
+		WithRegion(testMqp.region).
+		WithCredentials(mockCreds)
+
+	assert.Equal(t, expected.Credentials, testMqp.client.Config.Credentials)
+	assert.Equal(t, expected.Region, testMqp.client.Config.Region)
+}
+
+func TestRefreshClientWithNilConfig(t *testing.T) {
+
+	defer func() {
+		newSession = session.NewSession
+	}()
+
+	newSession = func(cfgs ...*aws.Config) (*session.Session, error) {
+		return nil, errors.New("Test new session error")
+	}
+
+	err := testMqp.RefreshClient(&mockAssumeRoleResult)
+
+	assert.NotNil(t, err)
+}
+
+func TestNewConfig(t *testing.T) {
+
+	defer func() {
+		testMqp.region = defaultMqp.region
+	}()
+
+	testMqp.region = "testRegion"
+
+	expected := aws.NewConfig().
+		WithRegion(testMqp.region).
+		WithCredentials(mockCreds)
+
+	awsConfig := testMqp.newConfig(&mockAssumeRoleResult)
+	assert.Equal(t, expected, awsConfig)
+
+	expected.WithRegion("wrongRegion")
+	assert.NotEqual(t, expected, awsConfig)
+}

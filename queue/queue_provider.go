@@ -5,103 +5,84 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/service/sqs"
 
-	"encoding/json"
-	"fmt"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/google/uuid"
-	"github.com/pkg/errors"
 	"log"
 	"sync"
-	"sync/atomic"
-	"time"
 	"net/http"
-	"github.com/opsgenie/marid2/conf"
 )
 
 const tokenUrl = "https://app.opsgenie.com/v2/integrations/maridv2/credentials"
+var httpNewRequest = http.NewRequest
+var newSession = session.NewSession
 
 type QueueProvider interface {
 	ChangeMessageVisibility(message *sqs.Message, visibilityTimeout int64) error
 	DeleteMessage(message *sqs.Message) error
 	ReceiveMessage(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error)
 
-	StartRefreshing() error
-	StopRefreshing() error
+	RefreshClient(assumeRoleResult *AssumeRoleResult) error
+	GetQueueUrl() string
 }
 
 type MaridQueueProvider struct {
-	queueName string
-	client    *sqs.SQS
-	ogPayload *OGPayload
-	//creds            	*credentials.Credentials
 
-	quit         chan struct{}
-	isRefreshing atomic.Value
-	retryer      *Retryer
-	rwMu         *sync.RWMutex
-	startStopMu  *sync.Mutex
+	region string
+	queueName string
+	queueUrl string
+
+	client	*sqs.SQS
+	rwMu	*sync.RWMutex
 
 	ChangeMessageVisibilityMethod func(mqp *MaridQueueProvider, message *sqs.Message, visibilityTimeout int64) error
 	DeleteMessageMethod           func(mqp *MaridQueueProvider, message *sqs.Message) error
 	ReceiveMessageMethod          func(mqp *MaridQueueProvider, numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error)
 
-	StartRefreshingMethod func(mqp *MaridQueueProvider) error
-	StopRefreshingMethod  func(mqp *MaridQueueProvider) error
+	awsChangeMessageVisibilityMethod 	func(input *sqs.ChangeMessageVisibilityInput) (*sqs.ChangeMessageVisibilityOutput, error)
+	awsDeleteMessageMethod 				func(input *sqs.DeleteMessageInput) (*sqs.DeleteMessageOutput, error)
+	awsReceiveMessageMethod       		func(input *sqs.ReceiveMessageInput) (*sqs.ReceiveMessageOutput, error)
 
-	refreshClientMethod func(mqp *MaridQueueProvider) error
-	runMethod           func(mqp *MaridQueueProvider)
-	receiveTokenMethod  func(mqp *MaridQueueProvider) (*OGPayload, error)
-	newConfigMethod     func(mqp *MaridQueueProvider, ogPayload *OGPayload) *aws.Config
+	refreshClientMethod func(mqp *MaridQueueProvider, assumeRoleResult *AssumeRoleResult) error
+	newConfigMethod     func(mqp *MaridQueueProvider, assumeRoleResult *AssumeRoleResult) *aws.Config
 }
 
-func NewQueueProvider() QueueProvider {
-	qp := &MaridQueueProvider{
-		quit:                          make(chan struct{}),
-		retryer:                       NewRetryer(),
-		queueName:                     uuid.New().String(),
-		rwMu:                          &sync.RWMutex{},
-		startStopMu:                   &sync.Mutex{},
-		ChangeMessageVisibilityMethod: ChangeMessageVisibility,
-		DeleteMessageMethod:           DeleteMessage,
-		ReceiveMessageMethod:          ReceiveMessage,
-		StartRefreshingMethod:         StartRefreshing,
-		StopRefreshingMethod:          StopRefreshing,
-		refreshClientMethod:           refreshClient,
-		runMethod:                     runQueueProvider,
-		receiveTokenMethod:            receiveToken,
-		newConfigMethod:               newConfig,
+func NewQueueProvider(queueUrl string) QueueProvider {
+	return &MaridQueueProvider{
+		queueName:                     	uuid.New().String(),
+		rwMu:                          	&sync.RWMutex{},
+		queueUrl:					   	queueUrl,
+		region:							"us-west-2",
+		ChangeMessageVisibilityMethod: 	ChangeMessageVisibility,
+		DeleteMessageMethod:           	DeleteMessage,
+		ReceiveMessageMethod:          	ReceiveMessage,
+		refreshClientMethod:           	RefreshClient,
+		newConfigMethod:               	newConfig,
 	}
-	qp.isRefreshing.Store(false)
-	return qp
 }
 
-func (mqp *MaridQueueProvider) getRegion() string {
+/*func (mqp *MaridQueueProvider) getRegion() string {
 	defer mqp.rwMu.RUnlock()
 	mqp.rwMu.RLock()
-	return mqp.ogPayload.getEndpoint()
+	return mqp.token.getEndpoint()
 }
-func (mqp *MaridQueueProvider) getQueueUrl() string {
+func (mqp *MaridQueueProvider) GetQueueUrl() string {
 	defer mqp.rwMu.RUnlock()
 	mqp.rwMu.RLock()
-	return mqp.ogPayload.getQueueUrl()
+	return mqp.token.GetQueueUrl()
 }
 func (mqp *MaridQueueProvider) getSuccessPeriod() time.Duration {
 	defer mqp.rwMu.RUnlock()
 	mqp.rwMu.RLock()
-	return time.Duration(mqp.ogPayload.getSuccessRefreshPeriod()) * time.Second
+	return time.Duration(mqp.token.getSuccessRefreshPeriod()) * time.Second
 }
 func (mqp *MaridQueueProvider) getErrorPeriod() time.Duration {
 	defer mqp.rwMu.RUnlock()
 	mqp.rwMu.RLock()
-	return time.Duration(mqp.ogPayload.getErrorRefreshPeriod()) * time.Second
-}
+	return time.Duration(mqp.token.getErrorRefreshPeriod()) * time.Second
+}*/
 
-func (mqp *MaridQueueProvider) StartRefreshing() error {
-	return mqp.StartRefreshingMethod(mqp)
-}
-
-func (mqp *MaridQueueProvider) StopRefreshing() error {
-	return mqp.StopRefreshingMethod(mqp)
+func (mqp *MaridQueueProvider) GetQueueUrl() string {
+	return mqp.queueUrl
 }
 
 func (mqp *MaridQueueProvider) ChangeMessageVisibility(message *sqs.Message, visibilityTimeout int64) error {
@@ -116,72 +97,28 @@ func (mqp *MaridQueueProvider) ReceiveMessage(numOfMessage int64, visibilityTime
 	return mqp.ReceiveMessageMethod(mqp, numOfMessage, visibilityTimeout)
 }
 
-func (mqp *MaridQueueProvider) refreshClient() error {
-	return mqp.refreshClientMethod(mqp)
+func (mqp *MaridQueueProvider) RefreshClient(assumeRoleResult *AssumeRoleResult) error {
+	return mqp.refreshClientMethod(mqp, assumeRoleResult)
 }
 
-func (mqp *MaridQueueProvider) run() {
-	mqp.runMethod(mqp)
-}
-
-func (mqp *MaridQueueProvider) newToken() (*OGPayload, error) {
-	return mqp.receiveTokenMethod(mqp)
-}
-
-func (mqp *MaridQueueProvider) newConfig(ogPayload *OGPayload) *aws.Config {
-	return mqp.newConfigMethod(mqp, ogPayload)
-}
-
-func StartRefreshing(mqp *MaridQueueProvider) error {
-	defer mqp.startStopMu.Unlock()
-	mqp.startStopMu.Lock()
-
-	if mqp.isRefreshing.Load().(bool) {
-		return errors.New("Queue provider is already running.")
-	}
-
-	log.Printf("Queue provider[%s] is starting to refresh client.", mqp.queueName)
-	if err := mqp.refreshClient(); err != nil {
-		log.Printf("Queue provider[%s] could not get initial token and will terminate.", mqp.queueName)
-		return err
-	}
-
-	mqp.isRefreshing.Store(true) // todo ?
-
-	go mqp.run()
-
-	return nil
-}
-
-func StopRefreshing(mqp *MaridQueueProvider) error {
-	defer mqp.startStopMu.Unlock()
-	mqp.startStopMu.Lock()
-
-	if !mqp.isRefreshing.Load().(bool) {
-		return errors.New("Queue provider is already running.")
-	}
-	mqp.isRefreshing.Store(false)
-
-	log.Printf("Queue provider[%s] is stopping to refresh client.", mqp.queueName)
-	close(mqp.quit)
-
-	return nil
+func (mqp *MaridQueueProvider) newConfig(assumeRoleResult *AssumeRoleResult) *aws.Config {
+	return mqp.newConfigMethod(mqp, assumeRoleResult)
 }
 
 func ChangeMessageVisibility(mqp *MaridQueueProvider, message *sqs.Message, visibilityTimeout int64) error {
-	queueUrl := mqp.getQueueUrl()
+
 	request := &sqs.ChangeMessageVisibilityInput{
 		ReceiptHandle:     message.ReceiptHandle,
-		QueueUrl:          &queueUrl,
+		QueueUrl:          &mqp.queueUrl,
 		VisibilityTimeout: &visibilityTimeout,
 	}
 
 	mqp.rwMu.RLock()
-	resultVisibility, err := mqp.client.ChangeMessageVisibility(request)
+	resultVisibility, err := mqp.awsChangeMessageVisibilityMethod(request)
 	mqp.rwMu.RUnlock()
 
 	if err != nil {
-		log.Println("Change Message Visibility Error", err)
+		log.Printf("Change Message Visibility Error: %s", err)
 		return err
 	}
 
@@ -190,14 +127,14 @@ func ChangeMessageVisibility(mqp *MaridQueueProvider, message *sqs.Message, visi
 }
 
 func DeleteMessage(mqp *MaridQueueProvider, message *sqs.Message) error {
-	queueUrl := mqp.getQueueUrl()
+
 	request := &sqs.DeleteMessageInput{
-		QueueUrl:      &queueUrl,
+		QueueUrl:      &mqp.queueUrl,
 		ReceiptHandle: message.ReceiptHandle,
 	}
 
 	mqp.rwMu.RLock()
-	resultDelete, err := mqp.client.DeleteMessage(request)
+	resultDelete, err := mqp.awsDeleteMessageMethod(request)
 	mqp.rwMu.RUnlock()
 
 	if err != nil {
@@ -209,7 +146,7 @@ func DeleteMessage(mqp *MaridQueueProvider, message *sqs.Message) error {
 }
 
 func ReceiveMessage(mqp *MaridQueueProvider, maxNumOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
-	queueUrl := mqp.getQueueUrl()
+
 	request := &sqs.ReceiveMessageInput{ // todo check attributes
 		AttributeNames: []*string{
 			aws.String(sqs.QueueAttributeNameAll),
@@ -217,18 +154,18 @@ func ReceiveMessage(mqp *MaridQueueProvider, maxNumOfMessage int64, visibilityTi
 		MessageAttributeNames: []*string{
 			aws.String(sqs.QueueAttributeNameAll),
 		},
-		QueueUrl:            &queueUrl,
+		QueueUrl:            &mqp.queueUrl,
 		MaxNumberOfMessages: aws.Int64(maxNumOfMessage),
 		VisibilityTimeout:   aws.Int64(visibilityTimeout),
-		WaitTimeSeconds:     aws.Int64(0), // todo check short polling
+		WaitTimeSeconds:     aws.Int64(0),
 	}
 
 	mqp.rwMu.RLock()
-	result, err := mqp.client.ReceiveMessage(request)
+	result, err := mqp.awsReceiveMessageMethod(request)
 	mqp.rwMu.RUnlock()
 
 	if err != nil {
-		fmt.Printf("Receive message error: %s", err)
+		log.Printf("Receive message error: %s", err)
 		return nil, err
 	}
 
@@ -237,83 +174,33 @@ func ReceiveMessage(mqp *MaridQueueProvider, maxNumOfMessage int64, visibilityTi
 	return result.Messages, nil
 }
 
-func refreshClient(mqp *MaridQueueProvider) error {
-	ogPayload, err := mqp.newToken()
-	if err != nil {
-		return err
-	}
-	config := mqp.newConfig(ogPayload)
-	sess, err := session.NewSession(config)
+func RefreshClient(mqp *MaridQueueProvider, assumeRoleResult *AssumeRoleResult) error {
+
+	config := mqp.newConfig(assumeRoleResult)
+	sess, err := newSession(config)
 	if err != nil {
 		return err
 	}
 
-	defer mqp.rwMu.Unlock()
 	mqp.rwMu.Lock()
-	mqp.ogPayload = ogPayload
 	mqp.client = sqs.New(sess)
+	mqp.awsChangeMessageVisibilityMethod = mqp.client.ChangeMessageVisibility
+	mqp.awsDeleteMessageMethod = mqp.client.DeleteMessage
+	mqp.awsReceiveMessageMethod = mqp.client.ReceiveMessage
+	mqp.rwMu.Unlock()
+
+	log.Printf("Client of queue provider[%s] has refreshed.", mqp.GetQueueUrl())
 
 	return nil
 }
 
-func runQueueProvider(mqp *MaridQueueProvider) {
 
-	log.Printf("Queue provider[%s] has started to refresh client by %s periods.", mqp.queueName, mqp.getSuccessPeriod().String())
+func newConfig(mqp *MaridQueueProvider, assumeRoleResult *AssumeRoleResult) *aws.Config {
 
-	ticker := time.NewTicker(mqp.getSuccessPeriod())
-
-	for {
-		select {
-		case <-mqp.quit:
-			ticker.Stop()
-			log.Printf("Queue provider[%s] has stopped to refresh client.", mqp.queueName)
-			return
-		case <-ticker.C:
-			ticker.Stop()
-			err := mqp.refreshClient()
-			if err != nil {
-				log.Printf("Refresh cycle of queue provider[%s] has failed: %s", mqp.queueName, err.Error())
-				ticker = time.NewTicker(mqp.getErrorPeriod())
-			} else {
-				log.Printf("Client of queue provider[%s] has refreshed", mqp.queueName)
-				ticker = time.NewTicker(mqp.getSuccessPeriod())
-			}
-		}
-	}
-}
-
-func receiveToken(mqp *MaridQueueProvider) (*OGPayload, error) { // todo change name of the function
-
-	request, err := http.NewRequest("GET", tokenUrl, nil)
-	if err != nil {
-		return nil, err
-	}
-	apiKey := conf.Configuration["apiKey"].(string)
-	request.Header.Add("Authorization", "GenieKey " + apiKey)
-
-	response, err := mqp.retryer.Do(request)
-	if err != nil {
-		return nil, err
-	}
-
-	defer response.Body.Close()
-
-	ogPayload := &OGPayload{}
-	err = json.NewDecoder(response.Body).Decode(&ogPayload)
-	if err != nil {
-		return nil, err
-	}
-
-	return ogPayload, nil
-}
-
-func newConfig(mqp *MaridQueueProvider, ogPayload *OGPayload) *aws.Config {
-
-	ARRCredentials := ogPayload.Data.AssumeRoleResult.Credentials
+	ARRCredentials := assumeRoleResult.Credentials
 	creds := credentials.NewStaticCredentials(ARRCredentials.AccessKeyId, ARRCredentials.SecretAccessKey, ARRCredentials.SessionToken)
 
-	region := ogPayload.getEndpoint()
-	awsConfig := aws.NewConfig().WithRegion(region).WithCredentials(creds)
+	awsConfig := aws.NewConfig().WithRegion(mqp.region).WithCredentials(creds)
 
 	return awsConfig
 }

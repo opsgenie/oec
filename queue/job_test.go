@@ -243,13 +243,13 @@ func TestObserve(t *testing.T) {
 		queueMessage: maridMessage,
 		state:				EXECUTING,
 		exceedCount:		0,
-		timeoutInSeconds:	10,
+		timeoutInSeconds:	1,
 		GetJobIdMethod: func(j *SqsJob) string {
 			return "jobId"
 		},
 		checkJobStatusMethod:	checkJobStatus,
 		observeMethod:	observe,
-		observePeriod:	time.Millisecond * 5,
+		observePeriod:	time.Nanosecond,
 		changeMessageVisibility: func(message *sqs.Message, visibilityTimeout int64) error {
 			return nil
 		},
@@ -257,10 +257,10 @@ func TestObserve(t *testing.T) {
 
 	sqsJob.observe()
 
-	time.Sleep(time.Millisecond * 25)
+	time.Sleep(time.Millisecond)
 	sqsJob.state = FINISHED  // or  sqsJob.observer.Stop()
 
-	expectedExceedCount := uint32(2)
+	expectedExceedCount := uint32(1)
 	actualExceedCount := sqsJob.exceedCount
 
 	assert.Equal(t, expectedExceedCount, actualExceedCount)

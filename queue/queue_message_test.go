@@ -7,7 +7,15 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"testing"
+	"time"
+	"math/rand"
 )
+
+func mockProcess(mqm *MaridQueueMessage) error {
+	multip := time.Duration(rand.Int31n(100 * 3))
+	time.Sleep(time.Millisecond * multip * 10)	// simulate a process
+	return nil
+}
 
 func TestGetMessage(t *testing.T) {
 	assert := assert.New(t)
