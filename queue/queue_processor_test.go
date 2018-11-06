@@ -8,48 +8,35 @@ import (
 	"net/http"
 	"io"
 	"github.com/pkg/errors"
+	"strconv"
+	"strings"
 )
 
 var testQp = NewQueueProcessor().(*MaridQueueProcessor)
 var defaultQp = NewQueueProcessor().(*MaridQueueProcessor)
 
-var mockUrl1 = "https://sqs.us-west-2.amazonaws.com/255452344566/marid-test-1-2"
-var mockUrl2 = "https://sqs.us-east-2.amazonaws.com/255452344566/marid-test-1-2"
-
-var mockUrls = map[string]struct{}{
-	 mockUrl1: {},
-	 mockUrl2: {},
+var mockPollers = map[string]Poller{
+	mockQueueUrl1 : NewMockPoller(NewQueueProviderForTest(mockMaridMetadata1)),
+	mockQueueUrl2 : NewMockPoller(NewQueueProviderForTest(mockMaridMetadata2)),
 }
 
-var mockPollers = map[Poller]struct{}{
-	NewMockPoller(mockUrl1) : {},
-	NewMockPoller(mockUrl2) : {},
-}
-
-func mockConvertStringListToMap(list []string) map[string]struct{} {
-	return map[string]struct{}{
-		mockUrl1: {},
-		mockUrl2: {},
-	}
-}
-
-func NewMockPoller(queueUrl string) Poller {
+func NewMockPoller(queueProvider QueueProvider) Poller {
 	return &PollerImpl{
-		queueProvider: &MaridQueueProvider{queueUrl: queueUrl},
+		queueProvider: queueProvider,
 		refreshClientMethod: mockRefreshClientSuccess,
 		StartPollingMethod: mockStartPollingSuccess,
 		StopPollingMethod: mockStartPollingSuccess,
 	}
 }
 
-func mockAddPoller(qp *MaridQueueProcessor, queueUrl *string) Poller {
-	poller := NewMockPoller(*queueUrl)
-	qp.pollers[poller] = struct{}{}
+func mockAddPoller(qp *MaridQueueProcessor, queueProvider QueueProvider) Poller {
+	poller := NewMockPoller(queueProvider)
+	qp.pollers[queueProvider.GetMaridMetadata().getQueueUrl()] = poller
 	return poller
 }
 
-func mockAddPollerSuccessAwsOperations(qp *MaridQueueProcessor, queueUrl *string) Poller {
-	poller := addPoller(qp, queueUrl).(*PollerImpl)
+func mockAddPollerSuccessAwsOperations(qp *MaridQueueProcessor, queueProvider QueueProvider) Poller {
+	poller := addPoller(qp, queueProvider).(*PollerImpl)
 	poller.changeMessageVisibility = mockChangeMessageVisibilitySuccess
 	poller.receiveMessage = mockReceiveMessageSuccess
 	submit := poller.submit
@@ -129,19 +116,39 @@ func TestStopQueueProcessorWhileNotRunning(t *testing.T) {
 func TestReceiveToken(t *testing.T) {
 
 	defer func() {
+		testQp.pollers = defaultQp.pollers
 		testQp.retryer.getMethod = defaultQp.retryer.getMethod
 		conf.Configuration = map[string]interface{}{}
 	}()
 
-	testQp.retryer.getMethod = mockHttpGet
+	testQp.pollers = mockPollers
 	conf.Configuration = map[string]interface{}{
 		"apiKey" : "",
+	}
+
+	var actualRequest *http.Request
+
+	testQp.retryer.getMethod = func(retryer *Retryer, request *http.Request) (*http.Response, error) {
+		actualRequest = request
+		return mockHttpGet(retryer, request)
 	}
 
 	token, err := testQp.receiveToken()
 
 	assert.Nil(t, err)
-	assert.Equal(t, "accessKeyId", token.Data.AssumeRoleResult.Credentials.AccessKeyId)
+	assert.Equal(t, 2, len(token.MaridMetaDataList))
+	assert.Equal(t, "accessKeyId1", token.MaridMetaDataList[0].AssumeRoleResult.Credentials.AccessKeyId)
+	assert.Equal(t, "accessKeyId2", token.MaridMetaDataList[1].AssumeRoleResult.Credentials.AccessKeyId)
+
+	for _, poller := range testQp.pollers  {
+		maridMetadata := poller.GetQueueProvider().GetMaridMetadata()
+		expectedQuery := maridMetadata.getRegion() + "=" + strconv.FormatInt(maridMetadata.getExpireTimeMillis(), 10)
+
+		assert.True(t, strings.Contains(actualRequest.URL.RawQuery, expectedQuery))
+	}
+
+	assert.Equal(t, "app.opsgenie.com", actualRequest.URL.Host)
+	assert.Equal(t, "/v2/integrations/maridv2/credentials", actualRequest.URL.Path)
 }
 
 func TestReceiveTokenInvalidJson(t *testing.T) {
@@ -209,20 +216,34 @@ func TestAddPollerTest(t *testing.T) {
 		testQp.pollers = defaultQp.pollers
 	}()
 
-	url1 := "testQueueUrl1"
-	poller := testQp.addPoller(&url1)
-	url2 := "testQueueUrl2"
-	testQp.addPoller(&url2)
+	poller := testQp.addPoller(NewQueueProviderForTest(mockMaridMetadata1))
+	testQp.addPoller(NewQueueProviderForTest(mockMaridMetadata2))
 
-	assert.Equal(t, url1, poller.GetQueueUrl())
+	assert.Equal(t, mockMaridMetadata1.getQueueUrl(), poller.GetQueueProvider().GetMaridMetadata().getQueueUrl())
 	assert.Equal(t, testQp.pollingWaitInterval, poller.GetPollingWaitInterval())
 	assert.Equal(t, testQp.maxNumberOfMessages, poller.GetMaxNumberOfMessages())
 	assert.Equal(t, testQp.visibilityTimeoutInSeconds, poller.GetVisibilityTimeout())
 
-	_, contains := testQp.pollers[poller]
+	_, contains := testQp.pollers[mockMaridMetadata1.getQueueUrl()]
 	assert.True(t, contains)
 
 	assert.Equal(t, 2, len(testQp.pollers))
+}
+
+func TestRemovePollerTest(t *testing.T) {
+
+	defer func() {
+		testQp.pollers = defaultQp.pollers
+	}()
+
+	testQp.pollers = mockPollers
+
+	poller := testQp.removePoller(mockQueueUrl1)
+	testQp.removePoller(mockQueueUrl2)
+
+	assert.Equal(t, mockMaridMetadata1.getQueueUrl(), poller.GetQueueProvider().GetMaridMetadata().getQueueUrl())
+
+	assert.Equal(t, 0, len(testQp.pollers))
 }
 
 func TestRefreshPollersRepeat(t *testing.T) {
@@ -230,14 +251,42 @@ func TestRefreshPollersRepeat(t *testing.T) {
 	defer func() {
 		testQp.addPollerMethod = defaultQp.addPollerMethod
 		testQp.pollers = defaultQp.pollers
-		convertStringListToMapMethod = convertStringListToMap
 	}()
 
-	convertStringListToMapMethod = mockConvertStringListToMap
 	testQp.addPollerMethod = mockAddPoller
 
 	testQp.refreshPollers(&mockToken)
 	testQp.refreshPollers(&mockToken)
+	testQp.refreshPollers(&mockToken)
+
+	assert.Equal(t, 2, len(testQp.pollers))
+}
+
+func TestRefreshPollersAddAndRemove(t *testing.T) {
+
+	defer func() {
+		testQp.addPollerMethod = defaultQp.addPollerMethod
+		testQp.pollers = defaultQp.pollers
+	}()
+
+	testQp.addPollerMethod = mockAddPoller
+
+	testQp.refreshPollers(&mockToken)
+	testQp.refreshPollers(&mockEmptyToken)
+
+	assert.Equal(t, 0, len(testQp.pollers))
+}
+
+func TestRefreshPollersAdd(t *testing.T) {
+
+	defer func() {
+		testQp.addPollerMethod = defaultQp.addPollerMethod
+		testQp.pollers = defaultQp.pollers
+	}()
+
+	testQp.addPollerMethod = mockAddPoller
+
+	testQp.refreshPollers(&mockEmptyToken)
 	testQp.refreshPollers(&mockToken)
 
 	assert.Equal(t, 2, len(testQp.pollers))
@@ -248,10 +297,8 @@ func TestRefreshPollersWithNotHavingPoller(t *testing.T) {
 	defer func() {
 		testQp.addPollerMethod = defaultQp.addPollerMethod
 		testQp.pollers = defaultQp.pollers
-		convertStringListToMapMethod = convertStringListToMap
 	}()
 
-	convertStringListToMapMethod = mockConvertStringListToMap
 	testQp.addPollerMethod = mockAddPoller
 
 	testQp.refreshPollers(&mockToken)
@@ -259,15 +306,13 @@ func TestRefreshPollersWithNotHavingPoller(t *testing.T) {
 	assert.Equal(t, 2, len(testQp.pollers))
 }
 
-func TestRefreshOldPollers(t *testing.T) {
+func TestRefreshOldPollersAlreadyHavingPollers(t *testing.T) {
 
 	defer func() {
 		testQp.addPollerMethod = defaultQp.addPollerMethod
 		testQp.pollers = defaultQp.pollers
-		convertStringListToMapMethod = convertStringListToMap
 	}()
 
-	convertStringListToMapMethod = mockConvertStringListToMap
 	testQp.addPollerMethod = mockAddPoller
 	testQp.pollers = mockPollers
 
@@ -278,9 +323,17 @@ func TestRefreshOldPollers(t *testing.T) {
 
 func TestRefreshPollersWithEmptyAssumeRoleResult(t *testing.T) {
 
-	testQp.refreshPollers(&mockEmptyToken)
+	defer func() {
+		testQp.addPollerMethod = defaultQp.addPollerMethod
+		testQp.pollers = defaultQp.pollers
+	}()
 
-	assert.Equal(t, 0, len(testQp.pollers))
+	testQp.addPollerMethod = mockAddPoller
+	testQp.pollers = mockPollers
+
+	testQp.refreshPollers(&mockTokenWithEmptyAssumeRoleResult)
+
+	assert.Equal(t, 2, len(testQp.pollers))
 }
 
 func TestRefreshPollerWithEmptyToken(t *testing.T) {

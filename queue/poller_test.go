@@ -8,10 +8,34 @@ import (
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/pkg/errors"
 	"strconv"
+	"sync"
 )
 
-var testPoller = NewDefultPollerForTest().(*PollerImpl)
-var defaultPoller = NewDefultPollerForTest().(*PollerImpl)
+var testPoller = NewPollerForTest().(*PollerImpl)
+var defaultPoller = NewPollerForTest().(*PollerImpl)
+
+func NewPollerForTest() Poller {
+	pollingWaitInterval := time.Millisecond * 100
+	maxNumberOfMessages := int64(5)
+	visibilityTimeoutInSeconds := int64(15)
+	return &PollerImpl{
+		quit:                       make(chan struct{}),
+		wakeUpChan:                 make(chan struct{}),
+		state:                      INITIAL,
+		startStopMu:                &sync.Mutex{},
+		pollingWaitInterval:        &pollingWaitInterval,
+		maxNumberOfMessages:        &maxNumberOfMessages,
+		visibilityTimeoutInSeconds: &visibilityTimeoutInSeconds,
+		queueProvider:              NewQueueProviderForTest(mockMaridMetadata1),
+		releaseMessagesMethod:      releaseMessages,
+		waitMethod:              	waitPolling,
+		runMethod:               	runPoller,
+		wakeUpMethod:            	wakeUpPoller,
+		StopPollingMethod:       	StopPolling,
+		StartPollingMethod:      	StartPolling,
+		pollMethod:              	poll,
+	}
+}
 
 func mockRefreshClientSuccess(assumeRoleResult *AssumeRoleResult) error {
 	return nil

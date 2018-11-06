@@ -1,21 +1,17 @@
 package queue
 
-import (
-	"strconv"
-)
-
 type MaridToken struct {
-	Data Data `json:"data,omitempty"`
+	MaridMetaDataList []MaridMetadata `json:"data,omitempty"`
 }
 
-type Data struct {
+type MaridMetadata struct {
 	AssumeRoleResult   AssumeRoleResult   `json:"assumeRoleResult,omitempty"`
 	QueueConfiguration QueueConfiguration `json:"queueConfigurationDto,omitempty"`
 }
 
 type AssumeRoleResult struct {
-	Credentials          Credentials          `json:"credentials,omitempty"`
-	AssumeRole           AssumeRole           `json:"assumeRole,omitempty"`
+	Credentials		Credentials	`json:"credentials,omitempty"`
+	AssumeRole		AssumeRole	`json:"assumeRole,omitempty"`
 }
 
 type Credentials struct {
@@ -31,23 +27,20 @@ type AssumeRole struct {
 }
 
 type QueueConfiguration struct {
-	SuccessRefreshPeriod int64  `json:"credentialSuccessRefreshPeriod,omitempty"`
-	ErrorRefreshPeriod   int64  `json:"credentialErrorRefreshPeriod,omitempty"`
-	SqsEndpoint          string `json:"sqsEndpoint,omitempty"`
-	QueueUrls            []string `json:"queueUrl,omitempty"`
+	SuccessRefreshPeriodInSeconds int64  `json:"credentialSuccessRefreshPeriod,omitempty"`
+	ErrorRefreshPeriodInSeconds   int64  `json:"credentialErrorRefreshPeriod,omitempty"`
+	Region                        string `json:"sqsEndpoint,omitempty"`
+	QueueUrl                      string `json:"queueUrl,omitempty"`
 }
 
-func (og *MaridToken) toString() string {
-	return "Credentials: " + "{" + og.Data.AssumeRoleResult.Credentials.AccessKeyId + "," + og.Data.AssumeRoleResult.Credentials.SecretAccessKey + "," + og.Data.AssumeRoleResult.Credentials.SessionToken + "," + strconv.FormatInt(og.Data.AssumeRoleResult.Credentials.ExpireTimeMillis, 10) + "}\n" +
-		"AssumedRole: " + "{" + og.Data.AssumeRoleResult.AssumeRole.Id + "," + og.Data.AssumeRoleResult.AssumeRole.Arn + "}"
+func (mmt *MaridMetadata) getExpireTimeMillis() int64 {
+	return mmt.AssumeRoleResult.Credentials.ExpireTimeMillis
 }
 
-func (og *MaridToken) getEndpoint() string {
-	queueUrl := og.Data.QueueConfiguration.SqsEndpoint
-	return queueUrl
+func (mmt *MaridMetadata) getRegion() string {
+	return mmt.QueueConfiguration.Region
 }
 
-func (og *MaridToken) getQueueUrl() []string {
-	queueUrls := og.Data.QueueConfiguration.QueueUrls
-	return queueUrls
+func (mmt *MaridMetadata) getQueueUrl() string {
+	return mmt.QueueConfiguration.QueueUrl
 }

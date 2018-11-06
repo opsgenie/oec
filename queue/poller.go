@@ -21,7 +21,7 @@ type Poller interface {
 	SetMaxNumberOfMessages(max *int64) Poller
 	SetVisibilityTimeout(timeoutInSeconds *int64) Poller
 
-	GetQueueUrl() string
+	GetQueueProvider() QueueProvider
 	RefreshClient(assumeRoleResult *AssumeRoleResult) error
 }
 
@@ -70,7 +70,6 @@ func NewPoller(workerPool WorkerPool, queueProvider QueueProvider, pollingWaitIn
 		queueProvider:              queueProvider,
 		receiveMessage:             queueProvider.ReceiveMessage,
 		changeMessageVisibility:    queueProvider.ChangeMessageVisibility,
-		getQueueUrlMethod:          queueProvider.GetQueueUrl,
 		refreshClientMethod:        queueProvider.RefreshClient,
 		releaseMessagesMethod:      releaseMessages,
 		waitMethod:                 waitPolling,
@@ -79,29 +78,6 @@ func NewPoller(workerPool WorkerPool, queueProvider QueueProvider, pollingWaitIn
 		StopPollingMethod:          StopPolling,
 		StartPollingMethod:         StartPolling,
 		pollMethod:                 poll,
-	}
-}
-
-func NewDefultPollerForTest() Poller {
-	pollingWaitInterval := time.Millisecond * 100
-	maxNumberOfMessages := int64(5)
-	visibilityTimeoutInSeconds := int64(15)
-	return &PollerImpl{
-		quit:                       make(chan struct{}),
-		wakeUpChan:                 make(chan struct{}),
-		state:                      INITIAL,
-		startStopMu:                &sync.Mutex{},
-		pollingWaitInterval:        &pollingWaitInterval,
-		maxNumberOfMessages:        &maxNumberOfMessages,
-		visibilityTimeoutInSeconds: &visibilityTimeoutInSeconds,
-		queueProvider:              &MaridQueueProvider{queueUrl: "defaultQueueUrl"},
-		releaseMessagesMethod:      releaseMessages,
-		waitMethod:              	waitPolling,
-		runMethod:               	runPoller,
-		wakeUpMethod:            	wakeUpPoller,
-		StopPollingMethod:       	StopPolling,
-		StartPollingMethod:      	StartPolling,
-		pollMethod:              	poll,
 	}
 }
 
@@ -160,8 +136,8 @@ func (p *PollerImpl) SetVisibilityTimeout(timeoutInSeconds *int64) Poller {
 	return p
 }
 
-func (p *PollerImpl) GetQueueUrl() string {
-	return p.queueProvider.GetQueueUrl()
+func (p *PollerImpl) GetQueueProvider() QueueProvider {
+	return p.queueProvider
 }
 
 
@@ -213,11 +189,11 @@ func releaseMessages(p *PollerImpl, messages []*sqs.Message) {
 	for i := 0; i < len(messages); i++ {
 		err := p.changeMessageVisibility(messages[i], 0)
 		if err != nil {
-			log.Printf("Poller[%s] could not release message[%s]: %s.", p.GetQueueUrl() , *messages[i].MessageId, err.Error())
+			log.Printf("Poller[%s] could not release message[%s]: %s.", p.queueProvider.GetMaridMetadata().getQueueUrl() , *messages[i].MessageId, err.Error())
 			continue
 		}
 
-		log.Printf("Poller[%s] released message[%s].", p.GetQueueUrl() , *messages[i].MessageId)
+		log.Printf("Poller[%s] released message[%s].", p.queueProvider.GetMaridMetadata().getQueueUrl() , *messages[i].MessageId)
 	}
 }
 
@@ -235,7 +211,7 @@ func poll(p *PollerImpl) (shouldWait bool) {
 
 		messageLength := len(messages)
 		if messageLength == 0 {
-			log.Printf("There is no new message in queue[%s].", p.GetQueueUrl())
+			log.Printf("There is no new message in queue[%s].", p.queueProvider.GetMaridMetadata().getQueueUrl())
 			return true
 		}
 		log.Printf("%d messages received.", messageLength)
@@ -265,14 +241,14 @@ func waitPolling(p *PollerImpl, pollingWaitPeriod time.Duration) {
 		return
 	}
 
-	log.Printf("Poller[%s] will wait %s before next polling", p.GetQueueUrl(), pollingWaitPeriod.String())
+	log.Printf("Poller[%s] will wait %s before next polling", p.queueProvider.GetMaridMetadata().getQueueUrl(), pollingWaitPeriod.String())
 
 	for {
 		ticker := time.NewTicker(pollingWaitPeriod)
 		select {
 		case <- p.wakeUpChan:
 			ticker.Stop()
-			log.Printf("Poller[%s] has been interrupted while waiting for next polling.", p.GetQueueUrl())
+			log.Printf("Poller[%s] has been interrupted while waiting for next polling.", p.queueProvider.GetMaridMetadata().getQueueUrl())
 			return
 		case <- ticker.C:
 			return
@@ -282,12 +258,12 @@ func waitPolling(p *PollerImpl, pollingWaitPeriod time.Duration) {
 
 func runPoller(p *PollerImpl) {
 
-	log.Printf("Poller[%s] has started to run.", p.GetQueueUrl())
+	log.Printf("Poller[%s] has started to run.", p.queueProvider.GetMaridMetadata().getQueueUrl())
 
 	for {
 		select {
 		case <- p.quit:
-			log.Printf("Poller[%s] has stopped to poll.", p.GetQueueUrl())
+			log.Printf("Poller[%s] has stopped to poll.", p.queueProvider.GetMaridMetadata().getQueueUrl())
 			return
 		default:
 			if shouldWait := p.poll(); shouldWait {

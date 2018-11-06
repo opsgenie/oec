@@ -6,7 +6,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/sqs"
 
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/google/uuid"
 	"log"
 	"sync"
 	"net/http"
@@ -22,14 +21,12 @@ type QueueProvider interface {
 	ReceiveMessage(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error)
 
 	RefreshClient(assumeRoleResult *AssumeRoleResult) error
-	GetQueueUrl() string
+	GetMaridMetadata() *MaridMetadata
 }
 
 type MaridQueueProvider struct {
 
-	region string
-	queueName string
-	queueUrl string
+	maridMetadata *MaridMetadata
 
 	client	*sqs.SQS
 	rwMu	*sync.RWMutex
@@ -46,43 +43,25 @@ type MaridQueueProvider struct {
 	newConfigMethod     func(mqp *MaridQueueProvider, assumeRoleResult *AssumeRoleResult) *aws.Config
 }
 
-func NewQueueProvider(queueUrl string) QueueProvider {
-	return &MaridQueueProvider{
-		queueName:                     	uuid.New().String(),
-		rwMu:                          	&sync.RWMutex{},
-		queueUrl:					   	queueUrl,
-		region:							"us-west-2",
-		ChangeMessageVisibilityMethod: 	ChangeMessageVisibility,
-		DeleteMessageMethod:           	DeleteMessage,
-		ReceiveMessageMethod:          	ReceiveMessage,
-		refreshClientMethod:           	RefreshClient,
-		newConfigMethod:               	newConfig,
+func NewQueueProvider(maridMetadata *MaridMetadata) (QueueProvider, error) {
+	 provider := &MaridQueueProvider {
+		maridMetadata:                 maridMetadata,
+		rwMu:                          &sync.RWMutex{},
+		ChangeMessageVisibilityMethod: ChangeMessageVisibility,
+		DeleteMessageMethod:           DeleteMessage,
+		ReceiveMessageMethod:          ReceiveMessage,
+		refreshClientMethod:           RefreshClient,
+		newConfigMethod:               newConfig,
 	}
+	err := provider.RefreshClient(&maridMetadata.AssumeRoleResult)
+	if err != nil {
+		return nil, err
+	}
+	return provider, nil
 }
 
-/*func (mqp *MaridQueueProvider) getRegion() string {
-	defer mqp.rwMu.RUnlock()
-	mqp.rwMu.RLock()
-	return mqp.token.getEndpoint()
-}
-func (mqp *MaridQueueProvider) GetQueueUrl() string {
-	defer mqp.rwMu.RUnlock()
-	mqp.rwMu.RLock()
-	return mqp.token.GetQueueUrl()
-}
-func (mqp *MaridQueueProvider) getSuccessPeriod() time.Duration {
-	defer mqp.rwMu.RUnlock()
-	mqp.rwMu.RLock()
-	return time.Duration(mqp.token.getSuccessRefreshPeriod()) * time.Second
-}
-func (mqp *MaridQueueProvider) getErrorPeriod() time.Duration {
-	defer mqp.rwMu.RUnlock()
-	mqp.rwMu.RLock()
-	return time.Duration(mqp.token.getErrorRefreshPeriod()) * time.Second
-}*/
-
-func (mqp *MaridQueueProvider) GetQueueUrl() string {
-	return mqp.queueUrl
+func (mqp *MaridQueueProvider) GetMaridMetadata() *MaridMetadata {
+	return mqp.maridMetadata
 }
 
 func (mqp *MaridQueueProvider) ChangeMessageVisibility(message *sqs.Message, visibilityTimeout int64) error {
@@ -107,9 +86,11 @@ func (mqp *MaridQueueProvider) newConfig(assumeRoleResult *AssumeRoleResult) *aw
 
 func ChangeMessageVisibility(mqp *MaridQueueProvider, message *sqs.Message, visibilityTimeout int64) error {
 
+	queueUrl := mqp.maridMetadata.getQueueUrl()
+
 	request := &sqs.ChangeMessageVisibilityInput{
 		ReceiptHandle:     message.ReceiptHandle,
-		QueueUrl:          &mqp.queueUrl,
+		QueueUrl:          &queueUrl,
 		VisibilityTimeout: &visibilityTimeout,
 	}
 
@@ -128,8 +109,10 @@ func ChangeMessageVisibility(mqp *MaridQueueProvider, message *sqs.Message, visi
 
 func DeleteMessage(mqp *MaridQueueProvider, message *sqs.Message) error {
 
+	queueUrl := mqp.maridMetadata.getQueueUrl()
+
 	request := &sqs.DeleteMessageInput{
-		QueueUrl:      &mqp.queueUrl,
+		QueueUrl:      &queueUrl,
 		ReceiptHandle: message.ReceiptHandle,
 	}
 
@@ -147,6 +130,8 @@ func DeleteMessage(mqp *MaridQueueProvider, message *sqs.Message) error {
 
 func ReceiveMessage(mqp *MaridQueueProvider, maxNumOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
 
+	queueUrl := mqp.maridMetadata.getQueueUrl()
+
 	request := &sqs.ReceiveMessageInput{ // todo check attributes
 		AttributeNames: []*string{
 			aws.String(sqs.QueueAttributeNameAll),
@@ -154,7 +139,7 @@ func ReceiveMessage(mqp *MaridQueueProvider, maxNumOfMessage int64, visibilityTi
 		MessageAttributeNames: []*string{
 			aws.String(sqs.QueueAttributeNameAll),
 		},
-		QueueUrl:            &mqp.queueUrl,
+		QueueUrl:            &queueUrl,
 		MaxNumberOfMessages: aws.Int64(maxNumOfMessage),
 		VisibilityTimeout:   aws.Int64(visibilityTimeout),
 		WaitTimeSeconds:     aws.Int64(0),
@@ -184,12 +169,13 @@ func RefreshClient(mqp *MaridQueueProvider, assumeRoleResult *AssumeRoleResult) 
 
 	mqp.rwMu.Lock()
 	mqp.client = sqs.New(sess)
+	mqp.maridMetadata.AssumeRoleResult = *assumeRoleResult
 	mqp.awsChangeMessageVisibilityMethod = mqp.client.ChangeMessageVisibility
 	mqp.awsDeleteMessageMethod = mqp.client.DeleteMessage
 	mqp.awsReceiveMessageMethod = mqp.client.ReceiveMessage
 	mqp.rwMu.Unlock()
 
-	log.Printf("Client of queue provider[%s] has refreshed.", mqp.GetQueueUrl())
+	log.Printf("Client of queue provider[%s] has refreshed.", mqp.maridMetadata.getQueueUrl())
 
 	return nil
 }
@@ -197,10 +183,16 @@ func RefreshClient(mqp *MaridQueueProvider, assumeRoleResult *AssumeRoleResult) 
 
 func newConfig(mqp *MaridQueueProvider, assumeRoleResult *AssumeRoleResult) *aws.Config {
 
-	ARRCredentials := assumeRoleResult.Credentials
-	creds := credentials.NewStaticCredentials(ARRCredentials.AccessKeyId, ARRCredentials.SecretAccessKey, ARRCredentials.SessionToken)
+	assumeRoleResultCredentials := assumeRoleResult.Credentials
+	creds := credentials.NewStaticCredentials(
+		assumeRoleResultCredentials.AccessKeyId,
+		assumeRoleResultCredentials.SecretAccessKey,
+		assumeRoleResultCredentials.SessionToken,
+	)
 
-	awsConfig := aws.NewConfig().WithRegion(mqp.region).WithCredentials(creds)
+	awsConfig := aws.NewConfig().
+		WithRegion(mqp.maridMetadata.getRegion()).
+		WithCredentials(creds)
 
 	return awsConfig
 }

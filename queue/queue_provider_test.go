@@ -11,12 +11,25 @@ import (
 	"strconv"
 	"time"
 	"math/rand"
+	"sync"
 )
 
-var testMqp = NewQueueProvider("testQueueUrl").(*MaridQueueProvider)
-var defaultMqp = NewQueueProvider("testQueueUrl").(*MaridQueueProvider)
+var testMqp = NewQueueProviderForTest(mockMaridMetadata1).(*MaridQueueProvider)
+var defaultMqp = NewQueueProviderForTest(mockMaridMetadata1).(*MaridQueueProvider)
 
-var mockAssumeRoleResult = mockToken.Data.AssumeRoleResult
+func NewQueueProviderForTest(maridMetadata MaridMetadata) QueueProvider {
+	return &MaridQueueProvider {
+		maridMetadata:                 &maridMetadata,
+		rwMu:                          &sync.RWMutex{},
+		ChangeMessageVisibilityMethod: ChangeMessageVisibility,
+		DeleteMessageMethod:           DeleteMessage,
+		ReceiveMessageMethod:          ReceiveMessage,
+		refreshClientMethod:           RefreshClient,
+		newConfigMethod:               newConfig,
+	}
+}
+
+var mockAssumeRoleResult = mockAssumeRoleResult1
 var mockCreds = credentials.NewStaticCredentials(
 	mockAssumeRoleResult.Credentials.AccessKeyId,
 	mockAssumeRoleResult.Credentials.SecretAccessKey,
@@ -64,13 +77,6 @@ func mockPoll(p *PollerImpl) (shouldWait bool) {
 	}
 
 	return rand.Intn(2) == 0
-}
-
-func TestGetQueueUrl(t *testing.T) {
-
-	url := testMqp.GetQueueUrl()
-
-	assert.Equal(t, "testQueueUrl", url)
 }
 
 func TestChangeMessageVisibility(t *testing.T) {
@@ -179,7 +185,7 @@ func TestRefreshClient(t *testing.T) {
 	assert.Nil(t, err)
 
 	expected := aws.NewConfig().
-		WithRegion(testMqp.region).
+		WithRegion(testMqp.GetMaridMetadata().getRegion()).
 		WithCredentials(mockCreds)
 
 	assert.Equal(t, expected.Credentials, testMqp.client.Config.Credentials)
@@ -203,14 +209,10 @@ func TestRefreshClientWithNilConfig(t *testing.T) {
 
 func TestNewConfig(t *testing.T) {
 
-	defer func() {
-		testMqp.region = defaultMqp.region
-	}()
-
-	testMqp.region = "testRegion"
+	assert.Equal(t, mockMaridMetadata1, *testMqp.GetMaridMetadata())
 
 	expected := aws.NewConfig().
-		WithRegion(testMqp.region).
+		WithRegion(testMqp.GetMaridMetadata().getRegion()).
 		WithCredentials(mockCreds)
 
 	awsConfig := testMqp.newConfig(&mockAssumeRoleResult)
