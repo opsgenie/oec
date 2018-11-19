@@ -16,10 +16,11 @@ func ReadConfFile() error {
 
 	if confSource == "git" {
 		privateKeyFilePath := os.Getenv("MARIDCONFREPOPRIVATEKEYPATH")
+		passPhrase := os.Getenv("MARIDCONFGITPASSPHRASE")
 		gitUrl := os.Getenv("MARIDCONFREPOGITURL")
 		maridConfPath := os.Getenv("MARIDCONFGITFILEPATH")
 
-		gitConf, err := readConfigurationFromGitFunction(gitUrl, maridConfPath, privateKeyFilePath)
+		gitConf, err := readConfigurationFromGitFunction(gitUrl, maridConfPath, privateKeyFilePath, passPhrase)
 
 		if err == nil {
 			copied, err := cloneMap(gitConf)

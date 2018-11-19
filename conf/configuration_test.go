@@ -57,7 +57,7 @@ var testActionMappings = map[string]interface{}{
 }
 var testLocalConfFilePath = "/path/to/test/conf/file.json"
 
-func mockReadConfigurationFromGit(url string, confPath string, privateKeyFilePath string) (map[string]interface{}, error) {
+func mockReadConfigurationFromGit(url string, confPath string, privateKeyFilePath string, passPhrase string) (map[string]interface{}, error) {
 	readConfigurationFromGitCalled = true
 
 	if len(url) <= 0 {
@@ -70,6 +70,10 @@ func mockReadConfigurationFromGit(url string, confPath string, privateKeyFilePat
 
 	if len(privateKeyFilePath) <= 0 {
 		return nil, errors.New("privateKeyFilePath was empty.")
+	}
+
+	if len(passPhrase) <= 0 {
+		return nil, errors.New("passPhrase was empty.")
 	}
 
 	return testConfMap, nil

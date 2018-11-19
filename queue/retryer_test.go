@@ -18,6 +18,7 @@ func mockHttpGet(retryer *Retryer, request *http.Request) (*http.Response, error
 	buff := bytes.NewBuffer(token)
 
 	response := &http.Response{}
+	response.StatusCode = 200
 	response.Body = ioutil.NopCloser(buff)
 
 	return response, nil

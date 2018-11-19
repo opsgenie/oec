@@ -125,9 +125,9 @@ func TestExecute(t *testing.T) {
 			j.observer = time.NewTimer(time.Second)
 		},
 		ExecuteMethod: Execute,
-		deleteMessage: func(message *sqs.Message) error {
+		queueProvider: &MaridQueueProvider{DeleteMessageMethod: func(mqp *MaridQueueProvider, message *sqs.Message) error {
 			return nil
-		},
+		}},
 		GetMessageMethod: GetJobMessage,
 		GetJobIdMethod: func(j *SqsJob) string {
 			return "jobId"
@@ -173,7 +173,8 @@ func TestExecuteWithProcessError(t *testing.T) {
 	}
 
 	sqsJob := SqsJob {
-		queueMessage: maridMessage,
+		queueMessage:  maridMessage,
+		queueProvider: NewMockQueueProvider(),
 		shouldObserve: false,
 		setStateToExecutingMethod: func(j *SqsJob) bool {
 			return true
@@ -182,6 +183,13 @@ func TestExecuteWithProcessError(t *testing.T) {
 		GetJobIdMethod: func(j *SqsJob) string {
 			return "jobId"
 		},
+		GetMessageMethod: func(j *SqsJob) *sqs.Message {
+			return &sqs.Message{}
+		},
+	}
+
+	sqsJob.queueProvider.(*MockQueueProvider).DeleteMessageFunc = func(message *sqs.Message) error {
+		return nil
 	}
 
 	err := sqsJob.Execute()
@@ -212,9 +220,9 @@ func TestExecuteWithDeleteError(t *testing.T) {
 			return true
 		},
 		ExecuteMethod: Execute,
-		deleteMessage: func(message *sqs.Message) error {
+		queueProvider: &MaridQueueProvider{DeleteMessageMethod: func(mqp *MaridQueueProvider, message *sqs.Message) error {
 			return errors.New("Delete Error")
-		},
+		}},
 		GetJobIdMethod: func(j *SqsJob) string {
 			return "jobId"
 		},
@@ -250,9 +258,9 @@ func TestObserve(t *testing.T) {
 		checkJobStatusMethod:	checkJobStatus,
 		observeMethod:	observe,
 		observePeriod:	time.Nanosecond,
-		changeMessageVisibility: func(message *sqs.Message, visibilityTimeout int64) error {
+		queueProvider: &MaridQueueProvider{ChangeMessageVisibilityMethod: func(mqp *MaridQueueProvider, message *sqs.Message, visibilityTimeout int64) error {
 			return nil
-		},
+		}},
 	}
 
 	sqsJob.observe()
@@ -276,7 +284,7 @@ func TestGetQueue(t *testing.T) {
 		queue: expectedQueue,
 	}
 
-	actualQueue := jobQueue.GetQueue()
+	actualQueue := jobQueue.GetChan()
 
 	assert.Equal(t, expectedQueue, actualQueue)
 }

@@ -22,55 +22,42 @@ type Poller interface {
 	SetVisibilityTimeout(timeoutInSeconds *int64) Poller
 
 	GetQueueProvider() QueueProvider
-	RefreshClient(assumeRoleResult *AssumeRoleResult) error
+	RefreshClient(assumeRoleResult AssumeRoleResult) error
 }
 
-type PollerImpl struct {
-	queueProvider QueueProvider
+type MaridPoller struct {
+	workerPool		WorkerPool
+	queueProvider 	QueueProvider
 
 	pollingWaitInterval        *time.Duration
 	maxNumberOfMessages        *int64
 	visibilityTimeoutInSeconds *int64
 
-	state       uint32
-	startStopMu *sync.Mutex
-	quit        chan struct{}
-	wakeUpChan  chan struct{}
+	state          uint32
+	startStopMutex *sync.Mutex
+	quit           chan struct{}
+	wakeUpChan     chan struct{}
 
-	getNumberOfAvailableWorker func() uint32
-	submit                     func(job Job) (bool, error)
-	isWorkerPoolRunning        func() bool
-
-	receiveMessage          func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error)
-	changeMessageVisibility func(message *sqs.Message, visibilityTimeout int64) error
-	refreshClientMethod   	func(assumeRoleResult *AssumeRoleResult) error
-	getQueueUrlMethod	  	func() string
-
-	releaseMessagesMethod func(p *PollerImpl, messages []*sqs.Message)
-	waitMethod            func(p *PollerImpl, pollingWaitPeriod time.Duration)
-	runMethod             func(p *PollerImpl)
-	wakeUpMethod          func(p *PollerImpl)
-	StopPollingMethod     func(p *PollerImpl) error
-	StartPollingMethod    func(p *PollerImpl) error
-	pollMethod            func(p *PollerImpl) (shouldWait bool)
+	releaseMessagesMethod 	func(p *MaridPoller, messages []*sqs.Message)
+	waitMethod            	func(p *MaridPoller, pollingWaitPeriod time.Duration)
+	runMethod             	func(p *MaridPoller)
+	wakeUpMethod          	func(p *MaridPoller)
+	StopPollingMethod     	func(p *MaridPoller) error
+	StartPollingMethod    	func(p *MaridPoller) error
+	pollMethod            	func(p *MaridPoller) (shouldWait bool)
 }
 
 func NewPoller(workerPool WorkerPool, queueProvider QueueProvider, pollingWaitInterval *time.Duration, maxNumberOfMessages *int64, visibilityTimeoutInSeconds *int64) Poller {
-	return &PollerImpl{
+	return &MaridPoller{
 		quit:                       make(chan struct{}),
 		wakeUpChan:                 make(chan struct{}),
 		state:                      INITIAL,
-		startStopMu:                &sync.Mutex{},
+		startStopMutex:             &sync.Mutex{},
 		pollingWaitInterval:        pollingWaitInterval,
 		maxNumberOfMessages:        maxNumberOfMessages,
 		visibilityTimeoutInSeconds: visibilityTimeoutInSeconds,
-		getNumberOfAvailableWorker: workerPool.GetNumberOfAvailablefWorker,
-		submit:                     workerPool.Submit,
-		isWorkerPoolRunning:        workerPool.IsRunning,
+		workerPool: 				workerPool,
 		queueProvider:              queueProvider,
-		receiveMessage:             queueProvider.ReceiveMessage,
-		changeMessageVisibility:    queueProvider.ChangeMessageVisibility,
-		refreshClientMethod:        queueProvider.RefreshClient,
 		releaseMessagesMethod:      releaseMessages,
 		waitMethod:                 waitPolling,
 		runMethod:                  runPoller,
@@ -81,80 +68,80 @@ func NewPoller(workerPool WorkerPool, queueProvider QueueProvider, pollingWaitIn
 	}
 }
 
-func (p *PollerImpl) releaseMessages(messages []*sqs.Message) {
+func (p *MaridPoller) releaseMessages(messages []*sqs.Message) {
 	p.releaseMessagesMethod(p, messages)
 }
 
-func (p *PollerImpl) poll() (shouldWait bool) {
+func (p *MaridPoller) poll() (shouldWait bool) {
 	return p.pollMethod(p)
 }
 
-func (p *PollerImpl) wait(pollingWaitPeriod time.Duration) {
+func (p *MaridPoller) wait(pollingWaitPeriod time.Duration) {
 	p.waitMethod(p, pollingWaitPeriod)
 }
 
-func (p *PollerImpl) run() {
+func (p *MaridPoller) run() {
 	go p.runMethod(p)
 }
 
-func (p *PollerImpl) wakeUp() {
+func (p *MaridPoller) wakeUp() {
 	p.wakeUpMethod(p)
 }
 
-func (p *PollerImpl) StopPolling() error {
+func (p *MaridPoller) StopPolling() error {
 	return p.StopPollingMethod(p)
 }
 
-func (p *PollerImpl) StartPolling() error {
+func (p *MaridPoller) StartPolling() error {
 	return p.StartPollingMethod(p)
 }
 
-func (p *PollerImpl) GetPollingWaitInterval() time.Duration {
+func (p *MaridPoller) GetPollingWaitInterval() time.Duration {
 	return *p.pollingWaitInterval
 }
 
-func (p *PollerImpl) GetMaxNumberOfMessages() int64 {
+func (p *MaridPoller) GetMaxNumberOfMessages() int64 {
 	return *p.maxNumberOfMessages
 }
 
-func (p *PollerImpl) GetVisibilityTimeout() int64 {
+func (p *MaridPoller) GetVisibilityTimeout() int64 {
 	return *p.visibilityTimeoutInSeconds
 }
 
-func (p *PollerImpl) SetPollingWaitInterval(interval *time.Duration) Poller {
+func (p *MaridPoller) SetPollingWaitInterval(interval *time.Duration) Poller {
 	p.pollingWaitInterval = interval
 	return p
 }
 
-func (p *PollerImpl) SetMaxNumberOfMessages(max *int64) Poller {
+func (p *MaridPoller) SetMaxNumberOfMessages(max *int64) Poller {
 	p.maxNumberOfMessages = max
 	return p
 }
 
-func (p *PollerImpl) SetVisibilityTimeout(timeoutInSeconds *int64) Poller {
+func (p *MaridPoller) SetVisibilityTimeout(timeoutInSeconds *int64) Poller {
 	p.visibilityTimeoutInSeconds = timeoutInSeconds
 	return p
 }
 
-func (p *PollerImpl) GetQueueProvider() QueueProvider {
+func (p *MaridPoller) GetQueueProvider() QueueProvider {
 	return p.queueProvider
 }
 
 
-func (p *PollerImpl) RefreshClient(assumeRoleResult *AssumeRoleResult) error {
-	return p.refreshClientMethod(assumeRoleResult)
+func (p *MaridPoller) RefreshClient(assumeRoleResult AssumeRoleResult) error {
+	return p.queueProvider.RefreshClient(assumeRoleResult)
 }
 
-func wakeUpPoller(p *PollerImpl) {
+func wakeUpPoller(p *MaridPoller) {
 
 	if atomic.LoadUint32(&p.state) == WAITING {
 		p.wakeUpChan <- struct{}{}
 	}
 }
 
-func StopPolling(p *PollerImpl) error {
-	defer p.startStopMu.Unlock()
-	p.startStopMu.Lock()
+func StopPolling(p *MaridPoller) error {
+	defer p.startStopMutex.Unlock()
+	p.startStopMutex.Lock()
 
 	state := atomic.LoadUint32(&p.state)
 	if state != POLLING && state != WAITING {
@@ -169,9 +156,9 @@ func StopPolling(p *PollerImpl) error {
 	return nil
 }
 
-func StartPolling(p *PollerImpl) error {
-	defer p.startStopMu.Unlock()
-	p.startStopMu.Lock()
+func StartPolling(p *MaridPoller) error {
+	defer p.startStopMutex.Unlock()
+	p.startStopMutex.Lock()
 
 	state := atomic.LoadUint32(&p.state)
 	if state != INITIAL /*&& state != FINISHED*/ {
@@ -185,9 +172,9 @@ func StartPolling(p *PollerImpl) error {
 	return nil
 }
 
-func releaseMessages(p *PollerImpl, messages []*sqs.Message) {
+func releaseMessages(p *MaridPoller, messages []*sqs.Message) {
 	for i := 0; i < len(messages); i++ {
-		err := p.changeMessageVisibility(messages[i], 0)
+		err := p.queueProvider.ChangeMessageVisibility(messages[i], 0)
 		if err != nil {
 			log.Printf("Poller[%s] could not release message[%s]: %s.", p.queueProvider.GetMaridMetadata().getQueueUrl() , *messages[i].MessageId, err.Error())
 			continue
@@ -197,13 +184,13 @@ func releaseMessages(p *PollerImpl, messages []*sqs.Message) {
 	}
 }
 
-func poll(p *PollerImpl) (shouldWait bool) {
+func poll(p *MaridPoller) (shouldWait bool) {
 
-	availableWorkerCount := p.getNumberOfAvailableWorker()
+	availableWorkerCount := p.workerPool.NumberOfAvailableWorker()
 	if availableWorkerCount > 0 {
 
 		maxNumberOfMessages := Min(*p.maxNumberOfMessages, int64(availableWorkerCount))
-		messages, err := p.receiveMessage(maxNumberOfMessages, *p.visibilityTimeoutInSeconds)
+		messages, err := p.queueProvider.ReceiveMessage(maxNumberOfMessages, *p.visibilityTimeoutInSeconds)
 		if err != nil { // todo check wait time according to error / check error
 			log.Println(err.Error())
 			return true
@@ -217,8 +204,12 @@ func poll(p *PollerImpl) (shouldWait bool) {
 		log.Printf("%d messages received.", messageLength)
 
 		for i := 0; i < messageLength; i++ {
+
+			if  messages[i].MessageAttributes == nil || *messages[i].MessageAttributes["integrationId"].StringValue == p.queueProvider.GetIntegrationId() {
+				p.queueProvider.DeleteMessage(messages[i])
+			}
 			job := NewSqsJob(NewMaridMessage(messages[i]), p.queueProvider, *p.visibilityTimeoutInSeconds)
-			isSubmitted, err := p.submit(job)
+			isSubmitted, err := p.workerPool.Submit(job)
 			if err != nil {
 				p.releaseMessages(messages[i:])
 				return true	// todo return error or log
@@ -232,7 +223,7 @@ func poll(p *PollerImpl) (shouldWait bool) {
 	return false
 }
 
-func waitPolling(p *PollerImpl, pollingWaitPeriod time.Duration) {
+func waitPolling(p *MaridPoller, pollingWaitPeriod time.Duration) {
 
 	defer atomic.StoreUint32(&p.state, POLLING)
 	atomic.StoreUint32(&p.state, WAITING)
@@ -256,7 +247,7 @@ func waitPolling(p *PollerImpl, pollingWaitPeriod time.Duration) {
 	}
 }
 
-func runPoller(p *PollerImpl) {
+func runPoller(p *MaridPoller) {
 
 	log.Printf("Poller[%s] has started to run.", p.queueProvider.GetMaridMetadata().getQueueUrl())
 

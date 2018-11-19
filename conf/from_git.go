@@ -12,7 +12,7 @@ import (
 
 var gitCloneMethod = gitClone
 
-func readConfigurationFromGit(url string, confPath string, privateKeyFilePath string) (map[string]interface{}, error) {
+func readConfigurationFromGit(url string, confPath string, privateKeyFilePath string, passPhrase string) (map[string]interface{}, error) {
 	var tmpDir = os.TempDir()
 
 	err := os.MkdirAll(tmpDir, 0755)
@@ -22,16 +22,21 @@ func readConfigurationFromGit(url string, confPath string, privateKeyFilePath st
 	}
 
 	directoryName, err := parseDirectoryNameFromUrl(url)
+	os.RemoveAll(tmpDir + string(os.PathSeparator) + directoryName)
 	defer os.RemoveAll(tmpDir + string(os.PathSeparator) + directoryName)
 
 	if err != nil {
 		return nil, err
 	}
 
-	err = gitCloneMethod(url, privateKeyFilePath)
+	err = gitCloneMethod(tmpDir + string(os.PathSeparator) + directoryName, url, privateKeyFilePath, passPhrase)
 
-	configuration, err := parseConfiguration(tmpDir + string(os.PathSeparator) + directoryName +
-		string(os.PathSeparator) + confPath)
+	if err != nil {
+		return nil, err
+	}
+
+	configuration, err := parseConfiguration(tmpDir + string(os.PathSeparator) +
+		directoryName + string(os.PathSeparator) + confPath)
 
 	if err != nil {
 		return nil, err
@@ -40,25 +45,25 @@ func readConfigurationFromGit(url string, confPath string, privateKeyFilePath st
 	return configuration, nil
 }
 
-func gitClone(gitUrl string, privateKeyFilePath string) error {
-	cloneOptions, err := getCloneOptions(gitUrl, privateKeyFilePath)
+func gitClone(tmpDir string, gitUrl string, privateKeyFilePath string, passPhrase string) error {
+	cloneOptions, err := getCloneOptions(gitUrl, privateKeyFilePath, passPhrase)
 
 	if err != nil {
 		return err
 	}
 
-	_, err = git.PlainClone(""+string(os.PathSeparator)+"", false, &cloneOptions)
+	_, err = git.PlainClone(tmpDir, false, &cloneOptions)
 
 	return err
 }
-func getCloneOptions(gitUrl, privateKeyFilePath string) (git.CloneOptions, error) {
+func getCloneOptions(gitUrl, privateKeyFilePath string, passPhrase string) (git.CloneOptions, error) {
 	file, err := ioutil.ReadFile(privateKeyFilePath)
 
 	if err != nil {
 		return git.CloneOptions{}, err
 	}
 
-	signer, err := ssh.ParsePrivateKey(file)
+	signer, err := ssh.ParsePrivateKeyWithPassphrase(file, []byte(passPhrase))
 
 	if err != nil {
 		return git.CloneOptions{}, err

@@ -29,6 +29,8 @@ type Job interface {
 }
 
 type SqsJob struct {
+	queueProvider QueueProvider
+
 	id               *string
 	timeoutInSeconds int64
 	queueMessage     QueueMessage
@@ -39,9 +41,6 @@ type SqsJob struct {
 	shouldObserve 	bool
 	observer 		*time.Timer
 	observePeriod   time.Duration
-
-	changeMessageVisibility 	func(message *sqs.Message, visibilityTimeout int64) (error)
-	deleteMessage 				func(message *sqs.Message) (error)
 
 	setStateToExecutingMethod 	func(j *SqsJob) bool
 	GetJobIdMethod				func(j *SqsJob) string
@@ -61,8 +60,7 @@ func NewSqsJob(queueMessage QueueMessage, queueProvider QueueProvider, timeoutIn
 		mu:                      	&sync.Mutex{},
 		shouldObserve:           	false,
 		exceedCount:             	0,
-		changeMessageVisibility: 	queueProvider.ChangeMessageVisibility,
-		deleteMessage:           	queueProvider.DeleteMessage,
+		queueProvider:				queueProvider,
 		setStateToExecutingMethod: 	setStateToExecuting,
 		GetJobIdMethod: 		   	GetJobId,
 		GetMessageMethod: 		   	GetJobMessage,
@@ -130,6 +128,13 @@ func Execute(j *SqsJob) (err error) {
 		j.observe()
 	}
 
+	err = j.queueProvider.DeleteMessage(j.GetMessage())
+	if err != nil {
+		atomic.StoreUint32(&j.state, ERROR)
+		return err
+	}
+	log.Printf("Message of job[%s] has been deleted.", j.GetJobId())
+
 	start := time.Now()
 	err = j.queueMessage.Process()
 	if err != nil {
@@ -138,13 +143,6 @@ func Execute(j *SqsJob) (err error) {
 	}
 	took := time.Now().Sub(start)
 	log.Printf("Process job[%s] has been done and it took %f seconds.", j.GetJobId(), took.Seconds())
-
-	err = j.deleteMessage(j.GetMessage())
-	if err != nil {
-		atomic.StoreUint32(&j.state, ERROR) // todo retry delete
-		return err
-	}
-	log.Printf("Message of job[%s] has been deleted.", j.GetJobId())
 
 	atomic.StoreUint32(&j.state, FINISHED)
 	return nil
@@ -165,7 +163,7 @@ func checkJobStatus(j *SqsJob) {
 			return
 		}
 		log.Printf("Timeout is exceed for job[%s] for %d times.", j.GetJobId(), j.exceedCount)
-		err := j.changeMessageVisibility(j.queueMessage.GetMessage(), j.timeoutInSeconds)
+		err := j.queueProvider.ChangeMessageVisibility(j.queueMessage.GetMessage(), j.timeoutInSeconds)
 		if err != nil {
 			// todo retry ?
 		}
@@ -199,7 +197,7 @@ func (jq *JobQueue) Decrement() {
 	atomic.AddUint32(&jq.load, ^uint32(0))
 }
 
-func (jq *JobQueue) GetQueue() chan Job {
+func (jq *JobQueue) GetChan() chan Job {
 	return jq.queue
 }
 
@@ -213,7 +211,7 @@ func (jq *JobQueue) GetSize() uint32 {
 
 func (jq *JobQueue) GetLoadFactor() float32 {
 	if jq.queueSize == 0 {
-		return 1
+		return 0
 	}
 	return float32(atomic.LoadUint32(&jq.load) / jq.queueSize)
 }

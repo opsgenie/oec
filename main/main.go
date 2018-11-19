@@ -11,15 +11,13 @@ func main() {
 	err := conf.ReadConfFile()
 	if err != nil {
 		panic(err.Error())
-		return
 	}
 	queueProcessor := queue.NewQueueProcessor()
 
 	err = queueProcessor.Start()
 	if err != nil {
 		panic(err.Error())
-		return
 	}
-	// TODO: always on main
+
 	queueProcessor.Wait()
 }

@@ -59,7 +59,7 @@ var testConfMapFromGit = map[string]interface{}{
 	"key2": "val2",
 }
 
-func mockGitClone(url string, privateKeyFilePath string) error {
+func mockGitClone(tempDir string, url string, privateKeyFilePath string, passPhrase string) error {
 	gitCloneCalled = true
 	var tmpDir = os.TempDir()
 	directoryName, err := parseDirectoryNameFromUrl(url)
@@ -90,7 +90,7 @@ func TestReadConfigurationFromGit(t *testing.T) {
 	oldGitCloneMethod := gitCloneMethod
 	defer func() {gitCloneMethod = oldGitCloneMethod}()
 	gitCloneMethod = mockGitClone
-	config, err := readConfigurationFromGit(url, testConfFilePath, privateKeyFilePath)
+	config, err := readConfigurationFromGit(url, testConfFilePath, privateKeyFilePath, "passPhrase")
 
 	if err != nil {
 		t.Error("Could not read from Marid configuration. Error: " + err.Error())
@@ -114,7 +114,7 @@ func TestReadConfigurationFromGit(t *testing.T) {
 func TestRemoveLocalRepoEvenIfErrorOccurs(t *testing.T) {
 	var repoName = "repo"
 	_, err := readConfigurationFromGit("https://github.com/someaccount/"+repoName+".git", testConfFilePath,
-		"dummypath")
+		"dummypath", "passPhrase")
 	var repoDir = os.TempDir() + string(os.PathSeparator) + repoName
 
 	if err == nil {
