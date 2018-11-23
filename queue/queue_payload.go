@@ -1,24 +1,30 @@
 package queue
 
 type QueuePayload struct {
-	Params Params `json:"params,omitempty"`
+	Source          Source `json:"source,omitempty"`
+	Alert           Alert  `json:"alert,omitempty"`
+	Action          string `json:"action,omitempty"`
+	IntegrationId   string `json:"integrationName,omitempty"`
+	IntegrationName string `json:"integrationId,omitempty"`
 }
 
-type Params struct {
-	Type            string         `json:"type,omitempty"`
-	AlertId         string         `json:"alertId,omitempty"`
-	CustomerId      string         `json:"customerId,omitempty"`
-	Action          string         `json:"action,omitempty"`
-	MappedActionV2  MappedActionV2 `json:"mappedActionV2,omitempty"`
-	IntegrationId   string         `json:"integrationId,omitempty"`
-	IntegrationName string         `json:"integrationName,omitempty"`
-	IntegrationType string         `json:"integrationType,omitempty"`
-	SendViaMarid    bool           `json:"sendViaMarid,omitempty"`
-	QueueUrls       []string       `json:"queueUrls,omitempty"`
-	QueueName       string         `json:"queueName,omitempty"`
+type Source struct {
+	Name string `json:"name,omitempty"`
+	Type string `json:"type,omitempty"`
 }
 
-type MappedActionV2 struct {
-	Name       string `json:"name,omitempty"`
-	ExtraField string `json:"type,omitempty"`
+type Alert struct {
+	UpdatedAt  int64    `json:"updatedAt,omitempty"`
+	Tags       []string `json:"tags,omitempty"`
+	Teams      []string `json:"teams,omitempty"`
+	Recipients []string `json:"recipients,omitempty"`
+	Message    string   `json:"message,omitempty"`
+	Username   string   `json:"username,omitempty"`
+	AlertId    string   `json:"alertId,omitempty"`
+	Source     string   `json:"source,omitempty"`
+	Alias      string   `json:"alias,omitempty"`
+	TinyId     string   `json:"tinyId,omitempty"`
+	CreatedAt  int64    `json:"createdAt,omitempty"`
+	UserId     string   `json:"userId,omitempty"`
+	Entity     string   `json:"entity,omitempty"`
 }

@@ -33,10 +33,11 @@ func Process(mqm *MaridQueueMessage) error {
 	queuePayload := QueuePayload{}
 	err := json.Unmarshal([]byte(*mqm.GetMessage().Body), &queuePayload)
 	if err == nil {
-		if action := queuePayload.Params.Action; action != "" {
+		if action := queuePayload.Action; action != "" {
+			payload, _ := json.Marshal(queuePayload)
 			actionMappings := conf.Configuration["actionMappings"].(map[string]interface{})
 			if _, ok := actionMappings[action]; ok {
-				commandOutput, errorOutput, err := runbook.ExecuteRunbookMethod(action)
+				commandOutput, errorOutput, err := runbook.ExecuteRunbookMethod(action, string(payload))
 				log.Println(commandOutput, errorOutput, err)
 			} else {
 				return errors.New("There is no mapped action found for [" + action + "]")

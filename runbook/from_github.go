@@ -1,18 +1,18 @@
 package runbook
 
 import (
-	"golang.org/x/oauth2"
-	"github.com/google/go-github/github"
-	"io/ioutil"
 	"context"
-	"path"
+	"github.com/google/go-github/github"
+	"golang.org/x/oauth2"
+	"io/ioutil"
 	"os"
+	"path"
 )
 
 var getRunbookFromGithubFunction = getRunbookFromGithub
 
 func executeRunbookFromGithub(runbookRepoOwner string, runbookRepoName string, runbookRepoFilePath string,
-	runbookRepoToken string, environmentVariables map[string]interface{}) (string, string, error) {
+	runbookRepoToken string, args []string, environmentVariables map[string]interface{}) (string, string, error) {
 	content, err := getRunbookFromGithubFunction(runbookRepoOwner, runbookRepoName, runbookRepoFilePath, runbookRepoToken)
 
 	if err != nil {
@@ -32,7 +32,7 @@ func executeRunbookFromGithub(runbookRepoOwner string, runbookRepoName string, r
 		return "", "", err
 	}
 
-	return execute(filePath, nil, environmentVariables)
+	return execute(filePath, args, environmentVariables)
 }
 
 func getRunbookFromGithub(owner string, repo string, filepath string, token string) (string, error) {

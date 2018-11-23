@@ -81,7 +81,7 @@ type WorkerPoolImpl struct {
 	workerCountMutex *sync.Mutex
 	startStopMutex   *sync.Mutex
 
-	isRunning         bool
+	isRunning bool
 
 	submitFunc func(wp *WorkerPoolImpl, job Job) (isSubmitted bool, err error)
 }
@@ -89,18 +89,18 @@ type WorkerPoolImpl struct {
 func NewWorkerPool(maxWorker uint32, minWorker uint32, queueSize uint32, keepAliveTime time.Duration, monitoringPeriod time.Duration) WorkerPool {
 
 	wp := &WorkerPoolImpl{
-		quit:              	make(chan struct{}),
-		stopNow:           	make(chan struct{}),
-		jobQueue:          	NewJobQueue(queueSize),
-		maxNumberOfWorker: 	maxWorker,
-		minNumberOfWorker: 	minWorker,
-		workersWaitGroup:  	&sync.WaitGroup{},
-		workerCountMutex:  	&sync.Mutex{},
-		startStopMutex:    	&sync.Mutex{},
-		keepAliveTime:     	keepAliveTime,
-		monitoringPeriod:  	monitoringPeriod,
-		isRunning:			false,
-		submitFunc:			Submit,
+		quit:              make(chan struct{}),
+		stopNow:           make(chan struct{}),
+		jobQueue:          NewJobQueue(queueSize),
+		maxNumberOfWorker: maxWorker,
+		minNumberOfWorker: minWorker,
+		workersWaitGroup:  &sync.WaitGroup{},
+		workerCountMutex:  &sync.Mutex{},
+		startStopMutex:    &sync.Mutex{},
+		keepAliveTime:     keepAliveTime,
+		monitoringPeriod:  monitoringPeriod,
+		isRunning:         false,
+		submitFunc:        Submit,
 	}
 
 	return wp
@@ -173,7 +173,7 @@ func (wp *WorkerPoolImpl) monitorMetrics(period time.Duration) {
 	for {
 		select {
 		case <-ticker.C:
-			log.Printf("Idle workers: %d, Active workes: %d, Queue Size: %d, Queue load factor: %%%d", wp.numberOfIdleWorker, wp.numberOfActiveWorker, wp.jobQueue.GetSize(), int(wp.jobQueue.GetLoadFactor()* 100) )
+			log.Printf("Idle workers: %d, Active workers: %d, Queue Size: %d, Queue load factor: %%%d", wp.numberOfIdleWorker, wp.numberOfActiveWorker, wp.jobQueue.GetSize(), int(wp.jobQueue.GetLoadFactor()*100))
 		case <-wp.quit:
 			log.Println("Monitor metrics has stopped.")
 			return
@@ -184,9 +184,10 @@ func (wp *WorkerPoolImpl) monitorMetrics(period time.Duration) {
 func (wp *WorkerPoolImpl) addWorker(num uint32) {
 
 	for i := uint32(0); i < num && wp.getNumberOfAddableWorker() > 0; i++ {
-		if !wp.IsRunning() {
+		if !wp.isRunning {
 			return
 		}
+		atomic.AddUint32(&wp.numberOfIdleWorker, 1)
 		atomic.AddUint32(&wp.numberOfCurrentWorker, 1)
 		worker := NewWorker(wp)
 		go worker.work()
@@ -198,12 +199,12 @@ func (wp *WorkerPoolImpl) Submit(job Job) (isSubmitted bool, err error) {
 }
 
 func Submit(wp *WorkerPoolImpl, job Job) (isSubmitted bool, err error) {
-	if !wp.IsRunning() {
+	if !wp.isRunning {
 		log.Println("Worker pool does not accept job now.")
 		return false, errors.New("Worker pool is not working")
 	}
 
-	if wp.getNumberOfIdleWorker() > 0 {
+	if wp.getNumberOfIdleWorker() > 2 {
 		isSubmitted = true
 	} else if wp.getNumberOfAddableWorker() > 0 {
 		wp.addWorker(1)
@@ -269,7 +270,6 @@ func (w *Worker) work() {
 	w.workerPool.workersWaitGroup.Add(1)
 
 	defer atomic.AddUint32(&w.workerPool.numberOfIdleWorker, ^uint32(0))
-	atomic.AddUint32(&w.workerPool.numberOfIdleWorker, 1)
 
 	ticker := time.NewTicker(w.workerPool.keepAliveTime)
 

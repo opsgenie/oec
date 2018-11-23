@@ -26,8 +26,8 @@ type Poller interface {
 }
 
 type MaridPoller struct {
-	workerPool		WorkerPool
-	queueProvider 	QueueProvider
+	workerPool    WorkerPool
+	queueProvider QueueProvider
 
 	pollingWaitInterval        *time.Duration
 	maxNumberOfMessages        *int64
@@ -38,13 +38,13 @@ type MaridPoller struct {
 	quit           chan struct{}
 	wakeUpChan     chan struct{}
 
-	releaseMessagesMethod 	func(p *MaridPoller, messages []*sqs.Message)
-	waitMethod            	func(p *MaridPoller, pollingWaitPeriod time.Duration)
-	runMethod             	func(p *MaridPoller)
-	wakeUpMethod          	func(p *MaridPoller)
-	StopPollingMethod     	func(p *MaridPoller) error
-	StartPollingMethod    	func(p *MaridPoller) error
-	pollMethod            	func(p *MaridPoller) (shouldWait bool)
+	releaseMessagesMethod func(p *MaridPoller, messages []*sqs.Message)
+	waitMethod            func(p *MaridPoller, pollingWaitPeriod time.Duration)
+	runMethod             func(p *MaridPoller)
+	wakeUpMethod          func(p *MaridPoller)
+	StopPollingMethod     func(p *MaridPoller) error
+	StartPollingMethod    func(p *MaridPoller) error
+	pollMethod            func(p *MaridPoller) (shouldWait bool)
 }
 
 func NewPoller(workerPool WorkerPool, queueProvider QueueProvider, pollingWaitInterval *time.Duration, maxNumberOfMessages *int64, visibilityTimeoutInSeconds *int64) Poller {
@@ -56,7 +56,7 @@ func NewPoller(workerPool WorkerPool, queueProvider QueueProvider, pollingWaitIn
 		pollingWaitInterval:        pollingWaitInterval,
 		maxNumberOfMessages:        maxNumberOfMessages,
 		visibilityTimeoutInSeconds: visibilityTimeoutInSeconds,
-		workerPool: 				workerPool,
+		workerPool:                 workerPool,
 		queueProvider:              queueProvider,
 		releaseMessagesMethod:      releaseMessages,
 		waitMethod:                 waitPolling,
@@ -127,7 +127,6 @@ func (p *MaridPoller) GetQueueProvider() QueueProvider {
 	return p.queueProvider
 }
 
-
 func (p *MaridPoller) RefreshClient(assumeRoleResult AssumeRoleResult) error {
 	return p.queueProvider.RefreshClient(assumeRoleResult)
 }
@@ -176,18 +175,18 @@ func releaseMessages(p *MaridPoller, messages []*sqs.Message) {
 	for i := 0; i < len(messages); i++ {
 		err := p.queueProvider.ChangeMessageVisibility(messages[i], 0)
 		if err != nil {
-			log.Printf("Poller[%s] could not release message[%s]: %s.", p.queueProvider.GetMaridMetadata().getQueueUrl() , *messages[i].MessageId, err.Error())
+			log.Printf("Poller[%s] could not release message[%s]: %s.", p.queueProvider.GetMaridMetadata().getQueueUrl(), *messages[i].MessageId, err.Error())
 			continue
 		}
 
-		log.Printf("Poller[%s] released message[%s].", p.queueProvider.GetMaridMetadata().getQueueUrl() , *messages[i].MessageId)
+		log.Printf("Poller[%s] released message[%s].", p.queueProvider.GetMaridMetadata().getQueueUrl(), *messages[i].MessageId)
 	}
 }
 
 func poll(p *MaridPoller) (shouldWait bool) {
 
 	availableWorkerCount := p.workerPool.NumberOfAvailableWorker()
-	if availableWorkerCount > 0 {
+	if availableWorkerCount > 2 {
 
 		maxNumberOfMessages := Min(*p.maxNumberOfMessages, int64(availableWorkerCount))
 		messages, err := p.queueProvider.ReceiveMessage(maxNumberOfMessages, *p.visibilityTimeoutInSeconds)
@@ -204,15 +203,19 @@ func poll(p *MaridPoller) (shouldWait bool) {
 		log.Printf("%d messages received.", messageLength)
 
 		for i := 0; i < messageLength; i++ {
-
-			if  messages[i].MessageAttributes == nil || *messages[i].MessageAttributes["integrationId"].StringValue == p.queueProvider.GetIntegrationId() {
+			if messages[i].MessageAttributes == nil || *messages[i].MessageAttributes["integrationId"].StringValue != p.queueProvider.GetIntegrationId() {
 				p.queueProvider.DeleteMessage(messages[i])
+				continue
 			}
 			job := NewSqsJob(NewMaridMessage(messages[i]), p.queueProvider, *p.visibilityTimeoutInSeconds)
+			start := time.Now()
 			isSubmitted, err := p.workerPool.Submit(job)
+			took := time.Now().Sub(start)
+			log.Printf("Submit took %f seconds.", took.Seconds())
+
 			if err != nil {
 				p.releaseMessages(messages[i:])
-				return true	// todo return error or log
+				return true // todo return error or log
 			} else if isSubmitted {
 				continue
 			} else {
@@ -220,7 +223,7 @@ func poll(p *MaridPoller) (shouldWait bool) {
 			}
 		}
 	}
-	return false
+	return true
 }
 
 func waitPolling(p *MaridPoller, pollingWaitPeriod time.Duration) {
@@ -237,11 +240,11 @@ func waitPolling(p *MaridPoller, pollingWaitPeriod time.Duration) {
 	for {
 		ticker := time.NewTicker(pollingWaitPeriod)
 		select {
-		case <- p.wakeUpChan:
+		case <-p.wakeUpChan:
 			ticker.Stop()
 			log.Printf("Poller[%s] has been interrupted while waiting for next polling.", p.queueProvider.GetMaridMetadata().getQueueUrl())
 			return
-		case <- ticker.C:
+		case <-ticker.C:
 			return
 		}
 	}
@@ -253,7 +256,7 @@ func runPoller(p *MaridPoller) {
 
 	for {
 		select {
-		case <- p.quit:
+		case <-p.quit:
 			log.Printf("Poller[%s] has stopped to poll.", p.queueProvider.GetMaridMetadata().getQueueUrl())
 			return
 		default:

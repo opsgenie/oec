@@ -15,7 +15,7 @@ var executeRunbookFromGithubFunction = executeRunbookFromGithub
 var executeRunbookFromLocalFunction = executeRunbookFromLocal
 var ExecuteRunbookMethod = ExecuteRunbook
 
-func ExecuteRunbook(action string) (string, string, error) {
+func ExecuteRunbook(action string, arg string) (string, string, error) {
 	var mappedAction = conf.RunbookActionMapping[action].(map[string]interface{})
 
 	if len(mappedAction) > 0 {
@@ -29,11 +29,11 @@ func ExecuteRunbook(action string) (string, string, error) {
 			runbookRepoToken := mappedAction["repoToken"].(string)
 
 			return executeRunbookFromGithubFunction(runbookRepoOwner, runbookRepoName, runbookRepoFilePath, runbookRepoToken,
-				runbookEnvironmentVariables)
+				[]string{arg}, runbookEnvironmentVariables)
 		} else if runbookSource == "local" {
 			runbookFilePath := mappedAction["filePath"].(string)
 
-			return executeRunbookFromLocalFunction(runbookFilePath, runbookEnvironmentVariables)
+			return executeRunbookFromLocalFunction(runbookFilePath, []string{arg}, runbookEnvironmentVariables)
 		} else {
 			return "", "", errors.New("Unknown runbook source [" + runbookSource + "].")
 		}
