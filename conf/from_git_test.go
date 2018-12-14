@@ -8,56 +8,28 @@ import (
 
 var gitCloneCalled = false
 var testConfFilePath = "maridConf.json"
-var testConfFileContent = `{
+var mockConfFileContent = `{
+	"apiKey": "ApiKey",
     "actionMappings": {
         "Create": {
             "filePath": "/path/to/runbook.bin",
             "source": "local",
-            "environmentVariables": {
-                "k1": "v1",
-                "k2": "v2"
-            }
+            "environmentVariables": [
+                "e1=v1", "e2=v2"
+            ]
         },
         "Close": {
             "source": "github",
             "repoOwner": "testAccount",
             "repoName": "testRepo",
             "repoFilePath": "marid/testConfig.json",
-            "repoToken": "testtoken",
-            "environmentVariables": {
-                "k1": "v1",
-                "k2": "v2"
-            }
+            "repoToken": "testToken",
+            "environmentVariables": [
+                "e1=v1", "e2=v2"
+            ]
         }
-    },
-    "key1": "val1",
-    "key2": "val2"
+    }
 }`
-var testConfMapFromGit = map[string]interface{}{
-	"actionMappings": map[string]interface{}{
-		"Create": map[string]interface{}{
-			"filePath": "/path/to/runbook.bin",
-			"source":   "local",
-			"environmentVariables": map[string]interface{}{
-				"k1": "v1",
-				"k2": "v2",
-			},
-		},
-		"Close": map[string]interface{}{
-			"source":       "github",
-			"repoOwner":    "testAccount",
-			"repoName":     "testRepo",
-			"repoFilePath": "marid/testConfig.json",
-			"repoToken":    "testtoken",
-			"environmentVariables": map[string]interface{}{
-				"k1": "v1",
-				"k2": "v2",
-			},
-		},
-	},
-	"key1": "val1",
-	"key2": "val2",
-}
 
 func mockGitClone(tempDir string, url string, privateKeyFilePath string, passPhrase string) error {
 	gitCloneCalled = true
@@ -68,15 +40,15 @@ func mockGitClone(tempDir string, url string, privateKeyFilePath string, passPhr
 		return err
 	}
 
-	os.MkdirAll(tmpDir+string(os.PathSeparator)+directoryName, 0755)
-	testFile, err := os.OpenFile(tmpDir+string(os.PathSeparator)+directoryName+string(os.PathSeparator)+
+	os.MkdirAll(tmpDir + string(os.PathSeparator) + directoryName, 0755)
+	testFile, err := os.OpenFile(tmpDir + string(os.PathSeparator) + directoryName + string(os.PathSeparator) +
 		testConfFilePath, os.O_CREATE|os.O_WRONLY, 0755)
 
 	if err != nil {
 		return err
 	}
 
-	testFile.WriteString(testConfFileContent)
+	testFile.WriteString(mockConfFileContent)
 	testFile.Close()
 
 	return nil
@@ -86,11 +58,12 @@ func TestReadConfigurationFromGit(t *testing.T) {
 	repoName := "repo"
 	url := "https://github.com/someaccount/" + repoName + ".git"
 	privateKeyFilePath := "dummypath"
+	passPhrase := "passPhrase"
 
-	oldGitCloneMethod := gitCloneMethod
-	defer func() {gitCloneMethod = oldGitCloneMethod}()
-	gitCloneMethod = mockGitClone
-	config, err := readConfigurationFromGit(url, testConfFilePath, privateKeyFilePath, "passPhrase")
+	oldGitCloneMethod := gitCloneFunc
+	defer func() { gitCloneFunc = oldGitCloneMethod}()
+	gitCloneFunc = mockGitClone
+	config, err := readConfigurationFromGit(url, testConfFilePath, privateKeyFilePath, passPhrase)
 
 	if err != nil {
 		t.Error("Could not read from Marid configuration. Error: " + err.Error())
@@ -98,7 +71,7 @@ func TestReadConfigurationFromGit(t *testing.T) {
 
 	assert.True(t, gitCloneCalled, "readConfigurationFromGit function did not call the method gitClone.")
 
-	assert.Equal(t, testConfMapFromGit, config,
+	assert.Equal(t, mockConf, config,
 		"Actual config and expected config are not the same.")
 	var repoDir = os.TempDir() + string(os.PathSeparator) + repoName
 

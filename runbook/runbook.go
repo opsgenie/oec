@@ -4,103 +4,75 @@ import (
 	"github.com/opsgenie/marid2/conf"
 	"github.com/pkg/errors"
 	"io/ioutil"
-	"log"
 	"net/http"
-	"net/url"
-	"strconv"
-	"strings"
+	"github.com/sirupsen/logrus"
+	"encoding/json"
+	"bytes"
+	"github.com/opsgenie/marid2/retryer"
 )
 
-var executeRunbookFromGithubFunction = executeRunbookFromGithub
-var executeRunbookFromLocalFunction = executeRunbookFromLocal
-var ExecuteRunbookMethod = ExecuteRunbook
+//const resultUrl = "https://api.opsgenie.com/v1/integrations/maridv2/actionExecutionResult"
+var resultUrl = "https://a2e3dfe8.ngrok.io/v2/integrations/maridv2/actionExecutionResult"
 
-func ExecuteRunbook(action string, arg string) (string, string, error) {
-	var mappedAction = conf.RunbookActionMapping[action].(map[string]interface{})
+var executeRunbookFromGithubFunc = executeRunbookFromGithub
+var executeRunbookFromLocalFunc = executeRunbookFromLocal
+var ExecuteRunbookFunc = ExecuteRunbook
 
-	if len(mappedAction) > 0 {
-		runbookSource := mappedAction["source"].(string)
-		runbookEnvironmentVariables := mappedAction["environmentVariables"].(map[string]interface{})
+var client = &retryer.Retryer{}
 
-		if runbookSource == "github" {
-			runbookRepoOwner := mappedAction["repoOwner"].(string)
-			runbookRepoName := mappedAction["repoName"].(string)
-			runbookRepoFilePath := mappedAction["repoFilePath"].(string)
-			runbookRepoToken := mappedAction["repoToken"].(string)
+func ExecuteRunbook(mappedAction *conf.MappedAction, arg string) (string, string, error) {
 
-			return executeRunbookFromGithubFunction(runbookRepoOwner, runbookRepoName, runbookRepoFilePath, runbookRepoToken,
-				[]string{arg}, runbookEnvironmentVariables)
-		} else if runbookSource == "local" {
-			runbookFilePath := mappedAction["filePath"].(string)
+	runbookSource := mappedAction.Source
+	runbookEnvironmentVariables := mappedAction.EnvironmentVariables
 
-			return executeRunbookFromLocalFunction(runbookFilePath, []string{arg}, runbookEnvironmentVariables)
-		} else {
-			return "", "", errors.New("Unknown runbook source [" + runbookSource + "].")
-		}
+	if runbookSource == "github" {
+		repoOwner := mappedAction.RepoOwner
+		repoName := mappedAction.RepoName
+		repoFilePath := mappedAction.RepoFilePath
+		repoToken := mappedAction.RepoToken
+
+		return executeRunbookFromGithubFunc(repoOwner, repoName, repoFilePath, repoToken, []string{arg}, runbookEnvironmentVariables)
+	} else if runbookSource == "local" {
+		runbookFilePath := mappedAction.FilePath
+
+		return executeRunbookFromLocalFunc(runbookFilePath, []string{arg}, runbookEnvironmentVariables)
 	} else {
-		return "", "", errors.New("No mapped action found for the action [" + action + "].")
+		return "", "", errors.New("Unknown runbook source [" + runbookSource + "].")
 	}
 }
 
-// when calling, set uri="https://api.opsgenie.com/v1/integrations/maridv2/actionExecutionResult"
-func sendResultToOpsGenie(action string, alertId string, params map[string]interface{}, failureMessage string) {
-	parameters := url.Values{}
+func SendResultToOpsGenie(resultPayload *ActionResultPayload, apiKey *string) {
 
-	if params != nil {
-		mappedAction := params["mappedActionV2"].(map[string]interface{})
-		mappedActionName := mappedAction["name"].(string)
-		log.Println("Sending result to OpsGenie for action: ", mappedActionName)
-		parameters.Add("mappedAction", mappedActionName)
-
-		alertId = params["alertId"].(string)
-	} else {
-		log.Println("Sending result to OpsGenie for action: ", action)
-		parameters.Add("alertAction", action)
-	}
-
-	parameters.Add("apiKey", conf.Configuration["apiKey"].(string))
-
-	var success bool
-	if success = true; len(failureMessage) > 0 {
-		success = false
-		parameters.Add("failureMessage", failureMessage)
-	}
-	parameters.Add("success", strconv.FormatBool(success))
-	parameters.Add("alertId", alertId)
-
-	var uri strings.Builder
-	uri.WriteString(conf.Configuration["opsgenieApiUrl"].(string)) // To do: finalize it before releasing
-	uri.WriteString("/v1/integrations/maridv2/actionExecutionResult")
-
-	request, err := http.NewRequest("POST", uri.String(), strings.NewReader(parameters.Encode()))
+	body, err := json.Marshal(resultPayload)
 	if err != nil {
-		log.Println("Could not send action result to OpsGenie. Reason: ", err)
+		logrus.Error("Cannot marshall payload: ", err)
+		return
 	}
-	request.Header.Add("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
 
-	client := &http.Client{}
+	request, err := http.NewRequest("POST", resultUrl, bytes.NewBuffer(body))
+	if err != nil {
+		logrus.Error("Could not send action result to OpsGenie. Reason: ", err)
+		return
+	}
+	request.Header.Add("Authorization", "GenieKey " + *apiKey)
+	request.Header.Add("Content-Type", "application/json; charset=UTF-8")
+
 	response, err := client.Do(request)
 	if err != nil {
-		log.Println("Could not send action result to OpsGenie. Reason: ", err)
+		logrus.Error("Could not send action result to OpsGenie. Reason: ", err)
+		return
 	}
 
-	defer response.Body.Close()
-
 	if response.StatusCode != http.StatusOK {
+		defer response.Body.Close()
+
 		body, err := ioutil.ReadAll(response.Body)
 		if err != nil {
-			log.Println("Could not read response body. Reason: ", err)
+			logrus.Error("Could not read response body. Reason: ", err)
 		}
 
-		var logSuffix strings.Builder
-		logSuffix.WriteString("")
-		if len(string(body)) > 0 {
-			logSuffix.WriteString(", Content: ")
-			logSuffix.WriteString(string(body))
-		}
-
-		log.Println("Could not send action result to OpsGenie. HttpStatus: ", response.StatusCode, logSuffix)
+		logrus.Error("Could not send action result to OpsGenie. HttpStatus: ", response.StatusCode, ", Error message:" , string(body))
 	} else {
-		log.Println("Successfully sent result to OpsGenie.")
+		logrus.Debug("Successfully sent result to OpsGenie.")
 	}
 }

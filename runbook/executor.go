@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func execute(executablePath string, args []string, environmentVariables map[string]interface{}) (string, string, error) {
+func execute(executablePath string, args []string, environmentVariables []string) (string, string, error) {
 	executable := determineExecutable(executablePath)
 	var cmd *exec.Cmd
 
@@ -24,17 +24,15 @@ func execute(executablePath string, args []string, environmentVariables map[stri
 	cmd.Stdout = cmdOutput
 	cmd.Stderr = cmdErr
 	env := os.Environ()
-	env = append(env, convertMapToArray(environmentVariables)...)
+	env = environmentVariables //append(env, convertMapToArray(environmentVariables)...)
 	cmd.Env = env
 	err := cmd.Run()
-	commandOutput := cmdOutput.String()
-	errorOutput := cmdErr.String()
 
 	if err != nil {
 		return "", "", err
 	}
 
-	return commandOutput, errorOutput, nil
+	return cmdOutput.String(), cmdErr.String(), nil
 }
 
 func determineExecutable(executablePath string) string {

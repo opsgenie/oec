@@ -3,110 +3,92 @@ package queue
 import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	"log"
 	"sync"
 	"sync/atomic"
 	"time"
+	"github.com/opsgenie/marid2/conf"
+	"github.com/sirupsen/logrus"
 )
 
 type WorkerPool interface {
-	Submit(job Job) (bool, error)
 	Start() error
 	Stop() error
 	StopNow() error
+	Submit(job Job) (bool, error)
 	IsRunning() bool
 
-	NumberOfAvailableWorker() uint32
-
-	SetMaxNumberOfWorker(max uint32)
-	SetMinNumberOfWorker(max uint32)
-	SetQueueSize(max uint32)
-	SetKeepAliveTime(keepAliveTime time.Duration)
-	SetMonitoringPeriod(monitoringPeriod time.Duration)
-}
-
-func (wp *WorkerPoolImpl) SetMaxNumberOfWorker(max uint32) {
-	atomic.StoreUint32(&wp.maxNumberOfWorker, max)
-}
-
-func (wp *WorkerPoolImpl) SetMinNumberOfWorker(max uint32) {
-	atomic.StoreUint32(&wp.minNumberOfWorker, max)
-}
-
-func (wp *WorkerPoolImpl) SetQueueSize(max uint32) {
-	if !wp.IsRunning() {
-		wp.jobQueue = NewJobQueue(max)
-	}
-}
-
-func (wp *WorkerPoolImpl) SetKeepAliveTime(keepAliveTime time.Duration) {
-	wp.keepAliveTime = keepAliveTime
-}
-
-func (wp *WorkerPoolImpl) SetMonitoringPeriod(monitoringPeriod time.Duration) {
-	wp.monitoringPeriod = monitoringPeriod
-}
-
-func (wp *WorkerPoolImpl) NumberOfAvailableWorker() uint32 {
-	return wp.maxNumberOfWorker - atomic.LoadUint32(&wp.numberOfActiveWorker)
-}
-
-func (wp *WorkerPoolImpl) getNumberOfAddableWorker() uint32 {
-	return wp.maxNumberOfWorker - wp.getNumberOfCurrentWorker()
-}
-
-func (wp *WorkerPoolImpl) getNumberOfIdleWorker() uint32 {
-	return atomic.LoadUint32(&wp.numberOfIdleWorker)
-}
-
-func (wp *WorkerPoolImpl) getNumberOfCurrentWorker() uint32 {
-	return atomic.LoadUint32(&wp.numberOfCurrentWorker)
+	SubmitChannel() chan<- Job
+	NumberOfAvailableWorker() int32
 }
 
 type WorkerPoolImpl struct {
-	maxNumberOfWorker     uint32
-	minNumberOfWorker     uint32
-	numberOfCurrentWorker uint32
-	numberOfActiveWorker  uint32
-	numberOfIdleWorker    uint32
+	poolConf *conf.PoolConf
 
-	keepAliveTime    time.Duration
-	monitoringPeriod time.Duration
+	numberOfCurrentWorker int32
 
-	jobQueue *JobQueue
-	quit     chan struct{}
-	stopNow  chan struct{}
-
-	workersWaitGroup *sync.WaitGroup
-	workerCountMutex *sync.Mutex
-	startStopMutex   *sync.Mutex
-
+	jobQueue  chan Job
+	quit      chan struct{}
+	quitNow   chan struct{}
 	isRunning bool
 
-	submitFunc func(wp *WorkerPoolImpl, job Job) (isSubmitted bool, err error)
+	workersWaitGroup *sync.WaitGroup
+	startStopMutex   *sync.RWMutex
 }
 
-func NewWorkerPool(maxWorker uint32, minWorker uint32, queueSize uint32, keepAliveTime time.Duration, monitoringPeriod time.Duration) WorkerPool {
+func NewWorkerPool(poolConf *conf.PoolConf) WorkerPool {
 
-	wp := &WorkerPoolImpl{
-		quit:              make(chan struct{}),
-		stopNow:           make(chan struct{}),
-		jobQueue:          NewJobQueue(queueSize),
-		maxNumberOfWorker: maxWorker,
-		minNumberOfWorker: minWorker,
-		workersWaitGroup:  &sync.WaitGroup{},
-		workerCountMutex:  &sync.Mutex{},
-		startStopMutex:    &sync.Mutex{},
-		keepAliveTime:     keepAliveTime,
-		monitoringPeriod:  monitoringPeriod,
-		isRunning:         false,
-		submitFunc:        Submit,
+
+	if poolConf.MaxNumberOfWorker <= 0 {
+		logrus.Infof("Max number of workers should be greater than zero, default value[%d] is set.", maxNumberOfWorker)
+		poolConf.MaxNumberOfWorker = maxNumberOfWorker
 	}
 
-	return wp
+	if poolConf.MinNumberOfWorker < 0 {
+		logrus.Infof("Min number of workers cannot be lesser than zero, default value[%d] is set.", keepAliveTimeInMillis)
+		poolConf.MinNumberOfWorker = minNumberOfWorker
+	}
+
+	if poolConf.MinNumberOfWorker > poolConf.MaxNumberOfWorker {
+		logrus.Infof("Min number of workers cannot be greater than max number of workers, min value is decreased current max value[%d].", maxNumberOfWorker)
+		poolConf.MinNumberOfWorker = poolConf.MaxNumberOfWorker
+	}
+
+	if poolConf.QueueSize < 0 {
+		logrus.Infof("Queue size of the pool cannot be lesser than zero, default value[%d] is set.", queueSize)
+		poolConf.QueueSize = queueSize
+	}
+
+	if poolConf.KeepAliveTimeInMillis <= 0 {
+		logrus.Infof("Keep alive time should be greater than zero, default value[%d ms.] is set.", keepAliveTimeInMillis)
+		poolConf.KeepAliveTimeInMillis = keepAliveTimeInMillis
+	}
+
+	if poolConf.MonitoringPeriodInMillis < 0 {
+		logrus.Infof("Queue size of the pool cannot be lesser than zero, default value[%d ms.] is set.", monitoringPeriodInMillis)
+		poolConf.MonitoringPeriodInMillis = monitoringPeriodInMillis
+	}
+
+	return &WorkerPoolImpl{
+		jobQueue:         make(chan Job, poolConf.QueueSize),
+		quit:             make(chan struct{}),
+		quitNow:          make(chan struct{}),
+		poolConf:         poolConf,
+		workersWaitGroup: &sync.WaitGroup{},
+		startStopMutex:   &sync.RWMutex{},
+		isRunning:        false,
+	}
+}
+
+func (wp *WorkerPoolImpl) NumberOfAvailableWorker() int32 {
+	return wp.poolConf.MaxNumberOfWorker - wp.NumberOfCurrentWorker()
+}
+
+func (wp *WorkerPoolImpl) NumberOfCurrentWorker() int32 {
+	return atomic.LoadInt32(&wp.numberOfCurrentWorker)
 }
 
 func (wp *WorkerPoolImpl) Stop() error {
+	defer wp.startStopMutex.Unlock()
 	wp.startStopMutex.Lock()
 
 	if !wp.isRunning {
@@ -114,135 +96,146 @@ func (wp *WorkerPoolImpl) Stop() error {
 	}
 	wp.isRunning = false
 
-	wp.startStopMutex.Unlock()
-
-	log.Println("Worker pool is stopping.")
+	logrus.Infof("Worker pool is stopping.")
 	close(wp.quit)
+	wp.workersWaitGroup.Wait()
+	logrus.Infof("Worker pool has stopped.")
+
 	return nil
 }
 
 func (wp *WorkerPoolImpl) StopNow() error {
+	defer wp.startStopMutex.Unlock()
 	wp.startStopMutex.Lock()
 
 	if !wp.isRunning {
 		return errors.New("Worker pool is not running.")
 	}
+
+	logrus.Infof("Worker pool is stopping immediately.")
+	close(wp.quitNow)
+
 	wp.isRunning = false
-
-	wp.startStopMutex.Unlock()
-
-	log.Println("Worker pool is stopping immediately.")
-	close(wp.stopNow)
 	return nil
 }
 
 func (wp *WorkerPoolImpl) Start() error {
+	defer wp.startStopMutex.Unlock()
 	wp.startStopMutex.Lock()
 
 	if wp.isRunning {
 		return errors.New("Worker pool is already running.")
 	}
-	wp.isRunning = true
-
-	wp.startStopMutex.Unlock()
 
 	go wp.run()
-	go wp.monitorMetrics(monitoringPeriod)
+	go wp.monitorMetrics(wp.poolConf.MonitoringPeriodInMillis)
 
-	wp.addWorker(wp.minNumberOfWorker)
-
+	wp.isRunning = true
+	wp.addWorker(wp.poolConf.MinNumberOfWorker)
 	return nil
 }
 
 func (wp *WorkerPoolImpl) IsRunning() bool {
-	defer wp.startStopMutex.Unlock()
-	wp.startStopMutex.Lock()
+	defer wp.startStopMutex.RUnlock()
+	wp.startStopMutex.RLock()
 
 	return wp.isRunning
 }
 
-func (wp *WorkerPoolImpl) monitorMetrics(period time.Duration) {
-	if period == 0 {
+func (wp *WorkerPoolImpl) monitorMetrics(monitoringPeriodInMillis time.Duration) {
+	if monitoringPeriodInMillis == 0 {
 		return
 	}
 
-	log.Printf("Worker pool is running with; Min Worker: %d, Max Worker: %d, Queue Size: %d", wp.minNumberOfWorker, wp.maxNumberOfWorker, wp.jobQueue.GetSize())
+	logrus.Infof("Worker pool is running with; Min Worker: %d, Max Worker: %d, Queue Size: %d", wp.poolConf.MinNumberOfWorker, wp.poolConf.MaxNumberOfWorker, cap(wp.jobQueue))
 
-	ticker := time.NewTicker(period)
+	ticker := time.NewTicker(monitoringPeriodInMillis * time.Millisecond)
 
 	for {
 		select {
-		case <-ticker.C:
-			log.Printf("Idle workers: %d, Active workers: %d, Queue Size: %d, Queue load factor: %%%d", wp.numberOfIdleWorker, wp.numberOfActiveWorker, wp.jobQueue.GetSize(), int(wp.jobQueue.GetLoadFactor()*100))
-		case <-wp.quit:
-			log.Println("Monitor metrics has stopped.")
+		case <- ticker.C:
+			logrus.Debugf("Current Worker: %d, Queue Size: %d, Queue load: %d",wp.NumberOfCurrentWorker(), cap(wp.jobQueue), len(wp.jobQueue))
+		case <- wp.quit:
+			ticker.Stop()
+			logrus.Infof("Monitor metrics has stopped.")
 			return
 		}
 	}
 }
 
-func (wp *WorkerPoolImpl) addWorker(num uint32) {
+func (wp *WorkerPoolImpl) addWorker(num int32) {
 
-	for i := uint32(0); i < num && wp.getNumberOfAddableWorker() > 0; i++ {
+	for i := int32(0); i < num && wp.NumberOfAvailableWorker() > 0; i++ {
 		if !wp.isRunning {
 			return
 		}
-		atomic.AddUint32(&wp.numberOfIdleWorker, 1)
-		atomic.AddUint32(&wp.numberOfCurrentWorker, 1)
+		atomic.AddInt32(&wp.numberOfCurrentWorker, 1)
+		wp.workersWaitGroup.Add(1)
 		worker := NewWorker(wp)
 		go worker.work()
 	}
 }
 
-func (wp *WorkerPoolImpl) Submit(job Job) (isSubmitted bool, err error) {
-	return wp.submitFunc(wp, job)
+func (wp *WorkerPoolImpl) SubmitChannel() chan<- Job {
+	return wp.jobQueue
 }
 
-func Submit(wp *WorkerPoolImpl, job Job) (isSubmitted bool, err error) {
+
+func (wp *WorkerPoolImpl) Submit(job Job) (isSubmitted bool, err error) {
+
+	defer wp.startStopMutex.RUnlock()
+	wp.startStopMutex.RLock()
+
 	if !wp.isRunning {
-		log.Println("Worker pool does not accept job now.")
+		logrus.Debugf("Worker pool does not accept job now.")
 		return false, errors.New("Worker pool is not working")
 	}
 
-	if wp.getNumberOfIdleWorker() > 2 {
-		isSubmitted = true
-	} else if wp.getNumberOfAddableWorker() > 0 {
-		wp.addWorker(1)
-		isSubmitted = true
-	} else {
-		if !wp.jobQueue.IsFull() {
-			isSubmitted = true
-		} else {
-			isSubmitted = false
+	logrus.Debugf("Job[%s] is being submmitted", job.JobId())
+
+	select {
+	case wp.jobQueue <- job:
+		return true, nil
+	default:
+		for {
+			if wp.poolConf.MaxNumberOfWorker == wp.poolConf.MinNumberOfWorker {
+				return false, nil
+			}
+
+			numberOfCurrentWorker := wp.NumberOfCurrentWorker()
+			if numberOfCurrentWorker < wp.poolConf.MaxNumberOfWorker {
+				if !atomic.CompareAndSwapInt32(&wp.numberOfCurrentWorker, numberOfCurrentWorker, numberOfCurrentWorker+1) {
+					continue
+				}
+				//atomic.AddInt32(&wp.numberOfCurrentWorker, 1)
+				wp.workersWaitGroup.Add(1)
+				go func() {
+					worker := NewWorker(wp)
+					worker.doJob(job)
+					worker.work()
+				}()
+				return true, nil
+			} else {
+				logrus.Debugf("Job[%s] cannot be submitted", job.JobId())
+				return false, nil
+			}
 		}
 	}
-
-	if isSubmitted {
-		log.Printf("Job[%s] is being submmitted", job.GetJobId())
-		wp.jobQueue.GetChan() <- job // todo check queue channel after closing it
-		wp.jobQueue.Increment()
-		log.Printf("Job[%s] is submitted", job.GetJobId())
-	} else {
-		log.Printf("Job[%s] cannot be submitted", job.GetJobId())
-	}
-
-	return isSubmitted, nil
 }
 
 func (wp *WorkerPoolImpl) run() {
 
-	log.Println("Worker pool has started to run.")
+	logrus.Infof("Worker pool has started to run.")
 
 	for {
 		select {
-		case <-wp.quit:
-			log.Println("Worker pool is waiting to quit.")
-			wp.jobQueue.Close()
+		case <- wp.quit:
+			logrus.Infof("Worker pool is waiting to quit.")
+			close(wp.jobQueue)
 			wp.workersWaitGroup.Wait()
-			log.Println("Worker pool has stopped.")
 			return
-		case <-wp.stopNow:
-			log.Println("Worker pool has stopped immediately.")
+		case <- wp.quitNow:
+			logrus.Infof("Worker pool has stopped immediately.")
 			return
 		}
 	}
@@ -262,65 +255,61 @@ func NewWorker(workerPool *WorkerPoolImpl) Worker {
 	}
 }
 
+func (w *Worker) doJob(job Job) {
+	logrus.Debugf("Job[%s] is submitted", job.JobId())
+
+	err := job.Execute() // todo panic recover, stay the pool as working
+	if err != nil {
+		logrus.Errorf(err.Error())
+	}
+
+	logrus.Debugf("Job[%s] has been processed by Worker[%s].", job.JobId(), w.id.String())
+}
+
 func (w *Worker) work() {
 
-	log.Printf("Worker[%s] is spawned.", w.id.String())
-
+	logrus.Debugf("Worker[%s] is spawned.", w.id.String())
 	defer w.workerPool.workersWaitGroup.Done()
-	w.workerPool.workersWaitGroup.Add(1)
 
-	defer atomic.AddUint32(&w.workerPool.numberOfIdleWorker, ^uint32(0))
+	ticker := time.NewTicker(w.workerPool.poolConf.KeepAliveTimeInMillis * time.Millisecond)
 
-	ticker := time.NewTicker(w.workerPool.keepAliveTime)
-
-	if w.workerPool.minNumberOfWorker == w.workerPool.maxNumberOfWorker {
+	if w.workerPool.poolConf.MinNumberOfWorker == w.workerPool.poolConf.MaxNumberOfWorker {
 		ticker.Stop()
 	}
 
+	defer ticker.Stop()
+
 	for {
 		select {
-		case <-w.workerPool.stopNow:
-			log.Printf("Worker [%s] has stopped working.", w.id.String())
+		case <- w.workerPool.quitNow:
+			logrus.Debugf("Worker [%s] has stopped working.", w.id.String())
+			atomic.AddInt32(&w.workerPool.numberOfCurrentWorker, -1)
 			return
-		case job, isOpen := <-w.workerPool.jobQueue.GetChan():
+		case job, isOpen := <- w.workerPool.jobQueue:
 			if !isOpen {
-				atomic.AddUint32(&w.workerPool.numberOfCurrentWorker, ^uint32(0))
-				log.Printf("Worker[%s] has done its job.", w.id.String())
+				atomic.AddInt32(&w.workerPool.numberOfCurrentWorker, -1)
+				logrus.Debugf("Worker[%s] has done its job.", w.id.String())
 				return
 			}
 			ticker.Stop()
-			w.workerPool.jobQueue.Decrement()
 
-			atomic.AddUint32(&w.workerPool.numberOfIdleWorker, ^uint32(0))
-			atomic.AddUint32(&w.workerPool.numberOfActiveWorker, 1)
-			log.Printf("Job[%s] is being processed by Worker[%s].", job.GetJobId(), w.id.String())
-			err := job.Execute()
-			if err != nil {
-				log.Println(err)
-			}
-			atomic.AddUint32(&w.workerPool.numberOfActiveWorker, ^uint32(0))
-			atomic.AddUint32(&w.workerPool.numberOfIdleWorker, 1)
-			log.Printf("Job[%s] has been processed by Worker[%s].", job.GetJobId(), w.id.String())
+			w.doJob(job)
 
-			ticker = time.NewTicker(w.workerPool.keepAliveTime)
-		case <-ticker.C:
-			if w.workerPool.checkAndDecrementCurrentWorker() {
-				log.Println("Worker [" + w.id.String() + "] has killed itself.")
+			ticker = time.NewTicker(w.workerPool.poolConf.KeepAliveTimeInMillis)
+		case <- ticker.C:
+			ticker.Stop()
+
+			currentNumber := w.workerPool.NumberOfCurrentWorker()
+			if currentNumber > w.workerPool.poolConf.MinNumberOfWorker {
+				if !atomic.CompareAndSwapInt32(&w.workerPool.numberOfCurrentWorker, currentNumber, currentNumber - 1) {
+					break
+				}
+				logrus.Debugf("Worker [%s] has killed itself.", w.id.String())
 				return
 			}
-			ticker = time.NewTicker(w.workerPool.keepAliveTime)
+
+			ticker = time.NewTicker(w.workerPool.poolConf.KeepAliveTimeInMillis)
+
 		}
 	}
-}
-
-func (wp *WorkerPoolImpl) checkAndDecrementCurrentWorker() bool { // todo check and remove atomic usage
-
-	defer wp.workerCountMutex.Unlock()
-	wp.workerCountMutex.Lock()
-
-	if wp.getNumberOfCurrentWorker() > wp.minNumberOfWorker {
-		atomic.AddUint32(&wp.numberOfCurrentWorker, ^uint32(0))
-		return true
-	}
-	return false
 }

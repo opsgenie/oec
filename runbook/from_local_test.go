@@ -15,7 +15,7 @@ func TestExecuteRunbookFromLocal(t *testing.T) {
 		t.Error("Error occurred while creating test file. Error: " + err.Error())
 	}
 
-	cmdOut, cmdErr, err := executeRunbookFromLocal(testScriptPath, nil)
+	cmdOut, cmdErr, err := executeRunbookFromLocal(testScriptPath, nil, nil)
 
 	assert.NoError(t, err, "Error from execute operation was not empty.")
 	assert.Equal(t, "Test output\n", cmdOut, "Output stream was not equal to expected.")

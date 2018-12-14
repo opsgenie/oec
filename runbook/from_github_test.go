@@ -17,12 +17,12 @@ func mockGetRunbookFromGithub(owner string, repo string, filepath string, token 
 func TestExecuteRunbookFromGithub(t *testing.T) {
 	var testScriptPath = os.TempDir() + string(os.PathSeparator) + "test.sh"
 
-	oldGetRunbookFromGithubMethod := getRunbookFromGithubFunction
-	defer func() { getRunbookFromGithubFunction = oldGetRunbookFromGithubMethod }()
-	getRunbookFromGithubFunction = mockGetRunbookFromGithub
+	oldGetRunbookFromGithubMethod := getRunbookFromGithubFunc
+	defer func() { getRunbookFromGithubFunc = oldGetRunbookFromGithubMethod }()
+	getRunbookFromGithubFunc = mockGetRunbookFromGithub
 
 	cmdOut, cmdErr, err := executeRunbookFromGithub("testOwner", "testRepo", "test.sh",
-		"testToken", nil)
+		"testToken", nil, nil)
 
 	assert.NoError(t, err, "Error from execute operation was not empty.")
 	assert.Equal(t, "testcontent\n", cmdOut, "Output stream was not equal to expected.")

@@ -10,57 +10,60 @@ import (
 )
 
 type QueueMessage interface {
-	GetMessage() *sqs.Message
+	Message() *sqs.Message
 	Process() error
 }
 
 type MaridQueueMessage struct {
-	*sqs.Message
-
-	GetMessageMethod func(mqm *MaridQueueMessage) *sqs.Message
-	ProcessMethod    func(mqm *MaridQueueMessage) error
+	message 		*sqs.Message
+	actionMappings 	*conf.ActionMappings
+	apiKey 			*string
 }
 
-func GetMessage(mqm *MaridQueueMessage) *sqs.Message {
-	return mqm.Message
-}
-
-func (mqm *MaridQueueMessage) GetMessage() *sqs.Message {
-	return mqm.GetMessageMethod(mqm)
-}
-
-func Process(mqm *MaridQueueMessage) error {
-	queuePayload := QueuePayload{}
-	err := json.Unmarshal([]byte(*mqm.GetMessage().Body), &queuePayload)
-	if err == nil {
-		if action := queuePayload.Action; action != "" {
-			payload, _ := json.Marshal(queuePayload)
-			actionMappings := conf.Configuration["actionMappings"].(map[string]interface{})
-			if _, ok := actionMappings[action]; ok {
-				commandOutput, errorOutput, err := runbook.ExecuteRunbookMethod(action, string(payload))
-				log.Println(commandOutput, errorOutput, err)
-			} else {
-				return errors.New("There is no mapped action found for [" + action + "]")
-			}
-		} else {
-			return errors.New("SQS message does not contain action property")
-		}
-	} else {
-		return errors.New(err.Error())
-	}
-	return nil
+func (mqm *MaridQueueMessage) Message() *sqs.Message {
+	return mqm.message
 }
 
 func (mqm *MaridQueueMessage) Process() error {
-	return mqm.ProcessMethod(mqm)
+	queuePayload := QueuePayload{}
+	err := json.Unmarshal([]byte(*mqm.message.Body), &queuePayload)
+	if err != nil {
+		return err
+	}
+
+	action := queuePayload.Action
+	if action == "" {
+		return errors.New("SQS message does not contain action property")
+	}
+
+	mappedAction, ok := (map[conf.ActionName]conf.MappedAction)(*mqm.actionMappings)[conf.ActionName(action)]
+	if !ok {
+		return errors.Errorf("There is no mapped action found for [%s]", action)
+	}
+
+	commandOutput, errorOutput, err := runbook.ExecuteRunbookFunc(&mappedAction, *mqm.message.Body)
+	log.Println(commandOutput, errorOutput, err)
+
+	var success bool
+	if errorOutput == "" {
+		success = true
+	}
+
+	result := &runbook.ActionResultPayload{
+		IsSuccessful:   success,
+		AlertId:        queuePayload.Alert.AlertId,
+		Action:         queuePayload.Action,
+		FailureMessage: errorOutput,
+
+	}
+	runbook.SendResultToOpsGenie(result, mqm.apiKey)
+	return nil
 }
 
-func NewMaridMessage(message *sqs.Message) QueueMessage {
-	mqm := &MaridQueueMessage{
-		Message: message,
+func NewMaridMessage(message *sqs.Message, actionMappings *conf.ActionMappings, apiKey *string) QueueMessage {
+	return &MaridQueueMessage{
+		message: 		message,
+		actionMappings:	actionMappings,
+		apiKey:			apiKey,
 	}
-	mqm.GetMessageMethod = GetMessage
-	mqm.ProcessMethod = Process
-
-	return mqm
 }

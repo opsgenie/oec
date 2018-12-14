@@ -25,18 +25,12 @@ func TestReadConfigurationFromLocal(t *testing.T) {
 		t.Error("Error occurred during writing test Marid configuration file. Error: " + err.Error())
 	}
 
-	testConfFile.WriteString("{\"tk1\": \"tv1\",\"tk2\": \"tv2\", \"emre\": \"cicek\"}")
+	testConfFile.WriteString(mockConfFileContent)
 	testConfFile.Close()
 	configurationFromLocal, _ := readConfigurationFromLocal(confPath)
 
 	defer os.Remove(confPath)
 
-	expectedConfig := map[string]interface{}{
-		"tk1": "tv1",
-		"tk2": "tv2",
-		"emre": "cicek",
-	}
-
-	assert.Equal(t, expectedConfig, configurationFromLocal,
+	assert.Equal(t, mockConf, configurationFromLocal,
 		"Actual config and expected config are not the same.")
 }

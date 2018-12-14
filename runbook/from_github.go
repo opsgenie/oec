@@ -9,11 +9,12 @@ import (
 	"path"
 )
 
-var getRunbookFromGithubFunction = getRunbookFromGithub
+var getRunbookFromGithubFunc = getRunbookFromGithub
 
 func executeRunbookFromGithub(runbookRepoOwner string, runbookRepoName string, runbookRepoFilePath string,
-	runbookRepoToken string, args []string, environmentVariables map[string]interface{}) (string, string, error) {
-	content, err := getRunbookFromGithubFunction(runbookRepoOwner, runbookRepoName, runbookRepoFilePath, runbookRepoToken)
+	runbookRepoToken string, args []string, environmentVariables []string) (string, string, error) {
+
+	content, err := getRunbookFromGithubFunc(runbookRepoOwner, runbookRepoName, runbookRepoFilePath, runbookRepoToken)
 
 	if err != nil {
 		return "", "", err

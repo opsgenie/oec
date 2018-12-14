@@ -21,7 +21,7 @@ func TestParseConfigurationJson(t *testing.T) {
 		t.Error("Error occurred while creating test config file. Error: " + err.Error())
 	}
 
-	testFile.WriteString("{\"tk1\": \"tv1\",\"tk2\": \"tv2\", \"emre\": \"cicek\"}")
+	testFile.WriteString("{\"apiKey\": \"apiKey\"}")
 	testFile.Close()
 
 	config, err := parseConfiguration(testConfPath)
@@ -30,11 +30,7 @@ func TestParseConfigurationJson(t *testing.T) {
 		t.Error("Error occurred while parsing the conf file. Error: " + err.Error())
 	}
 
-	expectedConfig := map[string]interface{}{
-		"tk1": "tv1",
-		"tk2": "tv2",
-		"emre": "cicek",
-	}
+	expectedConfig := &Configuration{ ApiKey: "apiKey" }
 
 	assert.Equal(t, expectedConfig, config,
 		"Actual configuration was not equal to expected configuration.")
@@ -55,7 +51,7 @@ func TestParseConfigurationYaml(t *testing.T) {
 		t.Error("Error occurred while creating test config file. Error: " + err.Error())
 	}
 
-	testFile.WriteString("tk1: tv1\ntk2: tv2\nemre: cicek\n")
+	testFile.WriteString("apiKey: apiKey\n")
 	testFile.Close()
 
 	config, err := parseConfiguration(testConfPath)
@@ -64,24 +60,8 @@ func TestParseConfigurationYaml(t *testing.T) {
 		t.Error("Error occurred while parsing the conf file. Error: " + err.Error())
 	}
 
-	expectedConfig := map[string]interface{}{
-		"tk1":  "tv1",
-		"tk2":  "tv2",
-		"emre": "cicek",
-	}
+	expectedConfig := &Configuration{ ApiKey: "apiKey" }
 
 	assert.Equal(t, expectedConfig, config,
 		"Actual configuration was not equal to expected configuration.")
-}
-
-func TestCloneMap(t *testing.T){
-	expectedMap := map[string]interface{}{
-		"k1": "v1",
-		"k2": "v2",
-	}
-
-	clonedMap, err := cloneMap(expectedMap)
-	assert.NoError(t, err, "Error occurred during map clone.")
-	assert.True(t, assert.ObjectsAreEqualValues(expectedMap, clonedMap),
-		"Original map and cloned map are not the same.")
 }

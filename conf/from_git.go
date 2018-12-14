@@ -10,9 +10,9 @@ import (
 	goGitSsh "gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 )
 
-var gitCloneMethod = gitClone
+var gitCloneFunc = gitClone
 
-func readConfigurationFromGit(url string, confPath string, privateKeyFilePath string, passPhrase string) (map[string]interface{}, error) {
+func readConfigurationFromGit(url string, confPath string, privateKeyFilePath string, passPhrase string) (*Configuration, error) {
 	var tmpDir = os.TempDir()
 
 	err := os.MkdirAll(tmpDir, 0755)
@@ -22,27 +22,20 @@ func readConfigurationFromGit(url string, confPath string, privateKeyFilePath st
 	}
 
 	directoryName, err := parseDirectoryNameFromUrl(url)
-	os.RemoveAll(tmpDir + string(os.PathSeparator) + directoryName)
+	os.RemoveAll(tmpDir + string(os.PathSeparator) + directoryName)	// todo validate path traversal
 	defer os.RemoveAll(tmpDir + string(os.PathSeparator) + directoryName)
 
 	if err != nil {
 		return nil, err
 	}
 
-	err = gitCloneMethod(tmpDir + string(os.PathSeparator) + directoryName, url, privateKeyFilePath, passPhrase)
+	err = gitCloneFunc(tmpDir + string(os.PathSeparator) + directoryName, url, privateKeyFilePath, passPhrase)
 
 	if err != nil {
 		return nil, err
 	}
 
-	configuration, err := parseConfiguration(tmpDir + string(os.PathSeparator) +
-		directoryName + string(os.PathSeparator) + confPath)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return configuration, nil
+	return parseConfiguration(tmpDir + string(os.PathSeparator) + directoryName + string(os.PathSeparator) + confPath)
 }
 
 func gitClone(tmpDir string, gitUrl string, privateKeyFilePath string, passPhrase string) error {
@@ -56,6 +49,7 @@ func gitClone(tmpDir string, gitUrl string, privateKeyFilePath string, passPhras
 
 	return err
 }
+
 func getCloneOptions(gitUrl, privateKeyFilePath string, passPhrase string) (git.CloneOptions, error) {
 	file, err := ioutil.ReadFile(privateKeyFilePath)
 

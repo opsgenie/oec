@@ -1,4 +1,4 @@
-package queue
+package retryer
 
 import (
 	"github.com/pkg/errors"
@@ -8,34 +8,29 @@ import (
 	"time"
 )
 
-const timeout = 5 * time.Second
+const timeout = 30 * time.Second
 
-var DefaultClient = &http.Client{Timeout: timeout} // todo timeout decision
+var DefaultClient = &http.Client{Timeout: timeout}
 
 const maxWaitInterval = 5
 const maxRetryCount = 5
 
 var retryStatusCodes = map[int]struct{}{
 	429: {},
-	//408: {},
 }
 
-type getMethod func(retryer *Retryer, request *http.Request) (*http.Response, error)
+type doFunc func(retryer *Retryer, request *http.Request) (*http.Response, error)
 
 type Retryer struct {
-	getMethod getMethod
-	request *http.Request
-}
-
-func NewRetryer() *Retryer {
-	retryer := &Retryer{
-		getMethod: getWithExponentialBackoff,
-	}
-	return retryer
+	DoFunc doFunc
+	client *http.Client
 }
 
 func (r *Retryer) Do(request *http.Request) (*http.Response, error) {
-	return r.getMethod(r, request)
+	if r.DoFunc != nil {
+		return r.DoFunc(r, request)
+	}
+	return DoWithExponentialBackoff(r, request)
 }
 
 func shouldRetry(statusCode int) bool {
@@ -53,14 +48,19 @@ func getWaitTime(retryCount int) time.Duration {
 	return time.Duration(waitTime) * time.Millisecond
 }
 
-func getWithExponentialBackoff(retryer *Retryer, request *http.Request) (*http.Response, error) {
+func DoWithExponentialBackoff(retryer *Retryer, request *http.Request) (*http.Response, error) {
 
 	for retryCount := 0; retryCount < maxRetryCount; retryCount++ {
 
 		waitDuration := getWaitTime(retryCount)
 		time.Sleep(waitDuration)
 
-		response, err := DefaultClient.Do(request)
+		client := DefaultClient
+		if retryer.client != nil {
+			client = retryer.client
+		}
+
+		response, err := client.Do(request)
 
 		if err, isInstance := err.(net.Error); isInstance { // todo check err
 			if err.Timeout() {

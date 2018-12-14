@@ -11,9 +11,7 @@ var testScriptFilePathNonWindows = os.TempDir() + string(os.PathSeparator) + "ex
 var testScriptFilePathWindows = os.TempDir() + string(os.PathSeparator) + "executorTestScript.bat"
 
 func TestExecuteSuccess(t *testing.T) {
-	testEnvironmentVariables := map[string]interface{}{
-		"TESTENVVAR": "test env var",
-	}
+	testEnvironmentVariables := []string{"TESTENVVAR=test env var", "ANOTHERVAR=another"}
 
 	if runtime.GOOS != "windows" {
 		content := "echo \"Test output\"\necho \"Given Environment Variable: TESTENVVAR: $TESTENVVAR\"\n"

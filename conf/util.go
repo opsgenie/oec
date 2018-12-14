@@ -9,41 +9,41 @@ import (
 	"path/filepath"
 )
 
-func parseConfiguration(path string) (map[string]interface{}, error) {
+func parseConfiguration(path string) (*Configuration, error) {
 	extension := filepath.Ext(path)
 
 	if extension == ".json" {
-		file, err := ioutil.ReadFile(path)
-
-		if err != nil {
-			return nil, err
-		}
-
-		return parseJson(file)
+		return parseJsonConfiguration(path)
 	} else if extension == ".yml" || extension == ".yaml" {
-		file, err := ioutil.ReadFile(path)
-
-		if err != nil {
-			return nil, err
-		}
-
-		return parseYamlConfiguration(file)
+		return parseYmlConfiguration(path)
 	} else {
 		return nil, errors.New("Unknown configuration file extension [" + extension + "]. Only json and yml" +
 			" types are allowed.")
 	}
 }
 
-func parseJson(content []byte) (map[string]interface{}, error) {
-	var result map[string]interface{}
-	err := json.Unmarshal(content, &result)
+func parseJsonConfiguration(path string) (*Configuration, error) {
+	file, err := ioutil.ReadFile(path)
+
+	if err != nil {
+		return nil, err
+	}
+
+	result := &Configuration{}
+	err = json.Unmarshal(file, result)
 
 	return result, err
 }
 
-func parseYamlConfiguration(content []byte) (map[string]interface{}, error) {
-	var result map[string]interface{}
-	err := yaml.Unmarshal(content, &result)
+func parseYmlConfiguration(path string) (*Configuration, error) {
+	file, err := ioutil.ReadFile(path)
+
+	if err != nil {
+		return nil, err
+	}
+
+	result := &Configuration{}
+	err = yaml.Unmarshal(file, &result)
 
 	return result, err
 }
@@ -56,26 +56,4 @@ func getHomePath() (string, error) {
 	}
 
 	return currentUser.HomeDir, nil
-}
-
-func cloneMap(original map[string]interface{}) (map[string]interface{}, error) {
-	if original == nil {
-		return nil, nil
-	}
-
-	originalJson, err := json.Marshal(original)
-
-	if err != nil {
-		return nil, err
-	}
-
-	copiedMap := make(map[string]interface{})
-
-	err = json.Unmarshal(originalJson, &copiedMap)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return copiedMap, nil
 }
