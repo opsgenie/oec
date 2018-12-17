@@ -1,17 +1,17 @@
 package runbook
 
 import (
-	"testing"
 	"github.com/stretchr/testify/assert"
 	"os"
+	"testing"
 )
 
 var getRunbookFromGithubCalled = false
 
-func mockGetRunbookFromGithub(owner string, repo string, filepath string, token string) (string, error) {
+func mockGetRunbookFromGithub(owner string, repo string, filepath string, token string) ([]byte, error) {
 	getRunbookFromGithubCalled = true
 
-	return "echo \"testcontent\"\n", nil
+	return []byte("echo \"testcontent\"\n"), nil
 }
 
 func TestExecuteRunbookFromGithub(t *testing.T) {

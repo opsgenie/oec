@@ -1,10 +1,10 @@
 package conf
 
 import (
-	"testing"
-	"os"
-	"github.com/stretchr/testify/assert"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"os"
+	"testing"
 )
 
 var readConfigurationFromGitCalled = false
@@ -106,9 +106,9 @@ func TestReadConfFileFromGit(t *testing.T) {
 	os.Setenv("MARIDCONFGITFILEPATH", "marid/testConf.json")
 	os.Setenv("MARIDCONFGITPASSPHRASE", "passPhrase")
 
-	oldReadFromGitFunction := readConfigurationFromGitFunction
-	defer func() {readConfigurationFromGitFunction = oldReadFromGitFunction }()
-	readConfigurationFromGitFunction = mockReadConfigurationFromGit
+	oldReadFromGitFunction := readConfigurationFromGitFunc
+	defer func() { readConfigurationFromGitFunc = oldReadFromGitFunction }()
+	readConfigurationFromGitFunc = mockReadConfigurationFromGit
 
 	configuration, err := ReadConfFile()
 
@@ -130,9 +130,9 @@ func TestReadConfFileFromGit(t *testing.T) {
 func TestReadConfFileFromLocalWithDefaultPath(t *testing.T) {
 	os.Setenv("MARIDCONFSOURCE", "local")
 
-	oldReadFromLocalFunction := readConfigurationFromLocalFunction
-	defer func() { readConfigurationFromLocalFunction = oldReadFromLocalFunction }()
-	readConfigurationFromLocalFunction = mockReadConfigurationFromLocalWithDefaultPath
+	oldReadFromLocalFunction := readConfigurationFromLocalFunc
+	defer func() { readConfigurationFromLocalFunc = oldReadFromLocalFunction }()
+	readConfigurationFromLocalFunc = mockReadConfigurationFromLocalWithDefaultPath
 
 	configuration, err := ReadConfFile()
 
@@ -152,9 +152,9 @@ func TestReadConfFileFromLocalWithDefaultPath(t *testing.T) {
 func TestReturnErrorIfActionMappingsNotFoundInTheConfFile(t *testing.T) {
 	os.Setenv("MARIDCONFSOURCE", "local")
 
-	oldReadFromLocalFunction := readConfigurationFromLocalFunction
-	defer func() { readConfigurationFromLocalFunction = oldReadFromLocalFunction }()
-	readConfigurationFromLocalFunction = mockReadConfigurationFromLocalWithDefaultPathWithoutActionMappings
+	oldReadFromLocalFunction := readConfigurationFromLocalFunc
+	defer func() { readConfigurationFromLocalFunc = oldReadFromLocalFunction }()
+	readConfigurationFromLocalFunc = mockReadConfigurationFromLocalWithDefaultPathWithoutActionMappings
 	_, err := ReadConfFile()
 
 	assert.Error(t, err, "Error should be thrown because action mappings do not exist in the configuration.")
@@ -172,9 +172,9 @@ func TestReadConfFileFromLocalWithCustomPath(t *testing.T) {
 	os.Setenv("MARIDCONFSOURCE", "local")
 	os.Setenv("MARIDCONFLOCALFILEPATH", testLocalConfFilePath)
 
-	oldReadFromLocalFunction := readConfigurationFromLocalFunction
-	defer func() {readConfigurationFromLocalFunction = oldReadFromLocalFunction}()
-	readConfigurationFromLocalFunction = mockReadConfigurationFromLocalWithCustomPath
+	oldReadFromLocalFunction := readConfigurationFromLocalFunc
+	defer func() { readConfigurationFromLocalFunc = oldReadFromLocalFunction}()
+	readConfigurationFromLocalFunc = mockReadConfigurationFromLocalWithCustomPath
 	configuration, err := ReadConfFile()
 
 	if err != nil {

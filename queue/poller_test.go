@@ -1,14 +1,14 @@
 package queue
 
 import (
-	"math/rand"
 	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/opsgenie/marid2/conf"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"math/rand"
 	"strconv"
 	"sync"
 	"testing"
-	"github.com/stretchr/testify/assert"
-	"github.com/pkg/errors"
-	"github.com/opsgenie/marid2/conf"
 )
 
 var mockPollerConf = &conf.PollerConf{
@@ -26,6 +26,9 @@ func newPollerTest() *MaridPoller {
 		pollerConf:     mockPollerConf,
 		workerPool:     NewMockWorkerPool(),
 		queueProvider:  NewMockQueueProvider(),
+		actionMappings: mockActionMappings,
+		apiKey:			&mockApiKey,
+		baseUrl:		&mockBaseUrl,
 	}
 }
 
@@ -285,7 +288,7 @@ func NewMockPoller() Poller {
 	return &MockPoller{}
 }
 
-func NewMockPollerForQueueProcessor(workerPool WorkerPool, queueProvider QueueProvider, pollerConf *conf.PollerConf, actionMappings *conf.ActionMappings) Poller {
+func NewMockPollerForQueueProcessor(workerPool WorkerPool, queueProvider QueueProvider, pollerConf *conf.PollerConf, actionMappings *conf.ActionMappings, apiKey *string, baseUrl *string) Poller {
 	return NewMockPoller()
 }
 

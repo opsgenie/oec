@@ -1,9 +1,9 @@
 package conf
 
 import (
-	"testing"
-	"os"
 	"github.com/stretchr/testify/assert"
+	"os"
+	"testing"
 )
 
 var gitCloneCalled = false
@@ -55,7 +55,7 @@ func mockGitClone(tempDir string, url string, privateKeyFilePath string, passPhr
 }
 
 func TestReadConfigurationFromGit(t *testing.T) {
-	repoName := "repo"
+	repoName := "asd"
 	url := "https://github.com/someaccount/" + repoName + ".git"
 	privateKeyFilePath := "dummypath"
 	passPhrase := "passPhrase"

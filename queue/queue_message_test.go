@@ -6,9 +6,9 @@ import (
 	"github.com/opsgenie/marid2/runbook"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"math/rand"
 	"testing"
 	"time"
-	"math/rand"
 )
 
 var mockActionMappings = &conf.ActionMappings{
@@ -17,6 +17,8 @@ var mockActionMappings = &conf.ActionMappings{
 }
 
 var mockApiKey = "mockApiKey"
+var mockBasePath = "mockBasePath"
+var mockBaseUrl = "mockBaseUrl"
 
 func mockParseJson(content []byte) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
@@ -34,7 +36,7 @@ func TestGetMessage(t *testing.T) {
 	expectedMessage.SetMessageId("messageId")
 	expectedMessage.SetBody("messageBody")
 
-	queueMessage := NewMaridMessage(expectedMessage, mockActionMappings, &mockApiKey)
+	queueMessage := NewMaridMessage(expectedMessage, mockActionMappings, &mockApiKey, &mockBasePath)
 	actualMessage := queueMessage.Message()
 
 	assert.Equal(t, expectedMessage, actualMessage)
@@ -48,7 +50,7 @@ func TestProcessSuccessfully(t *testing.T) {
 
 	body := `{"action":"action1"}`
 	message := &sqs.Message{Body: &body}
-	queueMessage := NewMaridMessage(message, mockActionMappings, &mockApiKey)
+	queueMessage := NewMaridMessage(message, mockActionMappings, &mockApiKey, &mockBasePath)
 
 	err := queueMessage.Process()
 	assert.Nil(t, err)
@@ -62,7 +64,7 @@ func TestProcessMappedActionNotFound(t *testing.T) {
 
 	body := `{"action":"action3"}`
 	message := &sqs.Message{Body: &body}
-	queueMessage := NewMaridMessage(message, mockActionMappings, &mockApiKey)
+	queueMessage := NewMaridMessage(message, mockActionMappings, &mockApiKey, &mockBasePath)
 
 	err := queueMessage.Process()
 	expected := errors.New("There is no mapped action found for [action3]").Error()
@@ -77,7 +79,7 @@ func TestProcessFieldMissing(t *testing.T) {
 
 	body := `{"alert":{}}`
 	message := &sqs.Message{Body: &body}
-	queueMessage := NewMaridMessage(message, mockActionMappings, &mockApiKey)
+	queueMessage := NewMaridMessage(message, mockActionMappings, &mockApiKey, &mockBasePath)
 
 	err := queueMessage.Process()
 	expected := errors.New("SQS message does not contain action property").Error()

@@ -1,14 +1,13 @@
 package runbook
 
 import (
-	"github.com/google/uuid"
-	"strings"
-	"os"
-	"fmt"
 	"errors"
+	"github.com/google/uuid"
+	"os"
+	"strings"
 )
 
-func writeContentToTemporaryFile(content string, fileName string) (string, error) {
+func writeContentToTemporaryFile(content []byte, fileName string) (string, error) {
 	tmpDir := os.TempDir()
 	fullPath := tmpDir + string(os.PathSeparator) + fileName
 
@@ -36,7 +35,7 @@ func writeContentToTemporaryFile(content string, fileName string) (string, error
 		return "", nil
 	}
 
-	file.WriteString(content)
+	file.Write(content)
 	file.Close()
 
 	return fullPath, nil
@@ -58,16 +57,6 @@ func appendUniqueRandomPostfixToFileName(fileName string) (string, error) {
 	}
 
 	return newFileName, nil
-}
-
-func convertMapToArray(sourceMap map[string]interface{}) []string {
-	destinationArray := make([]string, 0)
-
-	for key, value := range sourceMap {
-		destinationArray = append(destinationArray, fmt.Sprintf("%s=%s", key, value))
-	}
-
-	return destinationArray
 }
 
 func createTestScriptFile(content string, filePath string) error {

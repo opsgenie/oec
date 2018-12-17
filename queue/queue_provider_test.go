@@ -1,17 +1,17 @@
 package queue
 
 import (
-	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"math/rand"
 	"strconv"
 	"sync"
-	"time"
-	"math/rand"
 	"testing"
-	"github.com/stretchr/testify/assert"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/pkg/errors"
+	"time"
 )
 
 func newQueueProviderTest() *MaridQueueProvider {
@@ -49,7 +49,7 @@ func mockPoll(p *MaridPoller) (shouldWait bool) {
 			}
 			sqsMessage := &sqs.Message{}
 			sqsMessage.SetMessageId(strconv.Itoa(j*10+(i+1)))
-			message := NewMaridMessage(sqsMessage, mockActionMappings, &mockApiKey)
+			message := NewMaridMessage(sqsMessage, mockActionMappings, &mockApiKey, &mockBasePath)
 			job := NewSqsJob(message, p.queueProvider, 1)
 			p.workerPool.Submit(job)
 		}

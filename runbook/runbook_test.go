@@ -1,17 +1,17 @@
 package runbook
 
 import (
-	"github.com/opsgenie/marid2/conf"
-	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
-	"testing"
-	"net/http/httptest"
-	"net/http"
-	"encoding/json"
-	"io/ioutil"
-	"github.com/sirupsen/logrus"
 	"bytes"
+	"encoding/json"
+	"github.com/opsgenie/marid2/conf"
 	"github.com/opsgenie/marid2/retryer"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
+	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
+	"testing"
 )
 
 var mockActionMappings = (map[conf.ActionName]conf.MappedAction)(conf.ActionMappings{
@@ -109,7 +109,7 @@ func TestExecuteRunbookLocal(t *testing.T) {
 
 func TestSendResultToOpsGenie(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusAccepted)
 
 		if r.Method != "POST" {
 			t.Errorf("Expected ‘POST’ request, got ‘%s’", r.Method)
@@ -150,10 +150,6 @@ func TestSendResultToOpsGenie(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	resultUrlOrj := resultUrl
-	defer func() {resultUrl = resultUrlOrj }()
-	resultUrl = ts.URL
-
 	actionResult := &ActionResultPayload{
 		Action:"testAction",
 		AlertId:"testAlert",
@@ -166,7 +162,7 @@ func TestSendResultToOpsGenie(t *testing.T) {
 	logrus.SetOutput(buffer)
 
 	apiKey := "testKey"
-	SendResultToOpsGenie(actionResult, &apiKey)
+	SendResultToOpsGenie(actionResult, &apiKey, &ts.URL)
 
 	assert.Contains(t, buffer.String(), "Successfully sent result to OpsGenie.")
 }
@@ -178,15 +174,11 @@ func TestCannotSendResultToOpsGenie(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	resultUrlOrj := resultUrl
-	defer func() {resultUrl = resultUrlOrj }()
-	resultUrl = ts.URL
-
 	buffer := &bytes.Buffer{}
 	logrus.SetOutput(buffer)
 
 	apiKey := "testKey"
-	SendResultToOpsGenie(new(ActionResultPayload), &apiKey)
+	SendResultToOpsGenie(new(ActionResultPayload), &apiKey, &ts.URL)
 
 	assert.Contains(t, buffer.String(), "Could not send action result to OpsGenie. HttpStatus: 400")
 }
@@ -197,10 +189,6 @@ func TestSendResultToOpsGenieClientError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	resultUrlOrj := resultUrl
-	defer func() {resultUrl = resultUrlOrj }()
-	resultUrl = ts.URL
-
 	defer func() {client.DoFunc = nil }()
 	client.DoFunc = func(retryer *retryer.Retryer, request *http.Request) (*http.Response, error) {
 		return nil, errors.New("Test client error")
@@ -210,7 +198,21 @@ func TestSendResultToOpsGenieClientError(t *testing.T) {
 	logrus.SetOutput(buffer)
 
 	apiKey := "testKey"
-	SendResultToOpsGenie(new(ActionResultPayload), &apiKey)
+	SendResultToOpsGenie(new(ActionResultPayload), &apiKey, &ts.URL)
 
 	assert.Contains(t, buffer.String(), "Could not send action result to OpsGenie. Reason: Test client error")
+}
+
+func TestExternalSendResultToOpsGenie(t *testing.T) {
+
+	actionResult := &ActionResultPayload{
+		Action:"testAction",
+		AlertId:"5c354eaa-f92f-44a5-a868-dd8fbab40dd8-1544769998862",
+		IsSuccessful:true,
+		FailureMessage:"fail",
+	}
+
+	apiKey := "8a22a64d-11a5-44e9-9c31-2c7bb3518458"
+	baseUrl := "https://api.opsgenie.com"
+	SendResultToOpsGenie(actionResult, &apiKey, &baseUrl)
 }

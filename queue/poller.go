@@ -2,11 +2,11 @@ package queue
 
 import (
 	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/opsgenie/marid2/conf"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"sync"
 	"time"
-	"github.com/opsgenie/marid2/conf"
-	"github.com/sirupsen/logrus"
 )
 
 type Poller interface {
@@ -21,6 +21,8 @@ type MaridPoller struct {
 	workerPool		WorkerPool
 	queueProvider 	QueueProvider
 
+	apiKey 			*string
+	baseUrl 		*string
 	pollerConf 		*conf.PollerConf
 	actionMappings 	*conf.ActionMappings
 
@@ -30,7 +32,12 @@ type MaridPoller struct {
 	wakeUpChan     	chan struct{}
 }
 
-func NewPoller(workerPool WorkerPool, queueProvider QueueProvider, pollerConf *conf.PollerConf, actionMappings *conf.ActionMappings) Poller {
+func NewPoller(workerPool WorkerPool, queueProvider QueueProvider, pollerConf *conf.PollerConf, actionMappings *conf.ActionMappings, apiKey *string, baseUrl *string) Poller {
+
+	if workerPool == nil || queueProvider == nil || pollerConf == nil || actionMappings == nil || apiKey == nil || baseUrl == nil {
+		return nil
+	}
+
 	return &MaridPoller {
 		quit:           make(chan struct{}),
 		wakeUpChan:     make(chan struct{}),
@@ -38,6 +45,8 @@ func NewPoller(workerPool WorkerPool, queueProvider QueueProvider, pollerConf *c
 		startStopMutex: &sync.Mutex{},
 		pollerConf:     pollerConf,
 		actionMappings: actionMappings,
+		apiKey:			apiKey,
+		baseUrl:		baseUrl,
 		workerPool:     workerPool,
 		queueProvider:  queueProvider,
 	}
@@ -125,6 +134,8 @@ func (p *MaridPoller) poll() (shouldWait bool) { // todo unblocking read channel
 			NewMaridMessage(
 				messages[i],
 				p.actionMappings,
+				p.apiKey,
+				p.baseUrl,
 			),
 			p.queueProvider,
 			p.pollerConf.VisibilityTimeoutInSeconds,

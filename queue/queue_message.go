@@ -18,6 +18,7 @@ type MaridQueueMessage struct {
 	message 		*sqs.Message
 	actionMappings 	*conf.ActionMappings
 	apiKey 			*string
+	baseUrl 		*string
 }
 
 func (mqm *MaridQueueMessage) Message() *sqs.Message {
@@ -56,14 +57,20 @@ func (mqm *MaridQueueMessage) Process() error {
 		FailureMessage: errorOutput,
 
 	}
-	runbook.SendResultToOpsGenie(result, mqm.apiKey)
+	runbook.SendResultToOpsGenie(result, mqm.apiKey, mqm.baseUrl)
 	return nil
 }
 
-func NewMaridMessage(message *sqs.Message, actionMappings *conf.ActionMappings, apiKey *string) QueueMessage {
+func NewMaridMessage(message *sqs.Message, actionMappings *conf.ActionMappings, apiKey *string, baseUrl *string) QueueMessage {
+
+	if message == nil || actionMappings == nil || apiKey == nil || baseUrl == nil {
+		return nil
+	}
+
 	return &MaridQueueMessage{
 		message: 		message,
 		actionMappings:	actionMappings,
 		apiKey:			apiKey,
+		baseUrl:		baseUrl,
 	}
 }

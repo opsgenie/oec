@@ -2,15 +2,16 @@ package conf
 
 import (
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"os"
 	"time"
-	"github.com/sirupsen/logrus"
 )
 
 type Configuration struct {
 	ApiKey 			string 			`json:"apiKey,omitempty" yaml:"apiKey,omitempty"`
+	BaseUrl 		string			`json:"baseUrl,omitempty" yaml:"baseUrl,omitempty"`
 	ActionMappings 	ActionMappings 	`json:"actionMappings,omitempty"`
-	PollerConf 		PollerConf 		`json:"pollerConfcal"`
+	PollerConf 		PollerConf 		`json:"pollerConf,omitempty"`
 	PoolConf 		PoolConf 		`json:"poolConf,omitempty"`
 	LogLevel		logrus.Level	`json:"logLevel,omitempty"`
 }
@@ -43,8 +44,8 @@ type PoolConf struct {
 	MonitoringPeriodInMillis time.Duration	`json:"monitoringPeriodInMillis,omitempty"`
 }
 
-var readConfigurationFromGitFunction = readConfigurationFromGit
-var readConfigurationFromLocalFunction = readConfigurationFromLocal
+var readConfigurationFromGitFunc = readConfigurationFromGit
+var readConfigurationFromLocalFunc = readConfigurationFromLocal
 
 func ReadConfFile() (*Configuration, error) {
 
@@ -71,7 +72,7 @@ func readConfFileFromSource(confSource string) (*Configuration, error) {
 		gitUrl := os.Getenv("MARIDCONFREPOGITURL")
 		maridConfPath := os.Getenv("MARIDCONFGITFILEPATH")
 
-		return readConfigurationFromGitFunction(gitUrl, maridConfPath, privateKeyFilePath, passPhrase)
+		return readConfigurationFromGitFunc(gitUrl, maridConfPath, privateKeyFilePath, passPhrase)
 
 	} else if confSource == "local" {
 		maridConfPath := os.Getenv("MARIDCONFLOCALFILEPATH")
@@ -86,7 +87,7 @@ func readConfFileFromSource(confSource string) (*Configuration, error) {
 			maridConfPath = homePath + string(os.PathSeparator) + ".opsgenie" + string(os.PathSeparator) + "maridConfig.json"
 		}
 
-		return readConfigurationFromLocalFunction(maridConfPath)
+		return readConfigurationFromLocalFunc(maridConfPath)
 	} else {
 		return nil, errors.New("Unknown configuration source [" + confSource + "].")
 	}

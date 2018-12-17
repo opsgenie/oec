@@ -1,41 +1,43 @@
 package conf
 
 import (
-	"gopkg.in/src-d/go-git.v4"
-	"strings"
 	"github.com/pkg/errors"
-	"os"
-	"io/ioutil"
 	"golang.org/x/crypto/ssh"
+	"gopkg.in/src-d/go-git.v4"
 	goGitSsh "gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 var gitCloneFunc = gitClone
 
 func readConfigurationFromGit(url string, confPath string, privateKeyFilePath string, passPhrase string) (*Configuration, error) {
-	var tmpDir = os.TempDir()
 
-	err := os.MkdirAll(tmpDir, 0755)
+	err := os.MkdirAll(os.TempDir(), 0755)
 
 	if err != nil {
 		return nil, err
 	}
 
 	directoryName, err := parseDirectoryNameFromUrl(url)
-	os.RemoveAll(tmpDir + string(os.PathSeparator) + directoryName)	// todo validate path traversal
-	defer os.RemoveAll(tmpDir + string(os.PathSeparator) + directoryName)
+	if err != nil {
+		return nil, err
+	}
+
+	tmpDir := os.TempDir() + string(os.PathSeparator) + directoryName
+
+	os.RemoveAll(tmpDir)	// todo validate path traversal
+	defer os.RemoveAll(tmpDir)
+
+	err = gitCloneFunc(tmpDir, url, privateKeyFilePath, passPhrase)
 
 	if err != nil {
 		return nil, err
 	}
 
-	err = gitCloneFunc(tmpDir + string(os.PathSeparator) + directoryName, url, privateKeyFilePath, passPhrase)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return parseConfiguration(tmpDir + string(os.PathSeparator) + directoryName + string(os.PathSeparator) + confPath)
+	return parseConfiguration(tmpDir + string(os.PathSeparator) + confPath)
 }
 
 func gitClone(tmpDir string, gitUrl string, privateKeyFilePath string, passPhrase string) error {
@@ -73,6 +75,10 @@ func getCloneOptions(gitUrl, privateKeyFilePath string, passPhrase string) (git.
 }
 
 func parseDirectoryNameFromUrl(url string) (string, error) {
+	if !strings.HasSuffix(url, ".git") {
+		return "", errors.New(url + " is not a valid Git URL.")
+	}
+
 	urlWithoutExtension := strings.TrimRight(url, ".git")
 	lastIndex := strings.LastIndex(urlWithoutExtension, "/")
 
@@ -80,5 +86,11 @@ func parseDirectoryNameFromUrl(url string) (string, error) {
 		return "", errors.New(url + " is not a valid Git URL.")
 	}
 
-	return urlWithoutExtension[lastIndex+1:], nil
+	dirName := filepath.Clean(urlWithoutExtension[lastIndex:])
+
+	if dirName == "" || dirName == "/" || dirName == "." {
+		return "", errors.New(url + " is not a valid Git URL.")
+	}
+
+	return dirName, nil
 }

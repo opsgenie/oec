@@ -1,15 +1,15 @@
 package queue
 
 import (
+	"encoding/json"
+	"github.com/opsgenie/marid2/conf"
+	"github.com/opsgenie/marid2/retryer"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	"net/http"
+	"strconv"
 	"sync"
 	"time"
-	"github.com/opsgenie/marid2/conf"
-	"encoding/json"
-	"strconv"
-	"net/http"
-	"github.com/sirupsen/logrus"
-	"github.com/opsgenie/marid2/retryer"
 )
 
 const (
@@ -185,6 +185,8 @@ func (qp *MaridQueueProcessor) addPoller(queueProvider QueueProvider) Poller {
 		queueProvider,
 		&qp.conf.PollerConf,
 		&qp.conf.ActionMappings,
+		&qp.conf.ApiKey,
+		&qp.conf.BaseUrl,
 	)
 	qp.pollers[queueProvider.MaridMetadata().getQueueUrl()] = poller
 	return poller

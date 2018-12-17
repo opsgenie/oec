@@ -11,16 +11,16 @@ import (
 
 var getRunbookFromGithubFunc = getRunbookFromGithub
 
-func executeRunbookFromGithub(runbookRepoOwner string, runbookRepoName string, runbookRepoFilePath string,
-	runbookRepoToken string, args []string, environmentVariables []string) (string, string, error) {
+func executeRunbookFromGithub(repoOwner string, repoName string, repoFilePath string,
+	repoToken string, args []string, environmentVariables []string) (string, string, error) {
 
-	content, err := getRunbookFromGithubFunc(runbookRepoOwner, runbookRepoName, runbookRepoFilePath, runbookRepoToken)
+	content, err := getRunbookFromGithubFunc(repoOwner, repoName, repoFilePath, repoToken)
 
 	if err != nil {
 		return "", "", err
 	}
 
-	filePath, err := writeContentToTemporaryFile(content, path.Base(runbookRepoFilePath))
+	filePath, err := writeContentToTemporaryFile(content, path.Base(repoFilePath))
 	defer os.Remove(filePath)
 
 	if err != nil {
@@ -36,13 +36,12 @@ func executeRunbookFromGithub(runbookRepoOwner string, runbookRepoName string, r
 	return execute(filePath, args, environmentVariables)
 }
 
-func getRunbookFromGithub(owner string, repo string, filepath string, token string) (string, error) {
+func getRunbookFromGithub(owner string, repo string, filepath string, token string) ([]byte, error) {
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 	tc := oauth2.NewClient(context.Background(), ts)
 	client := github.NewClient(tc)
 	runbook, _ := client.Repositories.DownloadContents(context.Background(), owner, repo, filepath, nil)
 	defer runbook.Close()
-	bytes, err := ioutil.ReadAll(runbook)
 
-	return string(bytes), err
+	return ioutil.ReadAll(runbook)
 }
