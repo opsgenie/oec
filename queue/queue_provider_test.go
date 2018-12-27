@@ -50,7 +50,7 @@ func mockPoll(p *MaridPoller) (shouldWait bool) {
 			sqsMessage := &sqs.Message{}
 			sqsMessage.SetMessageId(strconv.Itoa(j*10+(i+1)))
 			message := NewMaridMessage(sqsMessage, mockActionMappings, &mockApiKey, &mockBasePath)
-			job := NewSqsJob(message, p.queueProvider, 1)
+			job := NewSqsJob(message, p.queueProvider)
 			p.workerPool.Submit(job)
 		}
 		time.Sleep(time.Millisecond * 10)
@@ -167,7 +167,7 @@ func TestRefreshClient(t *testing.T) {
 	assert.Nil(t, err)
 
 	expectedConfig := aws.NewConfig().
-		WithRegion(provider.MaridMetadata().getRegion()).
+		WithRegion(provider.MaridMetadata().Region()).
 		WithCredentials(mockCreds)
 
 	assert.Equal(t, expectedConfig.Credentials, provider.client.(*sqs.SQS).Config.Credentials)

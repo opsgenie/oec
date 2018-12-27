@@ -6,21 +6,20 @@ import (
 	"golang.org/x/oauth2"
 	"io/ioutil"
 	"os"
-	"path"
+	fpath "path/filepath"
 )
 
 var getRunbookFromGithubFunc = getRunbookFromGithub
 
-func executeRunbookFromGithub(repoOwner string, repoName string, repoFilePath string,
-	repoToken string, args []string, environmentVariables []string) (string, string, error) {
+func executeRunbookFromGithub(owner, repo, filepath, token string,
+	args, environmentVariables []string) (string, string, error) {
 
-	content, err := getRunbookFromGithubFunc(repoOwner, repoName, repoFilePath, repoToken)
-
+	content, err := getRunbookFromGithubFunc(owner, repo, filepath, token)
 	if err != nil {
 		return "", "", err
 	}
 
-	filePath, err := writeContentToTemporaryFile(content, path.Base(repoFilePath))
+	filePath, err := writeContentToTemporaryFile(content, fpath.Ext(filepath))
 	defer os.Remove(filePath)
 
 	if err != nil {
@@ -28,7 +27,6 @@ func executeRunbookFromGithub(repoOwner string, repoName string, repoFilePath st
 	}
 
 	err = os.Chmod(filePath, 0755)
-
 	if err != nil {
 		return "", "", err
 	}
@@ -36,11 +34,14 @@ func executeRunbookFromGithub(repoOwner string, repoName string, repoFilePath st
 	return execute(filePath, args, environmentVariables)
 }
 
-func getRunbookFromGithub(owner string, repo string, filepath string, token string) ([]byte, error) {
+func getRunbookFromGithub(owner, repo, filepath, token string) ([]byte, error) {
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 	tc := oauth2.NewClient(context.Background(), ts)
 	client := github.NewClient(tc)
-	runbook, _ := client.Repositories.DownloadContents(context.Background(), owner, repo, filepath, nil)
+	runbook, err := client.Repositories.DownloadContents(context.Background(), owner, repo, filepath, nil)
+	if err != nil {
+		return nil, err
+	}
 	defer runbook.Close()
 
 	return ioutil.ReadAll(runbook)

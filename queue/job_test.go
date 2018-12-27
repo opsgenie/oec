@@ -1,12 +1,11 @@
 package queue
 
 import (
-	"testing"
-	"github.com/stretchr/testify/assert"
-	"sync"
-	"time"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"sync"
+	"testing"
 )
 
 func newJobTest() *SqsJob {
@@ -21,10 +20,6 @@ func newJobTest() *SqsJob {
 		id:                     queueMessage.Message().MessageId,
 		executeMutex:           &sync.Mutex{},
 		state:                  JobInitial,
-		timeoutInSeconds:       0,
-		observePeriod:          time.Second,
-		shouldObserve:          false,
-		observationExceedCount: 0,
 	}
 }
 
@@ -121,24 +116,6 @@ func TestExecuteWithDeleteError(t *testing.T) {
 	actualState := sqsJob.state
 
 	assert.Equal(t, expectedState, actualState)
-}
-
-func TestObserve(t *testing.T) {
-
-	sqsJob := newJobTest()
-	sqsJob.state = JobExecuting
-	sqsJob.timeoutInSeconds = 1
-	sqsJob.observePeriod = time.Nanosecond
-
-	sqsJob.observe()
-
-	time.Sleep(time.Millisecond)
-	sqsJob.observer.Stop()
-
-	expectedExceedCount := int32(1)
-	actualExceedCount := sqsJob.observationExceedCount
-
-	assert.Equal(t, expectedExceedCount, actualExceedCount)
 }
 
 // Mock Job

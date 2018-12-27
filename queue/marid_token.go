@@ -38,14 +38,14 @@ type QueueConfiguration struct {
 	QueueUrl                      string `json:"queueUrl,omitempty"`
 }
 
-func (mmt MaridMetadata) getExpireTimeMillis() int64 {
+func (mmt MaridMetadata) ExpireTimeMillis() int64 {
 	return mmt.AssumeRoleResult.Credentials.ExpireTimeMillis
 }
 
-func (mmt MaridMetadata) getRegion() string {
+func (mmt MaridMetadata) Region() string {
 	return mmt.QueueConfiguration.Region
 }
 
-func (mmt MaridMetadata) getQueueUrl() string {
+func (mmt MaridMetadata) QueueUrl() string {
 	return mmt.QueueConfiguration.QueueUrl
 }

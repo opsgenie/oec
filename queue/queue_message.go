@@ -6,7 +6,7 @@ import (
 	"github.com/opsgenie/marid2/conf"
 	"github.com/opsgenie/marid2/runbook"
 	"github.com/pkg/errors"
-	"log"
+	"github.com/sirupsen/logrus"
 )
 
 type QueueMessage interface {
@@ -42,12 +42,17 @@ func (mqm *MaridQueueMessage) Process() error {
 		return errors.Errorf("There is no mapped action found for [%s]", action)
 	}
 
-	commandOutput, errorOutput, err := runbook.ExecuteRunbookFunc(&mappedAction, *mqm.message.Body)
-	log.Println(commandOutput, errorOutput, err)
+	_, errorOutput, err := runbook.ExecuteRunbookFunc(&mappedAction, *mqm.message.Body)
+	if err != nil {
+		logrus.Debugf("Action[%s] execution of message[%s] failed: %s", action, *mqm.message.MessageId, err)
+	}
 
 	var success bool
-	if errorOutput == "" {
+	if errorOutput != "" {
+		logrus.Debugf("Action[%s] execution of message[%s] produce error output: %s", action, *mqm.message.MessageId, errorOutput)
+	} else {
 		success = true
+		logrus.Debugf("Action[%s] execution of message[%s] has been completed.", action, *mqm.message.MessageId)
 	}
 
 	result := &runbook.ActionResultPayload{
@@ -57,7 +62,14 @@ func (mqm *MaridQueueMessage) Process() error {
 		FailureMessage: errorOutput,
 
 	}
-	runbook.SendResultToOpsGenie(result, mqm.apiKey, mqm.baseUrl)
+
+	err = runbook.SendResultToOpsGenieFunc(result, mqm.apiKey, mqm.baseUrl)
+	if err != nil {
+		logrus.Warnf("Could not send action[%s] result of message[%s] to Opsgenie: %s", action, *mqm.message.MessageId, err)
+	} else {
+		logrus.Debug("Successfully sent result to OpsGenie.")
+	}
+
 	return nil
 }
 

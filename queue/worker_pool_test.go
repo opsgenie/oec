@@ -1,18 +1,16 @@
 package queue
 
 import (
-	"testing"
-	"sync"
-	"github.com/stretchr/testify/assert"
-	"log"
-	"sync/atomic"
-	"math/cmplx"
-	"strconv"
 	"github.com/opsgenie/marid2/conf"
-	"time"
 	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 	"io/ioutil"
+	"math/cmplx"
 	"os"
+	"strconv"
+	"sync/atomic"
+	"testing"
+	"time"
 )
 
 var mockPoolConf = &conf.PoolConf{
@@ -21,19 +19,6 @@ var mockPoolConf = &conf.PoolConf{
 	QueueSize:                	queueSize,
 	KeepAliveTimeInMillis:    	keepAliveTimeInMillis,
 	MonitoringPeriodInMillis: 	monitoringPeriodInMillis,
-}
-
-func NewWorkerPoolTest(conf *conf.PoolConf) *WorkerPoolImpl {
-
-	return &WorkerPoolImpl{
-		jobQueue:         make(chan Job, conf.QueueSize),
-		quit:             make(chan struct{}),
-		quitNow:          make(chan struct{}),
-		poolConf:         conf,
-		workersWaitGroup: &sync.WaitGroup{},
-		startStopMutex:   &sync.RWMutex{},
-		isRunning:        false,
-	}
 }
 
 var dummyJob = func() {
@@ -84,14 +69,12 @@ func TestValidateWorkerNumbersNewWorkerPool(t *testing.T) {
 	assert.Equal(t, int32(1), pool.poolConf.MaxNumberOfWorker)
 	assert.Equal(t, int32(queueSize), pool.poolConf.QueueSize)
 	assert.Equal(t, time.Duration(keepAliveTimeInMillis), pool.poolConf.KeepAliveTimeInMillis)
-	assert.Equal(t, time.Duration(0), pool.poolConf.MonitoringPeriodInMillis)
+	assert.Equal(t, time.Duration(monitoringPeriodInMillis), pool.poolConf.MonitoringPeriodInMillis)
 }
 
 func TestStartPool(t *testing.T)  {
 
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-
-	pool := NewWorkerPoolTest(mockPoolConf)
+	pool := NewWorkerPool(mockPoolConf).(*WorkerPoolImpl)
 
 	err := pool.Start()
 
@@ -102,23 +85,22 @@ func TestStartPool(t *testing.T)  {
 
 	for i := 0 ; i < 1000 ; i++ {
 		job := NewMockJob()
-		//series := i + 1
+		id := strconv.Itoa(i)
+		job.JobIdFunc = func() string {
+			return id
+		}
 		job.ExecuteFunc = func() error {
 			atomic.AddInt32(&executeJobCallCount, 1)
-			//start := time.Now()
 			time.Sleep(time.Nanosecond)
-			//log.Println(strconv.Itoa(series) + ". job: " + time.Since(start).String())
 			return nil
 		}
 
-		for isSubmitted, _ := pool.Submit(job); !isSubmitted; isSubmitted, _ = pool.Submit(job) {
-			//time.Sleep(time.Nanosecond)
-		}
-
+		for isSubmitted, _ := pool.Submit(job); !isSubmitted; isSubmitted, _ = pool.Submit(job) {}
 	}
 
-	pool.Stop()
+	err = pool.Stop()
 
+	assert.Nil(t, err)
 	assert.Equal(t, int32(1000), executeJobCallCount)
 }
 
@@ -147,7 +129,7 @@ func BenchmarkWorkerPool(b *testing.B) {
 
 	for _, size := range sizes {
 
-		pool := NewWorkerPoolTest(
+		pool := NewWorkerPool(
 			&conf.PoolConf{
 				int32(size.workerSize),
 				2,
@@ -158,7 +140,7 @@ func BenchmarkWorkerPool(b *testing.B) {
 		)
 
 		b.Run(strconv.Itoa(size.workerSize) + "MaxWorkers" + strconv.Itoa(size.jobSize) + "Jobs", func(b *testing.B) {
-			b.N = 2000000000
+
 
 			err := pool.Start()
 
@@ -179,8 +161,9 @@ func BenchmarkWorkerPool(b *testing.B) {
 				}
 			}
 
-			pool.Stop()
+			err = pool.Stop()
 
+			assert.Nil(b, err)
 			assert.Equal(b, int32(size.jobSize), executeJobCallCount)
 		})
 	}
@@ -216,7 +199,7 @@ func BenchmarkWorkerPoolWithComparableFixedWorkerSize(b *testing.B) {
 			maxWorkers = "FixedWorkers"
 		}
 
-		pool := NewWorkerPoolTest(
+		pool := NewWorkerPool(
 			&conf.PoolConf{
 				int32(testCase.maxNumberOfWorker),
 				int32(minNumberOfWorker),
@@ -246,8 +229,9 @@ func BenchmarkWorkerPoolWithComparableFixedWorkerSize(b *testing.B) {
 				for isSubmitted, _ := pool.Submit(job); !isSubmitted; isSubmitted, _ = pool.Submit(job) {}
 			}
 
-			pool.Stop()
+			err = pool.Stop()
 
+			assert.Nil(b, err)
 			assert.Equal(b, int32(jobSize), executeJobCallCount)
 		})
 	}

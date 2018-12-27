@@ -3,14 +3,11 @@ package queue
 import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/sirupsen/logrus"
 	"sync"
 )
-
-//const tokenUrl = "https://api.opsgenie.com/v2/integrations/maridv2/credentials"
-const tokenUrl = "https://1c2365a0.ngrok.io/v2/integrations/maridv2/credentials"
 
 var newSession = session.NewSession
 
@@ -64,7 +61,7 @@ func (mqp *MaridQueueProvider) MaridMetadata() MaridMetadata {
 
 func (mqp *MaridQueueProvider) ChangeMessageVisibility(message *sqs.Message, visibilityTimeout int64) error {
 
-	queueUrl := mqp.maridMetadata.getQueueUrl()
+	queueUrl := mqp.maridMetadata.QueueUrl()
 
 	request := &sqs.ChangeMessageVisibilityInput{
 		ReceiptHandle:     message.ReceiptHandle,
@@ -77,17 +74,17 @@ func (mqp *MaridQueueProvider) ChangeMessageVisibility(message *sqs.Message, vis
 	mqp.rwMu.RUnlock()
 
 	if err != nil {
-		logrus.Errorf("Change Message Visibility Error: %s", err)
+		logrus.Errorf("Change Message[%s] visibility error from the queue of region[%s]: %s", *message.MessageId, mqp.maridMetadata.Region(), err)
 		return err
 	}
 
-	logrus.Debugf("Visibility time of Message[%s] is changed.", *message.MessageId)
+	logrus.Debugf("Visibility time of Message[%s] from the queue of region[%s] is changed.", *message.MessageId, mqp.maridMetadata.Region())
 	return nil
 }
 
 func (mqp *MaridQueueProvider) DeleteMessage(message *sqs.Message) error {
 
-	queueUrl := mqp.maridMetadata.getQueueUrl()
+	queueUrl := mqp.maridMetadata.QueueUrl()
 
 	request := &sqs.DeleteMessageInput{
 		QueueUrl:      &queueUrl,
@@ -99,16 +96,16 @@ func (mqp *MaridQueueProvider) DeleteMessage(message *sqs.Message) error {
 	mqp.rwMu.RUnlock()
 
 	if err != nil {
-		logrus.Errorf("Delete message error: %s", err)
+		logrus.Errorf("Delete message[%s] error from the queue of region[%s]: %s", *message.MessageId, mqp.maridMetadata.Region(), err)
 		return err
 	}
-	logrus.Debugf("Message[%s] is deleted.", *message.MessageId)
+	logrus.Debugf("Message[%s] is deleted from the queue of region[%s].", *message.MessageId, mqp.maridMetadata.Region())
 	return nil
 }
 
 func (mqp *MaridQueueProvider) ReceiveMessage(maxNumOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
 
-	queueUrl := mqp.maridMetadata.getQueueUrl()
+	queueUrl := mqp.maridMetadata.QueueUrl()
 
 	request := &sqs.ReceiveMessageInput{
 		MessageAttributeNames: []*string{
@@ -129,7 +126,13 @@ func (mqp *MaridQueueProvider) ReceiveMessage(maxNumOfMessage int64, visibilityT
 		return nil, err
 	}
 
-	logrus.Debugf("Received %d messages.", len(result.Messages))
+	messageLength := len(result.Messages)
+
+	if messageLength == 0 {
+		logrus.Tracef("There is no new message in the queue of region[%s].", mqp.maridMetadata.Region())
+	} else {
+		logrus.Debugf("Received %d messages from the queue of region[%s].", messageLength, mqp.maridMetadata.Region())
+	}
 
 	return result.Messages, nil
 }
@@ -147,7 +150,7 @@ func (mqp *MaridQueueProvider) RefreshClient(assumeRoleResult AssumeRoleResult) 
 	mqp.maridMetadata.AssumeRoleResult = assumeRoleResult
 	mqp.rwMu.Unlock()
 
-	logrus.Debugf("Client of queue provider[%s] has refreshed.", mqp.maridMetadata.getQueueUrl())
+	logrus.Infof("Client of queue provider[%s] has refreshed.", mqp.maridMetadata.QueueUrl())
 
 	return nil
 }
@@ -163,7 +166,7 @@ func (mqp *MaridQueueProvider) newConfig(assumeRoleResult AssumeRoleResult) *aws
 	)
 
 	awsConfig := aws.NewConfig().
-		WithRegion(mqp.maridMetadata.getRegion()).
+		WithRegion(mqp.maridMetadata.Region()).
 		WithCredentials(creds)
 
 	return awsConfig

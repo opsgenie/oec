@@ -1,12 +1,10 @@
 package runbook
 
 import (
-	"bytes"
 	"encoding/json"
 	"github.com/opsgenie/marid2/conf"
 	"github.com/opsgenie/marid2/retryer"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"net/http"
@@ -33,7 +31,7 @@ var mockActionMappings = (map[conf.ActionName]conf.MappedAction)(conf.ActionMapp
 var executeRunbookFromGithubCalled = false
 var executeRunbookFromLocalCalled = false
 
-func mockExecuteRunbookFromGithub(runbookRepoOwner string, runbookRepoName string, runbookRepoFilePath string, runbookRepoToken string, args []string, environmentVariables []string) (string, string, error) {
+func mockExecuteRunbookFromGithub(runbookRepoOwner, runbookRepoName, runbookRepoFilePath, runbookRepoToken string, args []string, environmentVariables []string) (string, string, error) {
 	executeRunbookFromGithubCalled = true
 
 	if len(runbookRepoOwner) <= 0 {
@@ -157,14 +155,10 @@ func TestSendResultToOpsGenie(t *testing.T) {
 		FailureMessage:"fail",
 	}
 
-	logrus.SetLevel(logrus.DebugLevel)
-	buffer := &bytes.Buffer{}
-	logrus.SetOutput(buffer)
-
 	apiKey := "testKey"
-	SendResultToOpsGenie(actionResult, &apiKey, &ts.URL)
+	err := SendResultToOpsGenie(actionResult, &apiKey, &ts.URL)
 
-	assert.Contains(t, buffer.String(), "Successfully sent result to OpsGenie.")
+	assert.Nil(t, err)
 }
 
 func TestCannotSendResultToOpsGenie(t *testing.T) {
@@ -174,13 +168,10 @@ func TestCannotSendResultToOpsGenie(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	buffer := &bytes.Buffer{}
-	logrus.SetOutput(buffer)
-
 	apiKey := "testKey"
-	SendResultToOpsGenie(new(ActionResultPayload), &apiKey, &ts.URL)
+	err := SendResultToOpsGenie(new(ActionResultPayload), &apiKey, &ts.URL)
 
-	assert.Contains(t, buffer.String(), "Could not send action result to OpsGenie. HttpStatus: 400")
+	assert.Error(t, err, "Could not send action result to OpsGenie. HttpStatus: 400")
 }
 
 func TestSendResultToOpsGenieClientError(t *testing.T) {
@@ -194,25 +185,8 @@ func TestSendResultToOpsGenieClientError(t *testing.T) {
 		return nil, errors.New("Test client error")
 	}
 
-	buffer := &bytes.Buffer{}
-	logrus.SetOutput(buffer)
-
 	apiKey := "testKey"
-	SendResultToOpsGenie(new(ActionResultPayload), &apiKey, &ts.URL)
+	err := SendResultToOpsGenie(new(ActionResultPayload), &apiKey, &ts.URL)
 
-	assert.Contains(t, buffer.String(), "Could not send action result to OpsGenie. Reason: Test client error")
-}
-
-func TestExternalSendResultToOpsGenie(t *testing.T) {
-
-	actionResult := &ActionResultPayload{
-		Action:"testAction",
-		AlertId:"5c354eaa-f92f-44a5-a868-dd8fbab40dd8-1544769998862",
-		IsSuccessful:true,
-		FailureMessage:"fail",
-	}
-
-	apiKey := "8a22a64d-11a5-44e9-9c31-2c7bb3518458"
-	baseUrl := "https://api.opsgenie.com"
-	SendResultToOpsGenie(actionResult, &apiKey, &baseUrl)
+	assert.Error(t, err, "Could not send action result to OpsGenie. Reason: Test client error")
 }

@@ -1,21 +1,20 @@
 package conf
 
 import (
-	"testing"
-	"os"
 	"github.com/stretchr/testify/assert"
+	"os"
+	"testing"
 )
 
 func TestParseConfigurationJson(t *testing.T) {
 	var directoryName = "testRepo"
-	var tmpDir = os.TempDir()
-	var testConfPath = tmpDir + string(os.PathSeparator) + directoryName + string(os.PathSeparator) +
-		"maridConf.json"
+	var tmpDir = os.TempDir() + string(os.PathSeparator) + directoryName
+	var testConfPath = tmpDir + string(os.PathSeparator) + "maridTestConf.json"
 
-	os.MkdirAll(tmpDir+string(os.PathSeparator)+directoryName, 0755)
-	defer os.RemoveAll(tmpDir + string(os.PathSeparator) + directoryName)
+	os.MkdirAll(tmpDir, 0755)
+	defer os.RemoveAll(tmpDir)
 
-	testFile, err := os.OpenFile(testConfPath, os.O_CREATE|os.O_WRONLY, 0755)
+	testFile, err := os.OpenFile(testConfPath, os.O_CREATE | os.O_WRONLY, 0755)
 
 	if err != nil {
 		t.Error("Error occurred while creating test config file. Error: " + err.Error())
@@ -24,7 +23,7 @@ func TestParseConfigurationJson(t *testing.T) {
 	testFile.WriteString("{\"apiKey\": \"apiKey\"}")
 	testFile.Close()
 
-	config, err := parseConfiguration(testConfPath)
+	config, err := parseConfigurationFromFile(testConfPath)
 
 	if err != nil {
 		t.Error("Error occurred while parsing the conf file. Error: " + err.Error())
@@ -38,12 +37,11 @@ func TestParseConfigurationJson(t *testing.T) {
 
 func TestParseConfigurationYaml(t *testing.T) {
 	var directoryName = "testRepo"
-	var tmpDir = os.TempDir()
-	var testConfPath = tmpDir + string(os.PathSeparator) + directoryName + string(os.PathSeparator) +
-		"maridConf.yml"
+	var tmpDir = os.TempDir() + string(os.PathSeparator) + directoryName
+	var testConfPath = tmpDir + string(os.PathSeparator) + "maridTestConf.yml"
 
-	os.MkdirAll(tmpDir+string(os.PathSeparator)+directoryName, 0755)
-	defer os.RemoveAll(tmpDir + string(os.PathSeparator) + directoryName)
+	os.MkdirAll(tmpDir, 0755)
+	defer os.RemoveAll(tmpDir)
 
 	testFile, err := os.OpenFile(testConfPath, os.O_CREATE|os.O_WRONLY, 0755)
 
@@ -54,7 +52,7 @@ func TestParseConfigurationYaml(t *testing.T) {
 	testFile.WriteString("apiKey: apiKey\n")
 	testFile.Close()
 
-	config, err := parseConfiguration(testConfPath)
+	config, err := parseConfigurationFromFile(testConfPath)
 
 	if err != nil {
 		t.Error("Error occurred while parsing the conf file. Error: " + err.Error())

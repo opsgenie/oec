@@ -12,7 +12,6 @@ const timeout = 30 * time.Second
 
 var DefaultClient = &http.Client{Timeout: timeout}
 
-const maxWaitInterval = 5
 const maxRetryCount = 5
 
 var retryStatusCodes = map[int]struct{}{
@@ -44,7 +43,6 @@ func shouldRetry(statusCode int) bool {
 
 func getWaitTime(retryCount int) time.Duration {
 	waitTime := math.Pow(2, float64(retryCount)) * 100
-	//waitTime = math.Min(waitTime, float64(maxWaitInterval)) // todo min value
 	return time.Duration(waitTime) * time.Millisecond
 }
 
@@ -62,7 +60,7 @@ func DoWithExponentialBackoff(retryer *Retryer, request *http.Request) (*http.Re
 
 		response, err := client.Do(request)
 
-		if err, isInstance := err.(net.Error); isInstance { // todo check err
+		if err, ok := err.(net.Error); ok {
 			if err.Timeout() {
 				continue
 			}
@@ -75,5 +73,5 @@ func DoWithExponentialBackoff(retryer *Retryer, request *http.Request) (*http.Re
 
 	}
 
-	return nil, errors.New("Maximum retry count is exceeded.")
+	return nil, errors.Errorf("Couldn't get response, maximum retry count[%d] is exceeded.", maxRetryCount)
 }

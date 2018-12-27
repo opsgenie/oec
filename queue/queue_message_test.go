@@ -1,11 +1,14 @@
 package queue
 
 import (
+	"bytes"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/opsgenie/marid2/conf"
 	"github.com/opsgenie/marid2/runbook"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	"io/ioutil"
 	"math/rand"
 	"testing"
 	"time"
@@ -19,12 +22,6 @@ var mockActionMappings = &conf.ActionMappings{
 var mockApiKey = "mockApiKey"
 var mockBasePath = "mockBasePath"
 var mockBaseUrl = "mockBaseUrl"
-
-func mockParseJson(content []byte) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
-	result["action"] = "doAction"
-	return result, nil
-}
 
 func mockExecuteRunbook(mappedAction *conf.MappedAction, arg string) (string, string, error) {
 	return "Operation executed successfully!", "(with no errors!)", nil
@@ -48,12 +45,28 @@ func TestProcessSuccessfully(t *testing.T) {
 	defer func() { runbook.ExecuteRunbookFunc = oldExecuteRunbook }()
 	runbook.ExecuteRunbookFunc = mockExecuteRunbook
 
+	oldSendResultToOpsgenie := runbook.SendResultToOpsGenie
+	defer func() { runbook.SendResultToOpsGenieFunc = oldSendResultToOpsgenie }()
+	runbook.SendResultToOpsGenieFunc = func(resultPayload *runbook.ActionResultPayload, apiKey *string, baseUrl *string) error {
+		return nil
+	}
+
 	body := `{"action":"action1"}`
-	message := &sqs.Message{Body: &body}
+	id := "MessageId"
+	message := &sqs.Message{Body: &body, MessageId: &id}
 	queueMessage := NewMaridMessage(message, mockActionMappings, &mockApiKey, &mockBasePath)
+
+	defer func() {
+		logrus.SetOutput(ioutil.Discard)
+	}()
+
+	buffer := &bytes.Buffer{}
+	logrus.SetOutput(buffer)
+	logrus.SetLevel(logrus.DebugLevel)
 
 	err := queueMessage.Process()
 	assert.Nil(t, err)
+	assert.Contains(t, buffer.String(), "Successfully sent result to OpsGenie.")
 }
 
 func TestProcessMappedActionNotFound(t *testing.T) {

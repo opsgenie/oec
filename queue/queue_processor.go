@@ -6,8 +6,10 @@ import (
 	"github.com/opsgenie/marid2/retryer"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"io/ioutil"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -16,10 +18,10 @@ const (
 	maxNumberOfWorker = 12
 	minNumberOfWorker = 4
 	queueSize = 0
-	keepAliveTimeInMillis = 200
-	monitoringPeriodInMillis = 200
+	keepAliveTimeInMillis = 6000
+	monitoringPeriodInMillis = 15000
 
-	pollingWaitIntervalInMillis = 50
+	pollingWaitIntervalInMillis = 100
 	visibilityTimeoutInSec = 30
 	maxNumberOfMessages = 10
 
@@ -27,15 +29,16 @@ const (
 	errorRefreshPeriod = time.Minute
 )
 
-var newPoller = NewPoller
-var httpNewRequest = http.NewRequest
+const tokenPath = "/v2/integrations/maridv2/credentials"
+
+var newPollerFunc = NewPoller
+var httpNewRequestFunc = http.NewRequest
 
 type QueueProcessor interface {
 
 	StartProcessing() error
 	StopProcessing() error
 	IsRunning() bool
-	Wait()
 }
 
 type MaridQueueProcessor struct {
@@ -87,10 +90,6 @@ func NewQueueProcessor(conf *conf.Configuration) QueueProcessor {
 	}
 }
 
-func (qp *MaridQueueProcessor) Wait() {
-	qp.isRunningWaitGroup.Wait()
-}
-
 func (qp *MaridQueueProcessor) IsRunning() bool {
 	defer qp.startStopMutex.Unlock()
 	qp.startStopMutex.Lock()
@@ -112,6 +111,10 @@ func (qp *MaridQueueProcessor) StartProcessing() error {
 		logrus.Errorf("Queue processor could not get initial token and will terminate.")
 		return err
 	}
+
+	props := strings.SplitAfter(token.Data.MaridMetaDataList[0].QueueUrl(), "marid-")[1]
+	ids := strings.Split(props, "-")
+	logrus.Infof("Initial token is received. CustomerId: %s, IntegrationId: %s", ids[0], ids[1])
 
 	qp.workerPool.Start()
 	qp.refreshPollers(token)
@@ -137,12 +140,15 @@ func (qp *MaridQueueProcessor) StopProcessing() error {
 
 	qp.isRunning = false
 	qp.isRunningWaitGroup.Wait()
+	logrus.Infof("Queue processor has stopped.")
 	return nil
 }
 
 func (qp *MaridQueueProcessor) receiveToken() (*MaridToken, error) {
 
-	request, err := httpNewRequest("GET", tokenUrl, nil)
+	tokenUrl := qp.conf.BaseUrl + tokenPath
+
+	request, err := httpNewRequestFunc("GET", tokenUrl, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -154,8 +160,8 @@ func (qp *MaridQueueProcessor) receiveToken() (*MaridToken, error) {
 	for _, poller := range qp.pollers {
 		maridMetadata := poller.QueueProvider().MaridMetadata()
 		query.Add(
-			maridMetadata.getRegion(),
-			strconv.FormatInt(maridMetadata.getExpireTimeMillis(), 10),
+			maridMetadata.Region(),
+			strconv.FormatInt(maridMetadata.ExpireTimeMillis(), 10),
 		)
 	}
 	request.URL.RawQuery = query.Encode()
@@ -164,11 +170,12 @@ func (qp *MaridQueueProcessor) receiveToken() (*MaridToken, error) {
 	if err != nil {
 		return nil, err
 	}
-	if response.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("Token could not be received from Opsgenie, status: %s", response.Status)
-	}
-
 	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		body, _ := ioutil.ReadAll(response.Body)
+		return nil, errors.Errorf("Token could not be received from Opsgenie, status: %s, message: %s", response.Status, body)
+	}
 
 	token := &MaridToken{}
 	err = json.NewDecoder(response.Body).Decode(&token)
@@ -180,7 +187,7 @@ func (qp *MaridQueueProcessor) receiveToken() (*MaridToken, error) {
 }
 
 func (qp *MaridQueueProcessor) addPoller(queueProvider QueueProvider) Poller {
-	poller := newPoller(
+	poller := newPollerFunc(
 		qp.workerPool,
 		queueProvider,
 		&qp.conf.PollerConf,
@@ -188,7 +195,7 @@ func (qp *MaridQueueProcessor) addPoller(queueProvider QueueProvider) Poller {
 		&qp.conf.ApiKey,
 		&qp.conf.BaseUrl,
 	)
-	qp.pollers[queueProvider.MaridMetadata().getQueueUrl()] = poller
+	qp.pollers[queueProvider.MaridMetadata().QueueUrl()] = poller
 	return poller
 }
 
@@ -205,7 +212,7 @@ func (qp *MaridQueueProcessor) refreshPollers(token *MaridToken) {
 	}
 
 	for _, maridMetadata := range token.Data.MaridMetaDataList {
-		queueUrl := maridMetadata.getQueueUrl()
+		queueUrl := maridMetadata.QueueUrl()
 		if poller, contains := qp.pollers[queueUrl]; contains {
 			isTokenRefreshed := maridMetadata.AssumeRoleResult != AssumeRoleResult{}
 			if isTokenRefreshed {
@@ -215,7 +222,7 @@ func (qp *MaridQueueProcessor) refreshPollers(token *MaridToken) {
 		} else {
 			queueProvider, err := NewQueueProvider(maridMetadata, token.Data.IntegrationId)
 			if err != nil {
-				logrus.Errorf("Poller[%s] could not be added: %s.", queueUrl, err.Error())
+				logrus.Errorf("Poller[%s] could not be added: %s.", queueUrl, err)
 				continue
 			}
 			qp.addPoller(queueProvider).StartPolling()
@@ -245,16 +252,14 @@ func (qp *MaridQueueProcessor) run() {
 			ticker.Stop()
 			for _, poller := range qp.pollers {
 				poller.StopPolling()
-				//delete(qp.pollers, queueUrl)
 			}
-			logrus.Infof("Queue processor has stopped to refresh client.")
 			qp.isRunningWaitGroup.Done()
 			return
 		case <- ticker.C:
 			ticker.Stop()
 			token, err := qp.receiveToken()
 			if err != nil {
-				logrus.Warnf("Refresh cycle of queue processor has failed: %s", err.Error())
+				logrus.Warnf("Refresh cycle of queue processor has failed: %s", err)
 				logrus.Infof("Will refresh token after %s", qp.errorRefreshPeriod.String())
 				ticker = time.NewTicker(qp.errorRefreshPeriod)
 				break

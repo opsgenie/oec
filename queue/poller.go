@@ -95,18 +95,18 @@ func (p *MaridPoller) releaseMessages(messages []*sqs.Message) {
 	for i := 0; i < len(messages); i++ {
 		err := p.queueProvider.ChangeMessageVisibility(messages[i], 0)
 		if err != nil {
-			logrus.Warnf("Poller[%s] could not release message[%s]: %s.", p.queueProvider.MaridMetadata().getQueueUrl() , *messages[i].MessageId, err.Error())
+			logrus.Warnf("Poller[%s] could not release message[%s]: %s.", p.queueProvider.MaridMetadata().QueueUrl() , *messages[i].MessageId, err.Error())
 			continue
 		}
 
-		logrus.Debugf("Poller[%s] released message[%s].", p.queueProvider.MaridMetadata().getQueueUrl() , *messages[i].MessageId)
+		logrus.Debugf("Poller[%s] released message[%s].", p.queueProvider.MaridMetadata().QueueUrl() , *messages[i].MessageId)
 	}
 }
 
-func (p *MaridPoller) poll() (shouldWait bool) { // todo unblocking read channel
+func (p *MaridPoller) poll() (shouldWait bool) {
 
 	availableWorkerCount := p.workerPool.NumberOfAvailableWorker()
-	if availableWorkerCount < 3 {
+	if !(availableWorkerCount > 0) {
 		return true
 	}
 
@@ -119,14 +119,13 @@ func (p *MaridPoller) poll() (shouldWait bool) { // todo unblocking read channel
 
 	messageLength := len(messages)
 	if messageLength == 0 {
-		logrus.Debugf("There is no new message in queue[%s].", p.queueProvider.MaridMetadata().getQueueUrl())
 		return true
 	}
-	logrus.Debugf("%d messages received.", messageLength)
 
 	for i := 0; i < messageLength; i++ {
 
 		if  messages[i].MessageAttributes == nil || *messages[i].MessageAttributes["integrationId"].StringValue != p.queueProvider.IntegrationId() {
+			logrus.Debugf("Message[%p] is invalid, will be deleted.", messages[i].MessageId)
 			p.queueProvider.DeleteMessage(messages[i])
 			continue
 		}
@@ -138,13 +137,13 @@ func (p *MaridPoller) poll() (shouldWait bool) { // todo unblocking read channel
 				p.baseUrl,
 			),
 			p.queueProvider,
-			p.pollerConf.VisibilityTimeoutInSeconds,
 		)
 
 		isSubmitted, err := p.workerPool.Submit(job)
 		if err != nil {
+			logrus.Debugf("Error occurred while submitting: %s", err.Error())
 			p.releaseMessages(messages[i:])
-			return true	// todo return error or log
+			return true
 		} else if isSubmitted {
 			continue
 		} else {
@@ -160,14 +159,15 @@ func (p *MaridPoller) wait(pollingWaitPeriod time.Duration) {
 		return
 	}
 
-	logrus.Infof("Poller[%s] will wait %s before next polling", p.queueProvider.MaridMetadata().getQueueUrl(), pollingWaitPeriod.String())
+	logrus.Tracef("Poller[%s] will wait %s before next polling", p.queueProvider.MaridMetadata().QueueUrl(), pollingWaitPeriod.String())
+
+	ticker := time.NewTicker(pollingWaitPeriod)
+	defer ticker.Stop()
 
 	for {
-		ticker := time.NewTicker(pollingWaitPeriod * time.Millisecond)
 		select {
 		case <- p.wakeUpChan:
-			ticker.Stop()
-			logrus.Infof("Poller[%s] has been interrupted while waiting for next polling.", p.queueProvider.MaridMetadata().getQueueUrl())
+			logrus.Infof("Poller[%s] has been interrupted while waiting for next polling.", p.queueProvider.MaridMetadata().QueueUrl())
 			return
 		case <- ticker.C:
 			return
@@ -177,16 +177,18 @@ func (p *MaridPoller) wait(pollingWaitPeriod time.Duration) {
 
 func (p *MaridPoller) run() {
 
-	logrus.Infof("Poller[%s] has started to run.", p.queueProvider.MaridMetadata().getQueueUrl())
+	logrus.Infof("Poller[%s] has started to run.", p.queueProvider.MaridMetadata().QueueUrl())
+
+	pollingWaitInterval := p.pollerConf.PollingWaitIntervalInMillis * time.Millisecond
 
 	for {
 		select {
 		case <- p.quit:
-			logrus.Infof("Poller[%s] has stopped to poll.", p.queueProvider.MaridMetadata().getQueueUrl())
+			logrus.Infof("Poller[%s] has stopped to poll.", p.queueProvider.MaridMetadata().QueueUrl())
 			return
 		default:
 			if shouldWait := p.poll(); shouldWait {
-				p.wait(p.pollerConf.PollingWaitIntervalInMillis)
+				p.wait(pollingWaitInterval)
 			}
 		}
 	}

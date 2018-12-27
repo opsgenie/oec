@@ -1,14 +1,14 @@
 package runbook
 
 import (
-	"testing"
-	"os"
 	"github.com/stretchr/testify/assert"
+	"os"
+	"testing"
 )
 
 func TestExecuteRunbookFromLocal(t *testing.T) {
 	var testScriptPath = os.TempDir() + string(os.PathSeparator) + "test.sh"
-	err := createTestScriptFile("echo \"Test output\"\n", testScriptPath)
+	err := createTestScriptFile([]byte("echo \"Test output\"\n"), testScriptPath)
 	defer os.Remove(testScriptPath)
 
 	if err != nil {

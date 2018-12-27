@@ -1,20 +1,20 @@
 package queue
 
 import (
-	"sync"
-	"testing"
-	"github.com/stretchr/testify/assert"
+	"bytes"
+	"encoding/json"
 	"github.com/opsgenie/marid2/conf"
+	"github.com/opsgenie/marid2/retryer"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
-	"io"
-	"github.com/pkg/errors"
+	"sync"
+	"testing"
 	"time"
-	"github.com/opsgenie/marid2/retryer"
-	"encoding/json"
-	"bytes"
-	"io/ioutil"
 )
 
 var mockConf = &conf.Configuration{
@@ -80,13 +80,13 @@ func TestValidateNewQueueProcessor(t *testing.T) {
 func TestStartAndStopQueueProcessor(t *testing.T) {
 
 	defer func() {
-		newPoller = NewPoller
+		newPollerFunc = NewPoller
 	}()
 
 	processor := newQueueProcessorTest()
 
 	processor.retryer.DoFunc = mockHttpGet
-	newPoller = NewMockPollerForQueueProcessor
+	newPollerFunc = NewMockPollerForQueueProcessor
 
 	err := processor.StartProcessing()
 	assert.Nil(t, err)
@@ -100,14 +100,14 @@ func TestStartAndStopQueueProcessor(t *testing.T) {
 func TestStartQueueProcessorAndRefresh(t *testing.T) {
 
 	defer func() {
-		newPoller = NewPoller
+		newPollerFunc = NewPoller
 	}()
 
 	processor := newQueueProcessorTest()
 
 	processor.retryer.DoFunc = mockHttpGet
 	processor.successRefreshPeriod = time.Nanosecond
-	newPoller = NewMockPollerForQueueProcessor
+	newPollerFunc = NewMockPollerForQueueProcessor
 
 	err := processor.StartProcessing()
 	assert.Nil(t, err)
@@ -124,13 +124,13 @@ func TestStartQueueProcessorAndRefresh(t *testing.T) {
 func TestStartQueueProcessorInitialError(t *testing.T) {
 
 	defer func() {
-		newPoller = NewPoller
+		newPollerFunc = NewPoller
 	}()
 
 	processor := newQueueProcessorTest()
 
 	processor.retryer.DoFunc = mockHttpGetError
-	newPoller = NewMockPollerForQueueProcessor
+	newPollerFunc = NewMockPollerForQueueProcessor
 
 	err := processor.StartProcessing()
 
@@ -170,7 +170,7 @@ func TestReceiveToken(t *testing.T) {
 
 	for _, poller := range processor.pollers  {
 		maridMetadata := poller.QueueProvider().MaridMetadata()
-		expectedQuery := maridMetadata.getRegion() + "=" + strconv.FormatInt(maridMetadata.getExpireTimeMillis(), 10)
+		expectedQuery := maridMetadata.Region() + "=" + strconv.FormatInt(maridMetadata.ExpireTimeMillis(), 10)
 
 		assert.True(t, strings.Contains(actualRequest.URL.RawQuery, expectedQuery))
 	}
@@ -203,11 +203,11 @@ func TestReceiveTokenGetError(t *testing.T) {
 func TestReceiveTokenRequestError(t *testing.T) {
 
 	defer func() {
-		httpNewRequest = http.NewRequest
+		httpNewRequestFunc = http.NewRequest
 	}()
 
 	processor := newQueueProcessorTest()
-	httpNewRequest = func(method, url string, body io.Reader) (*http.Request, error) {
+	httpNewRequestFunc = func(method, url string, body io.Reader) (*http.Request, error) {
 		return nil, errors.New("Test: Http new request error.")
 	}
 
@@ -224,12 +224,12 @@ func TestAddTwoDifferentPollersTest(t *testing.T) {
 	poller := processor.addPoller(NewMockQueueProvider()).(*MaridPoller)
 	processor.addPoller(&MaridQueueProvider{})
 
-	assert.Equal(t, mockMaridMetadata1.getQueueUrl(), poller.QueueProvider().MaridMetadata().getQueueUrl())
+	assert.Equal(t, mockMaridMetadata1.QueueUrl(), poller.QueueProvider().MaridMetadata().QueueUrl())
 	assert.Equal(t, processor.conf.PollerConf.PollingWaitIntervalInMillis, poller.pollerConf.PollingWaitIntervalInMillis)
 	assert.Equal(t, processor.conf.PollerConf.MaxNumberOfMessages, poller.pollerConf.MaxNumberOfMessages)
 	assert.Equal(t, processor.conf.PollerConf.VisibilityTimeoutInSeconds, poller.pollerConf.VisibilityTimeoutInSeconds)
 
-	_, contains := processor.pollers[mockMaridMetadata1.getQueueUrl()]
+	_, contains := processor.pollers[mockMaridMetadata1.QueueUrl()]
 	assert.True(t, contains)
 
 	assert.Equal(t, 2, len(processor.pollers))
@@ -244,7 +244,7 @@ func TestRemovePollerTest(t *testing.T) {
 	poller := processor.removePoller(mockQueueUrl1)
 	processor.removePoller(mockQueueUrl2)
 
-	assert.Equal(t, mockMaridMetadata1.getQueueUrl(), poller.QueueProvider().MaridMetadata().getQueueUrl())
+	assert.Equal(t, mockMaridMetadata1.QueueUrl(), poller.QueueProvider().MaridMetadata().QueueUrl())
 
 	assert.Equal(t, 0, len(processor.pollers))
 }
@@ -252,12 +252,12 @@ func TestRemovePollerTest(t *testing.T) {
 func TestRefreshPollersRepeat(t *testing.T) {
 
 	defer func() {
-		newPoller = NewPoller
+		newPollerFunc = NewPoller
 	}()
 
 	processor := newQueueProcessorTest()
 
-	newPoller = NewMockPollerForQueueProcessor
+	newPollerFunc = NewMockPollerForQueueProcessor
 
 	processor.refreshPollers(&mockToken)
 	processor.refreshPollers(&mockToken)
@@ -269,12 +269,12 @@ func TestRefreshPollersRepeat(t *testing.T) {
 func TestRefreshPollersAddAndRemove(t *testing.T) {
 
 	defer func() {
-		newPoller = NewPoller
+		newPollerFunc = NewPoller
 	}()
 
 	processor := newQueueProcessorTest()
 
-	newPoller = NewMockPollerForQueueProcessor
+	newPollerFunc = NewMockPollerForQueueProcessor
 
 	processor.refreshPollers(&mockToken)
 	processor.refreshPollers(&mockEmptyToken)
@@ -285,12 +285,12 @@ func TestRefreshPollersAddAndRemove(t *testing.T) {
 func TestRefreshPollersAdd(t *testing.T) {
 
 	defer func() {
-		newPoller = NewPoller
+		newPollerFunc = NewPoller
 	}()
 
 	processor := newQueueProcessorTest()
 
-	newPoller = NewMockPollerForQueueProcessor
+	newPollerFunc = NewMockPollerForQueueProcessor
 
 	processor.refreshPollers(&mockEmptyToken)
 	processor.refreshPollers(&mockToken)
@@ -301,12 +301,12 @@ func TestRefreshPollersAdd(t *testing.T) {
 func TestRefreshPollersWithNotHavingPoller(t *testing.T) {
 
 	defer func() {
-		newPoller = NewPoller
+		newPollerFunc = NewPoller
 	}()
 
 	processor := newQueueProcessorTest()
 
-	newPoller = NewMockPollerForQueueProcessor
+	newPollerFunc = NewMockPollerForQueueProcessor
 
 	processor.refreshPollers(&mockToken)
 	processor.refreshPollers(&mockToken)
@@ -318,12 +318,12 @@ func TestRefreshPollersWithNotHavingPoller(t *testing.T) {
 func TestRefreshOldPollersAlreadyHavingPollers(t *testing.T) {
 
 	defer func() {
-		newPoller = NewPoller
+		newPollerFunc = NewPoller
 	}()
 
 	processor := newQueueProcessorTest()
 
-	newPoller = NewMockPollerForQueueProcessor
+	newPollerFunc = NewMockPollerForQueueProcessor
 	processor.pollers = mockPollers
 
 	processor.refreshPollers(&mockToken)
@@ -334,12 +334,12 @@ func TestRefreshOldPollersAlreadyHavingPollers(t *testing.T) {
 func TestRefreshPollersWithEmptyAssumeRoleResult(t *testing.T) {
 
 	defer func() {
-		newPoller = NewPoller
+		newPollerFunc = NewPoller
 	}()
 
 	processor := newQueueProcessorTest()
 
-	newPoller = NewMockPollerForQueueProcessor
+	newPollerFunc = NewMockPollerForQueueProcessor
 	processor.pollers = mockPollers
 
 	processor.refreshPollers(&mockTokenWithEmptyAssumeRoleResult)

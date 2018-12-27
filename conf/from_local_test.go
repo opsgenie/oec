@@ -1,15 +1,15 @@
 package conf
 
 import (
-	"testing"
-	"os"
 	"github.com/stretchr/testify/assert"
+	"os"
+	"testing"
 )
 
 func TestReadConfigurationFromLocal(t *testing.T) {
 	homePath, err := getHomePath()
 	confPath := homePath + string(os.PathSeparator) + ".opsgenie" +
-		string(os.PathSeparator) + "maridConf.json"
+		string(os.PathSeparator) + "maridTestConf.json"
 
 	if err != nil {
 		t.Error("Error occurred during obtaining user's home path. Error: " + err.Error())
@@ -25,7 +25,7 @@ func TestReadConfigurationFromLocal(t *testing.T) {
 		t.Error("Error occurred during writing test Marid configuration file. Error: " + err.Error())
 	}
 
-	testConfFile.WriteString(mockConfFileContent)
+	testConfFile.Write(mockConfFileContent)
 	testConfFile.Close()
 	configurationFromLocal, _ := readConfigurationFromLocal(confPath)
 

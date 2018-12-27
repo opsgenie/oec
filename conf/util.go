@@ -4,27 +4,53 @@ import (
 	"encoding/json"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
+	"io"
 	"io/ioutil"
 	"os/user"
-	"path/filepath"
+	fpath "path/filepath"
 )
 
-func parseConfiguration(path string) (*Configuration, error) {
-	extension := filepath.Ext(path)
+const unknownFileExtErrMessage = "Unknown configuration file extension[%s]. Only json and yml types are allowed."
+
+func checkFileExtension(filepath string) error {
+
+	extension := fpath.Ext(filepath)
+
+	if extension != ".json" && extension != ".yml" && extension != ".yaml" {
+		return errors.Errorf(unknownFileExtErrMessage, extension)
+	}
+	return nil
+}
+
+func readConfigurationContent(filepath string, content io.ReadCloser) (*Configuration, error) {
+
+	configuration := &Configuration{}
+	extension := fpath.Ext(filepath)
 
 	if extension == ".json" {
-		return parseJsonConfiguration(path)
+		return configuration, json.NewDecoder(content).Decode(configuration)
 	} else if extension == ".yml" || extension == ".yaml" {
-		return parseYmlConfiguration(path)
+		return configuration, yaml.NewDecoder(content).Decode(configuration)
 	} else {
-		return nil, errors.New("Unknown configuration file extension [" + extension + "]. Only json and yml" +
-			" types are allowed.")
+		return nil, errors.Errorf(unknownFileExtErrMessage, extension)
+	}
+}
+
+func parseConfigurationFromFile(filepath string) (*Configuration, error) {
+	extension := fpath.Ext(filepath)
+
+	if extension == ".json" {
+		return parseJsonConfiguration(filepath)
+	} else if extension == ".yml" || extension == ".yaml" {
+		return parseYmlConfiguration(filepath)
+	} else {
+		return nil, errors.Errorf(unknownFileExtErrMessage, extension)
 	}
 }
 
 func parseJsonConfiguration(path string) (*Configuration, error) {
-	file, err := ioutil.ReadFile(path)
 
+	file, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -36,8 +62,8 @@ func parseJsonConfiguration(path string) (*Configuration, error) {
 }
 
 func parseYmlConfiguration(path string) (*Configuration, error) {
-	file, err := ioutil.ReadFile(path)
 
+	file, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -49,8 +75,8 @@ func parseYmlConfiguration(path string) (*Configuration, error) {
 }
 
 func getHomePath() (string, error) {
-	currentUser, err := user.Current()
 
+	currentUser, err := user.Current()
 	if err != nil {
 		return "", err
 	}

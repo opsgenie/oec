@@ -44,8 +44,10 @@ type PoolConf struct {
 	MonitoringPeriodInMillis time.Duration	`json:"monitoringPeriodInMillis,omitempty"`
 }
 
-var readConfigurationFromGitFunc = readConfigurationFromGit
+var readConfigurationFromGitHubFunc = readConfigurationFromGitHub
 var readConfigurationFromLocalFunc = readConfigurationFromLocal
+
+const defaultConfPath = string(os.PathSeparator) + ".opsgenie" + string(os.PathSeparator) + "maridConfig.json"
 
 func ReadConfFile() (*Configuration, error) {
 
@@ -61,34 +63,37 @@ func ReadConfFile() (*Configuration, error) {
 	if conf.ApiKey == "" {
 		return nil, errors.New("ApiKey is not found in the configuration file.")
 	}
+	if conf.BaseUrl == "" {
+		return nil, errors.New("BaseUrl is not found in the configuration file.")
+	}
 
 	return conf, nil
 }
 
 func readConfFileFromSource(confSource string) (*Configuration, error) {
-	if confSource == "git" {
-		privateKeyFilePath := os.Getenv("MARIDCONFREPOPRIVATEKEYPATH")
-		passPhrase := os.Getenv("MARIDCONFGITPASSPHRASE")
-		gitUrl := os.Getenv("MARIDCONFREPOGITURL")
-		maridConfPath := os.Getenv("MARIDCONFGITFILEPATH")
 
-		return readConfigurationFromGitFunc(gitUrl, maridConfPath, privateKeyFilePath, passPhrase)
+	if confSource == "github" {
+		owner := os.Getenv("MARIDCONFGITHUBOWNER")
+		repo := os.Getenv("MARIDCONFGITHUBREPO")
+		filepath := os.Getenv("MARIDCONFGITHUBFILEPATH")
+		token := os.Getenv("MARIDCONFGITHUBTOKEN")
+
+		return readConfigurationFromGitHubFunc(owner, repo, filepath, token)
 
 	} else if confSource == "local" {
 		maridConfPath := os.Getenv("MARIDCONFLOCALFILEPATH")
 
 		if len(maridConfPath) <= 0 {
 			homePath, err := getHomePath()
-
 			if err != nil {
 				return nil, err
 			}
 
-			maridConfPath = homePath + string(os.PathSeparator) + ".opsgenie" + string(os.PathSeparator) + "maridConfig.json"
+			maridConfPath = homePath + defaultConfPath
 		}
 
 		return readConfigurationFromLocalFunc(maridConfPath)
 	} else {
-		return nil, errors.New("Unknown configuration source [" + confSource + "].")
+		return nil, errors.Errorf("Unknown configuration source [%s].", confSource)
 	}
 }

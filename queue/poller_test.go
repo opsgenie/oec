@@ -4,9 +4,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/opsgenie/marid2/conf"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
-	"math/rand"
-	"strconv"
 	"sync"
 	"testing"
 )
@@ -30,27 +29,6 @@ func newPollerTest() *MaridPoller {
 		apiKey:			&mockApiKey,
 		baseUrl:		&mockBaseUrl,
 	}
-}
-
-func mockReceiveMessageSuccess(mqp *MaridQueueProvider, numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
-	messages := make([]*sqs.Message, 0)
-	for i := 1; i < rand.Intn(int(numOfMessage+1)) ; i++ {
-		sqsMessage := &sqs.Message{}
-		random := rand.Intn(301) * i
-		sqsMessage.SetMessageId( strconv.Itoa(int(random) ))
-		messages = append(messages, sqsMessage)
-	}
-	return messages, nil
-}
-
-func mockReceiveMessageExactNumber(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
-	messages := make([]*sqs.Message, 0)
-	for i := int64(0); i < numOfMessage ; i++ {
-		sqsMessage := &sqs.Message{}
-		sqsMessage.SetMessageId(strconv.Itoa(int(i+1)))
-		messages = append(messages, sqsMessage)
-	}
-	return messages, nil
 }
 
 func TestStartAndStopPolling(t *testing.T) {
@@ -116,9 +94,10 @@ func TestPollZeroMessage(t *testing.T) {
 		return 1
 	}
 	poller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = func(i int64, i2 int64) ([]*sqs.Message, error) {
-		return []*sqs.Message{{},{},{}}, nil
+		return []*sqs.Message{}, nil
 	}
 
+	logrus.SetLevel(logrus.DebugLevel)
 	shouldWait := poller.poll()
 	assert.True(t, shouldWait)
 }

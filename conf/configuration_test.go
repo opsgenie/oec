@@ -7,11 +7,12 @@ import (
 	"testing"
 )
 
-var readConfigurationFromGitCalled = false
+var readConfigurationFromGitHubCalled = false
 var readConfigurationFromLocalCalled = false
 
 var mockConf = &Configuration{
 	ApiKey: 		"ApiKey",
+	BaseUrl:		"https://api.opsgenie.com",
 	ActionMappings: mockActionMappings,
 }
 
@@ -31,25 +32,49 @@ var mockActionMappings = (map[ActionName]MappedAction)(ActionMappings{
 	},
 })
 
-var testLocalConfFilePath = "/path/to/test/conf/file.json"
+var mockConfFileContent = []byte(`{
+	"apiKey": "ApiKey",
+	"baseUrl": "https://api.opsgenie.com",
+    "actionMappings": {
+        "Create": {
+            "filePath": "/path/to/runbook.bin",
+            "source": "local",
+            "environmentVariables": [
+                "e1=v1", "e2=v2"
+            ]
+        },
+        "Close": {
+            "source": "github",
+            "repoOwner": "testAccount",
+            "repoName": "testRepo",
+            "repoFilePath": "marid/testConfig.json",
+            "repoToken": "testToken",
+            "environmentVariables": [
+                "e1=v1", "e2=v2"
+            ]
+        }
+    }
+}`)
 
-func mockReadConfigurationFromGit(url string, confPath string, privateKeyFilePath string, passPhrase string) (*Configuration, error) {
-	readConfigurationFromGitCalled = true
+const testLocalConfFilePath = "/path/to/test/conf/file.json"
 
-	if len(url) <= 0 {
-		return nil, errors.New("URL was empty.")
+func mockReadConfigurationFromGitHub(owner, repo, filepath, token string) (*Configuration, error) {
+	readConfigurationFromGitHubCalled = true
+
+	if len(owner) <= 0 {
+		return nil, errors.New("Owner was empty.")
 	}
 
-	if len(confPath) <= 0 {
-		return nil, errors.New("confPath was empty.")
+	if len(repo) <= 0 {
+		return nil, errors.New("Repo was empty.")
 	}
 
-	if len(privateKeyFilePath) <= 0 {
-		return nil, errors.New("privateKeyFilePath was empty.")
+	if len(filepath) <= 0 {
+		return nil, errors.New("Filepath was empty.")
 	}
 
-	if len(passPhrase) <= 0 {
-		return nil, errors.New("passPhrase was empty.")
+	if len(token) <= 0 {
+		return nil, errors.New("Token was empty.")
 	}
 
 	return mockConf, nil
@@ -63,8 +88,7 @@ func mockReadConfigurationFromLocalWithDefaultPath(confPath string) (*Configurat
 		return nil, err
 	}
 
-	if confPath != homePath + string(os.PathSeparator) + ".opsgenie" + string(os.PathSeparator) +
-		"maridConfig.json" {
+	if confPath != homePath +defaultConfPath {
 		return nil, errors.New("confPath was not as the same as the default path.")
 	}
 
@@ -79,12 +103,11 @@ func mockReadConfigurationFromLocalWithDefaultPathWithoutActionMappings(confPath
 		return nil, err
 	}
 
-	if confPath != homePath + string(os.PathSeparator) + ".opsgenie" + string(os.PathSeparator) +
-		"maridConfig.json" {
+	if confPath != homePath +defaultConfPath {
 		return nil, errors.New("confPath was not as the same as the default path.")
 	}
 
-	var testConfMapWithoutActionMappings = &Configuration{}
+	testConfMapWithoutActionMappings := &Configuration{}
 
 	return testConfMapWithoutActionMappings, nil
 }
@@ -93,32 +116,30 @@ func mockReadConfigurationFromLocalWithCustomPath(confPath string) (*Configurati
 	readConfigurationFromLocalCalled = true
 
 	if confPath != testLocalConfFilePath {
-		return nil, errors.New("confPath was not as the same as the default path.")
+		return nil, errors.New("confPath was not as the same as the testLocalConfFilePath.")
 	}
 
 	return mockConf, nil
 }
 
-func TestReadConfFileFromGit(t *testing.T) {
-	os.Setenv("MARIDCONFSOURCE", "git")
-	os.Setenv("MARIDCONFREPOPRIVATEKEYPATH", "/path/to/private/key.pem")
-	os.Setenv("MARIDCONFREPOGITURL", "https://github.com/acc/repo.git")
-	os.Setenv("MARIDCONFGITFILEPATH", "marid/testConf.json")
-	os.Setenv("MARIDCONFGITPASSPHRASE", "passPhrase")
+func TestReadConfFileFromGitHub(t *testing.T) {
+	os.Setenv("MARIDCONFSOURCE", "github")
+	os.Setenv("MARIDCONFGITHUBOWNER", "metehanozturk")
+	os.Setenv("MARIDCONFGITHUBREPO", "test-repo")
+	os.Setenv("MARIDCONFGITHUBFILEPATH", "marid/testConf.json")
+	os.Setenv("MARIDCONFGITHUBTOKEN", "token")
 
-	oldReadFromGitFunction := readConfigurationFromGitFunc
-	defer func() { readConfigurationFromGitFunc = oldReadFromGitFunction }()
-	readConfigurationFromGitFunc = mockReadConfigurationFromGit
+	oldReadFromGitHubFunction := readConfigurationFromGitHubFunc
+	defer func() { readConfigurationFromGitHubFunc = oldReadFromGitHubFunction }()
+	readConfigurationFromGitHubFunc = mockReadConfigurationFromGitHub
 
 	configuration, err := ReadConfFile()
 
-	if err != nil {
-		t.Error("Error occurred while calling ReadConfFile. Error: " + err.Error())
-	}
+	assert.Nil(t, err)
 
-	assert.True(t, readConfigurationFromGitCalled,
-		"ReadConfFile did not call the method readConfigurationFromGit.")
-	readConfigurationFromGitCalled = false
+	assert.True(t, readConfigurationFromGitHubCalled,
+		"ReadConfFile did not call the method readConfigurationFromGitHub.")
+	readConfigurationFromGitHubCalled = false
 	assert.False(t, readConfigurationFromLocalCalled,
 		"ReadConfFile should not call the method readConfigurationFromLocal.")
 
@@ -136,15 +157,13 @@ func TestReadConfFileFromLocalWithDefaultPath(t *testing.T) {
 
 	configuration, err := ReadConfFile()
 
-	if err != nil {
-		t.Error("Error occurred while calling ReadConfFile. Error: " + err.Error())
-	}
+	assert.Nil(t, err)
 
 	assert.True(t, readConfigurationFromLocalCalled,
 		"ReadConfFile did not call the method readConfigurationFromLocal.")
 	readConfigurationFromLocalCalled = false
-	assert.False(t, readConfigurationFromGitCalled,
-		"ReadConfFile should not call the method readConfigurationFromGit.")
+	assert.False(t, readConfigurationFromGitHubCalled,
+		"ReadConfFile should not call the method readConfigurationFromGitHub.")
 	assert.Equal(t, mockConf, configuration,
 		"Global configuration was not equal to given configuration.")
 }
@@ -164,8 +183,8 @@ func TestReturnErrorIfActionMappingsNotFoundInTheConfFile(t *testing.T) {
 	assert.True(t, readConfigurationFromLocalCalled,
 		"ReadConfFile did not call the method readConfigurationFromLocal.")
 	readConfigurationFromLocalCalled = false
-	assert.False(t, readConfigurationFromGitCalled,
-		"ReadConfFile should not call the method readConfigurationFromGit.")
+	assert.False(t, readConfigurationFromGitHubCalled,
+		"ReadConfFile should not call the method readConfigurationFromGitHub.")
 }
 
 func TestReadConfFileFromLocalWithCustomPath(t *testing.T) {
@@ -177,31 +196,29 @@ func TestReadConfFileFromLocalWithCustomPath(t *testing.T) {
 	readConfigurationFromLocalFunc = mockReadConfigurationFromLocalWithCustomPath
 	configuration, err := ReadConfFile()
 
-	if err != nil {
-		t.Error("Error occurred while calling ReadConfFile. Error: " + err.Error())
-	}
+	assert.Nil(t, err)
 
 	assert.True(t, readConfigurationFromLocalCalled,
 		"ReadConfFile did not call the method readConfigurationFromLocal.")
 	readConfigurationFromLocalCalled = false
-	assert.False(t, readConfigurationFromGitCalled,
-		"ReadConfFile should not call the method readConfigurationFromGit.")
+	assert.False(t, readConfigurationFromGitHubCalled,
+		"ReadConfFile should not call the method readConfigurationFromGitHub.")
 	assert.Equal(t, configuration, mockConf,
 		"Global configuration was not equal to given configuration.")
 }
 
 func TestReadConfFileWithUnknownSource(t *testing.T) {
-	os.Setenv("MARIDCONFSOURCE", "sacma")
+	os.Setenv("MARIDCONFSOURCE", "dummy")
 
 	_, err := ReadConfFile()
 	assert.Error(t, err, "Error should be thrown.")
 
-	if err.Error() != "Unknown configuration source [sacma]." {
+	if err.Error() != "Unknown configuration source [dummy]." {
 		t.Error("Error message was wrong.")
 	}
 
-	assert.False(t, readConfigurationFromGitCalled,
-		"ReadConfFile should not call the method readConfigurationFromGit.")
+	assert.False(t, readConfigurationFromGitHubCalled,
+		"ReadConfFile should not call the method readConfigurationFromGitHub.")
 	assert.False(t, readConfigurationFromLocalCalled,
 		"ReadConfFile should not call the method readConfigurationFromLocal.")
 }
