@@ -6,20 +6,20 @@ import (
 	"golang.org/x/oauth2"
 	"io/ioutil"
 	"os"
-	"path"
+	fpath "path/filepath"
 )
 
-var getRunbookFromGithubFunction = getRunbookFromGithub
+var getRunbookFromGithubFunc = getRunbookFromGithub
 
-func executeRunbookFromGithub(runbookRepoOwner string, runbookRepoName string, runbookRepoFilePath string,
-	runbookRepoToken string, args []string, environmentVariables map[string]interface{}) (string, string, error) {
-	content, err := getRunbookFromGithubFunction(runbookRepoOwner, runbookRepoName, runbookRepoFilePath, runbookRepoToken)
+func executeRunbookFromGithub(owner, repo, filepath, token string,
+	args, environmentVariables []string) (string, string, error) {
 
+	content, err := getRunbookFromGithubFunc(owner, repo, filepath, token)
 	if err != nil {
 		return "", "", err
 	}
 
-	filePath, err := writeContentToTemporaryFile(content, path.Base(runbookRepoFilePath))
+	filePath, err := writeContentToTemporaryFile(content, fpath.Ext(filepath))
 	defer os.Remove(filePath)
 
 	if err != nil {
@@ -27,7 +27,6 @@ func executeRunbookFromGithub(runbookRepoOwner string, runbookRepoName string, r
 	}
 
 	err = os.Chmod(filePath, 0755)
-
 	if err != nil {
 		return "", "", err
 	}
@@ -35,13 +34,15 @@ func executeRunbookFromGithub(runbookRepoOwner string, runbookRepoName string, r
 	return execute(filePath, args, environmentVariables)
 }
 
-func getRunbookFromGithub(owner string, repo string, filepath string, token string) (string, error) {
+func getRunbookFromGithub(owner, repo, filepath, token string) ([]byte, error) {
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 	tc := oauth2.NewClient(context.Background(), ts)
 	client := github.NewClient(tc)
-	runbook, _ := client.Repositories.DownloadContents(context.Background(), owner, repo, filepath, nil)
+	runbook, err := client.Repositories.DownloadContents(context.Background(), owner, repo, filepath, nil)
+	if err != nil {
+		return nil, err
+	}
 	defer runbook.Close()
-	bytes, err := ioutil.ReadAll(runbook)
 
-	return string(bytes), err
+	return ioutil.ReadAll(runbook)
 }

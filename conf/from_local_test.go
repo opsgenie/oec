@@ -1,15 +1,15 @@
 package conf
 
 import (
-	"testing"
-	"os"
 	"github.com/stretchr/testify/assert"
+	"os"
+	"testing"
 )
 
 func TestReadConfigurationFromLocal(t *testing.T) {
 	homePath, err := getHomePath()
 	confPath := homePath + string(os.PathSeparator) + ".opsgenie" +
-		string(os.PathSeparator) + "maridConf.json"
+		string(os.PathSeparator) + "maridTestConf.json"
 
 	if err != nil {
 		t.Error("Error occurred during obtaining user's home path. Error: " + err.Error())
@@ -25,18 +25,12 @@ func TestReadConfigurationFromLocal(t *testing.T) {
 		t.Error("Error occurred during writing test Marid configuration file. Error: " + err.Error())
 	}
 
-	testConfFile.WriteString("{\"tk1\": \"tv1\",\"tk2\": \"tv2\", \"emre\": \"cicek\"}")
+	testConfFile.Write(mockConfFileContent)
 	testConfFile.Close()
 	configurationFromLocal, _ := readConfigurationFromLocal(confPath)
 
 	defer os.Remove(confPath)
 
-	expectedConfig := map[string]interface{}{
-		"tk1": "tv1",
-		"tk2": "tv2",
-		"emre": "cicek",
-	}
-
-	assert.Equal(t, expectedConfig, configurationFromLocal,
+	assert.Equal(t, mockConf, configurationFromLocal,
 		"Actual config and expected config are not the same.")
 }

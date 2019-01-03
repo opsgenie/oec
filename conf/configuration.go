@@ -2,81 +2,99 @@ package conf
 
 import (
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"os"
+	"strings"
+	"time"
 )
 
-var Configuration map[string]interface{}
-var RunbookActionMapping map[string]interface{}
-var readConfigurationFromGitFunction = readConfigurationFromGit
-var readConfigurationFromLocalFunction = readConfigurationFromLocal
-var ParseJson = parseJson
+type Configuration struct {
+	ApiKey 			string 			`json:"apiKey,omitempty" yaml:"apiKey,omitempty"`
+	BaseUrl 		string			`json:"baseUrl,omitempty" yaml:"baseUrl,omitempty"`
+	ActionMappings 	ActionMappings 	`json:"actionMappings,omitempty"`
+	PollerConf 		PollerConf 		`json:"pollerConf,omitempty"`
+	PoolConf 		PoolConf 		`json:"poolConf,omitempty"`
+	LogLevel		logrus.Level	`json:"logLevel,omitempty"`
+}
 
-func ReadConfFile() error {
-	confSource := os.Getenv("MARIDCONFSOURCE")
+type ActionName string
 
-	if confSource == "git" {
-		privateKeyFilePath := os.Getenv("MARIDCONFREPOPRIVATEKEYPATH")
-		passPhrase := os.Getenv("MARIDCONFGITPASSPHRASE")
-		gitUrl := os.Getenv("MARIDCONFREPOGITURL")
-		maridConfPath := os.Getenv("MARIDCONFGITFILEPATH")
+type ActionMappings map[ActionName]MappedAction
 
-		gitConf, err := readConfigurationFromGitFunction(gitUrl, maridConfPath, privateKeyFilePath, passPhrase)
+type MappedAction struct {
+	Source               string   `json:"source,omitempty"`
+	RepoOwner            string   `json:"repoOwner,omitempty"`
+	RepoName             string   `json:"repoName,omitempty"`
+	RepoFilePath         string   `json:"repoFilePath,omitempty"`
+	RepoToken            string   `json:"repoToken,omitempty"`
+	FilePath             string   `json:"filePath,omitempty"`
+	EnvironmentVariables []string `json:"environmentVariables,omitempty"`
+}
 
-		if err == nil {
-			copied, err := cloneMap(gitConf)
+type PollerConf struct {
+	PollingWaitIntervalInMillis time.Duration `json:"pollingWaitIntervalInMillis,omitempty"`
+	VisibilityTimeoutInSeconds  int64         `json:"visibilityTimeoutInSeconds,omitempty"`
+	MaxNumberOfMessages         int64         `json:"maxNumberOfMessages,omitempty"`
+}
 
-			if err != nil {
-				return err
-			}
+type PoolConf struct {
+	MaxNumberOfWorker        int32			`json:"maxNumberOfWorker,omitempty"`
+	MinNumberOfWorker        int32			`json:"minNumberOfWorker,omitempty"`
+	QueueSize                int32			`json:"queueSize,omitempty"`
+	KeepAliveTimeInMillis    time.Duration	`json:"keepAliveTimeInMillis,omitempty"`
+	MonitoringPeriodInMillis time.Duration	`json:"monitoringPeriodInMillis,omitempty"`
+}
 
-			Configuration = copied
+var readConfigurationFromGitHubFunc = readConfigurationFromGitHub
+var readConfigurationFromLocalFunc = readConfigurationFromLocal
 
-			if actionMappings, ok := copied["actionMappings"].(map[string]interface{}); ok {
-				RunbookActionMapping = actionMappings
-			} else {
-				return errors.New("Action mappings configuration is not found in the configuration file.")
-			}
+var defaultConfPath = strings.Join([]string{"opsgenie", "maridConfig.json"}, string(os.PathSeparator))
 
-			return nil
-		} else {
-			return err
-		}
-	} else if confSource == "local" {
-		maridConfPath := os.Getenv("MARIDCONFLOCALFILEPATH")
+func ReadConfFile() (*Configuration, error) {
+
+	confSource := os.Getenv("MARID_CONF_SOURCE")
+	conf, err := readConfFileFromSource(strings.ToLower(confSource))
+
+	if err != nil {
+		return nil, err
+	}
+	if len(conf.ActionMappings) == 0 {
+		return nil, errors.New("Action mappings configuration is not found in the configuration file.")
+	}
+	if conf.ApiKey == "" {
+		return nil, errors.New("ApiKey is not found in the configuration file.")
+	}
+	if conf.BaseUrl == "" {
+		return nil, errors.New("BaseUrl is not found in the configuration file.")
+	}
+
+	return conf, nil
+}
+
+func readConfFileFromSource(confSource string) (*Configuration, error) {
+
+	switch confSource {
+	case "github":
+		owner := os.Getenv("MARID_CONF_GITHUB_OWNER")
+		repo := os.Getenv("MARID_CONF_GITHUB_REPO")
+		filepath := os.Getenv("MARID_CONF_GITHUB_FILEPATH")
+		token := os.Getenv("MARID_CONF_GITHUB_TOKEN")
+
+		return readConfigurationFromGitHubFunc(owner, repo, filepath, token)
+	case "local":
+		maridConfPath := os.Getenv("MARID_CONF_LOCAL_FILEPATH")
 
 		if len(maridConfPath) <= 0 {
 			homePath, err := getHomePath()
-
 			if err != nil {
-				return err
+				return nil, err
 			}
 
-			maridConfPath = homePath + string(os.PathSeparator) + ".opsgenie" + string(os.PathSeparator) +
-				"maridConfig.json"
+			maridConfPath = strings.Join([]string{homePath, defaultConfPath}, string(os.PathSeparator))
 		}
 
-		localConf, err := readConfigurationFromLocalFunction(maridConfPath)
-
-		if err == nil {
-			copied, err := cloneMap(localConf)
-
-			if err != nil {
-				return err
-			}
-
-			Configuration = copied
-
-			if actionMappings, ok := copied["actionMappings"].(map[string]interface{}); ok {
-				RunbookActionMapping = actionMappings
-			} else {
-				return errors.New("Action mappings configuration is not found in the configuration file.")
-			}
-
-			return nil
-		} else {
-			return err
-		}
-	} else {
-		return errors.New("Unknown configuration source [" + confSource + "].")
+		return readConfigurationFromLocalFunc(maridConfPath)
+	default:
+		return nil, errors.Errorf("Unknown configuration source [%s].", confSource)
 	}
 }

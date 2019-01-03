@@ -1,83 +1,41 @@
 package runbook
 
 import (
-	"github.com/google/uuid"
-	"strings"
-	"os"
-	"fmt"
 	"errors"
+	"github.com/sirupsen/logrus"
+	"io/ioutil"
+	"os"
 )
 
-func writeContentToTemporaryFile(content string, fileName string) (string, error) {
-	tmpDir := os.TempDir()
-	fullPath := tmpDir + string(os.PathSeparator) + fileName
+var tempDir = os.TempDir() + string(os.PathSeparator)
 
-	if _, err := os.Stat(fullPath); !os.IsNotExist(err) {
-		var newFileName string
+func writeContentToTemporaryFile(content []byte, fileExtension string) (string, error) {
 
-		for {
-			newFileName, err = appendUniqueRandomPostfixToFileName(fileName)
-
-			if err != nil {
-				return "", err
-			}
-
-			fullPath = tmpDir + string(os.PathSeparator) + newFileName
-
-			if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-				break
-			}
-		}
-	}
-
-	file, err := os.OpenFile(fullPath, os.O_CREATE|os.O_WRONLY, 0766)
-
+	tempFile, err := ioutil.TempFile(tempDir, "*" + fileExtension)
 	if err != nil {
-		return "", nil
+		logrus.Error(err)
 	}
 
-	file.WriteString(content)
-	file.Close()
+	defer tempFile.Close()
 
-	return fullPath, nil
+	if _, err := tempFile.Write(content); err != nil {
+		logrus.Error(err)
+	}
+
+	return tempFile.Name(), nil
 }
 
-func appendUniqueRandomPostfixToFileName(fileName string) (string, error) {
-	randUUID, err := uuid.NewRandom()
-
-	if err != nil {
-		return "", err
-	}
-
-	newFileName := fileName
-
-	if dotIndex := strings.LastIndex(newFileName, "."); dotIndex != -1 {
-		newFileName = newFileName[0:dotIndex] + "-" + randUUID.String() + newFileName[dotIndex:]
-	} else {
-		newFileName = newFileName + "-" + randUUID.String()
-	}
-
-	return newFileName, nil
-}
-
-func convertMapToArray(sourceMap map[string]interface{}) []string {
-	destinationArray := make([]string, 0)
-
-	for key, value := range sourceMap {
-		destinationArray = append(destinationArray, fmt.Sprintf("%s=%s", key, value))
-	}
-
-	return destinationArray
-}
-
-func createTestScriptFile(content string, filePath string) error {
-	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY, 0755)
+func createTestScriptFile(content []byte, filePath string) error {
+	file, err := os.OpenFile(filePath, os.O_CREATE | os.O_WRONLY, 0755)
 
 	if err != nil {
 		return errors.New("Error occurred while creating test script file. Error: " + err.Error())
 	}
 
-	file.WriteString(content)
+	if _, err = file.Write(content); err != nil {
+		return err
+	}
+
 	file.Close()
 
 	return nil

@@ -1,437 +1,273 @@
 package queue
 
 import (
-	"math/rand"
-	"time"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"strconv"
+	"github.com/opsgenie/marid2/conf"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 	"sync"
 	"testing"
-	"github.com/stretchr/testify/assert"
-	"github.com/pkg/errors"
 )
 
-var testPoller = NewPollerForTest()
-var defaultPoller = NewPollerForTest()
+var mockPollerConf = &conf.PollerConf{
+	pollingWaitIntervalInMillis,
+	visibilityTimeoutInSec,
+	maxNumberOfMessages,
+}
 
-func NewPollerForTest() *MaridPoller {
-	pollingWaitInterval := time.Millisecond * 100
-	maxNumberOfMessages := int64(5)
-	visibilityTimeoutInSeconds := int64(15)
-	return &MaridPoller{
-		quit:                       make(chan struct{}),
-		wakeUpChan:                 make(chan struct{}),
-		state:                      INITIAL,
-		startStopMutex:             &sync.Mutex{},
-		pollingWaitInterval:        &pollingWaitInterval,
-		maxNumberOfMessages:        &maxNumberOfMessages,
-		visibilityTimeoutInSeconds: &visibilityTimeoutInSeconds,
-		workerPool:                 NewMockWorkerPool(),
-		queueProvider:              NewMockQueueProvider(),
-		releaseMessagesMethod:      releaseMessages,
-		waitMethod:                 waitPolling,
-		runMethod:                  runPoller,
-		wakeUpMethod:               wakeUpPoller,
-		StopPollingMethod:          StopPolling,
-		StartPollingMethod:         StartPolling,
-		pollMethod:                 poll,
+func newPollerTest() *MaridPoller {
+	return &MaridPoller {
+		quit:           make(chan struct{}),
+		wakeUpChan:     make(chan struct{}),
+		isRunning:		false,
+		startStopMutex: &sync.Mutex{},
+		pollerConf:     mockPollerConf,
+		workerPool:     NewMockWorkerPool(),
+		queueProvider:  NewMockQueueProvider(),
+		actionMappings: mockActionMappings,
+		apiKey:			&mockApiKey,
+		baseUrl:		&mockBaseUrl,
 	}
 }
 
-func mockRefreshClientSuccess(assumeRoleResult *AssumeRoleResult) error {
-	return nil
-}
+func TestStartAndStopPolling(t *testing.T) {
 
-func mockStartPollingSuccess(p *MaridPoller) error {
-	return nil
-}
+	poller := newPollerTest()
 
-func mockStopPollingSuccess(p *MaridPoller) error {
-	return nil
-}
-
-func mockChangeMessageVisibilitySuccess(mqp *MaridQueueProvider, message *sqs.Message, visibilityTimeout int64) error {
-	return nil
-}
-
-func mockDeleteMessageOfPollerSuccess(mqp *MaridQueueProvider, message *sqs.Message) error {
-	return nil
-}
-
-func mockReceiveMessageSuccess(mqp *MaridQueueProvider, numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
-	messages := make([]*sqs.Message, 0)
-	for i := 1; i < rand.Intn(int(numOfMessage+1)) ; i++ {
-		sqsMessage := &sqs.Message{}
-		random := rand.Intn(301) * i
-		sqsMessage.SetMessageId( strconv.Itoa(int(random) ))
-		messages = append(messages, sqsMessage)
-	}
-	return messages, nil
-}
-
-func mockReceiveMessageExactNumber(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
-	messages := make([]*sqs.Message, 0)
-	for i := int64(0); i < numOfMessage ; i++ {
-		sqsMessage := &sqs.Message{}
-		sqsMessage.SetMessageId(strconv.Itoa(int(i+1)))
-		messages = append(messages, sqsMessage)
-	}
-	return messages, nil
-}
-
-func TestMultipleStartPolling(t *testing.T) {
-
-	defer func() {
-		testPoller.runMethod = defaultPoller.runMethod
-		testPoller.state = defaultPoller.state
-	}()
-
-	testPoller.runMethod = func(p *MaridPoller) {}
-
-	err := testPoller.StartPolling()
+	err := poller.StartPolling()
 	assert.Nil(t, err)
+	assert.Equal(t, true, poller.isRunning)
 
-	err = testPoller.StartPolling()
+	err = poller.StartPolling()
 	assert.NotNil(t, err)
 	assert.Equal(t, "Poller is already running.", err.Error())
-}
+	assert.Equal(t, true, poller.isRunning)
 
-func TestStartPollingNonInitialState(t *testing.T) {
-
-	defer func() {
-		testPoller.runMethod = defaultPoller.runMethod
-		testPoller.state = defaultPoller.state
-	}()
-
-	testPoller.runMethod = func(p *MaridPoller) {}
-	testPoller.state = POLLING
-
-	err := testPoller.StartPolling()
-	assert.NotNil(t, err)
-	assert.Equal(t, "Poller is already running.", err.Error())
-}
-
-func TestStartPolling(t *testing.T) {
-
-	defer func() {
-		testPoller.runMethod = defaultPoller.runMethod
-		testPoller.state = defaultPoller.state
-	}()
-
-	testPoller.runMethod = func(p *MaridPoller) {}
-
-	err := testPoller.StartPolling()
+	err = poller.StopPolling()
 	assert.Nil(t, err)
-
-	expectedState := uint32(POLLING)
-	assert.Equal(t, expectedState, testPoller.state)
+	assert.Equal(t, false, poller.isRunning)
 }
+
 
 func TestStopPollingNonPollingState(t *testing.T) {
 
-	defer func() {
-		testPoller.runMethod = defaultPoller.runMethod
-		testPoller.state = defaultPoller.state
-	}()
+	poller := newPollerTest()
 
-	testPoller.runMethod = func(p *MaridPoller) {}
-	testPoller.state = FINISHED
-
-	err := testPoller.StopPolling()
+	err := poller.StopPolling()
 	assert.NotNil(t, err)
 	assert.Equal(t, "Poller is not running.", err.Error())
 }
 
-func TestStopPolling(t *testing.T) {
+func TestPollWithNoAvailableWorker(t *testing.T) {
 
-	defer func() {
-		testPoller.runMethod = defaultPoller.runMethod
-		testPoller.state = defaultPoller.state
-		testPoller.quit = defaultPoller.quit
-		testPoller.wakeUpChan = defaultPoller.wakeUpChan
-	}()
+	poller := newPollerTest()
 
-	testPoller.runMethod = func(p *MaridPoller) {}
-	testPoller.state = POLLING
-
-	err := testPoller.StopPolling()
-	assert.Nil(t, err)
-
-	expectedState := uint32(FINISHED)
-	assert.Equal(t, expectedState, testPoller.state)
-}
-
-func TestPollZeroMessage(t *testing.T) {
-
-	defer func() {
-		testPoller.workerPool = defaultPoller.workerPool
-		testPoller.queueProvider = defaultPoller.queueProvider
-	}()
-
-	testPoller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() uint32 {
-		return uint32(rand.Int31n(5))
-	}
-	testPoller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = mockReceiveZeroMessage
-	testPoller.queueProvider.(*MockQueueProvider).GetMaridMetadataFunc = func() MaridMetadata {
-		return mockMaridMetadata1
+	poller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() int32 {
+		return 0
 	}
 
-	shouldWait := testPoller.poll()
-
+	shouldWait := poller.poll()
 	assert.True(t, shouldWait)
 }
 
 func TestPollWithReceiveError(t *testing.T) {
 
-	defer func() {
-		testPoller.workerPool = defaultPoller.workerPool
-		testPoller.queueProvider = defaultPoller.queueProvider
-	}()
+	poller := newPollerTest()
 
-	testPoller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() uint32 {
-		return uint32(rand.Int31n(5))
+	poller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() int32 {
+		return 1
 	}
-	testPoller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = mockReceiveMessageError
+	poller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = func(i int64, i2 int64) ([]*sqs.Message, error) {
+		return nil, errors.New("")
+	}
 
-	shouldWait := testPoller.poll()
-
+	shouldWait := poller.poll()
 	assert.True(t, shouldWait)
 }
 
-func TestPollWithNoAvailableWorker(t *testing.T) {
+func TestPollZeroMessage(t *testing.T) {
 
-	defer func() {
-		testPoller.workerPool = defaultPoller.workerPool
-	}()
+	poller := newPollerTest()
 
-	testPoller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() uint32 {
-		return 0
+	poller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() int32 {
+		return 1
+	}
+	poller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = func(i int64, i2 int64) ([]*sqs.Message, error) {
+		return []*sqs.Message{}, nil
 	}
 
-	shouldWait := testPoller.poll()
+	logrus.SetLevel(logrus.DebugLevel)
+	shouldWait := poller.poll()
+	assert.True(t, shouldWait)
+}
 
-	assert.Equal(t, false, shouldWait)
+func TestPollMaxMessage(t *testing.T) {
+
+	poller := newPollerTest()
+
+	expected := 4
+
+	poller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() int32 {
+		return int32(expected)
+	}
+
+	maxNumberOfMessages := 0
+	poller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
+		maxNumberOfMessages = int(numOfMessage)
+		return nil, errors.New("Receive Error")
+	}
+
+	shouldWait := poller.poll()
+	assert.True(t, shouldWait)
+	assert.Equal(t, expected, maxNumberOfMessages)
+}
+
+func TestPollMaxMessageUpperBound(t *testing.T) {
+
+	poller := newPollerTest()
+
+	availableWorkerCount := 12
+
+	poller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() int32 {
+		return int32(availableWorkerCount)
+	}
+
+	maxNumberOfMessages := int64(0)
+	poller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
+		maxNumberOfMessages = numOfMessage
+		return nil, errors.New("Receive Error")
+	}
+
+	shouldWait := poller.poll()
+	assert.True(t, shouldWait)
+	assert.Equal(t, poller.pollerConf.MaxNumberOfMessages, maxNumberOfMessages)
 }
 
 func TestPollMessageSubmitFail(t *testing.T) {
 
-	defer func() {
-		testPoller.workerPool = defaultPoller.workerPool
-		testPoller.queueProvider = defaultPoller.queueProvider
-		testPoller.releaseMessagesMethod = defaultPoller.releaseMessagesMethod
-	}()
+	poller := newPollerTest()
 
-	expected := 5
+	expected := 4
 
-	testPoller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() uint32 {
-		return uint32(expected)
+	poller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() int32 {
+		return int32(expected)
 	}
-	testPoller.workerPool.(*MockWorkerPool).SubmitFunc = func(job Job) (bool, error) {
+	poller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = mockSuccessReceiveFunc
+
+	submitCount := 0
+	poller.workerPool.(*MockWorkerPool).SubmitFunc = func(job Job) (bool, error) {
+		submitCount++
 		return false, nil
 	}
-	testPoller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = mockReceiveMessageSuccessOfProvider
-
 
 	releaseCount := 0
-	testPoller.releaseMessagesMethod = func(p *MaridPoller, messages []*sqs.Message) {
-		releaseCount++
-		return
+	poller.queueProvider.(*MockQueueProvider).ChangeMessageVisibilityFunc = func(message *sqs.Message, visibilityTimeout int64) error {
+		if visibilityTimeout == 0 {
+			releaseCount++
+		}
+		return nil
 	}
 
-	shouldWait := testPoller.poll()
+	shouldWait := poller.poll()
 
 	assert.False(t, shouldWait)
+	assert.Equal(t, expected, submitCount)
 	assert.Equal(t, expected, releaseCount)
 }
 
 func TestPollMessageSubmitError(t *testing.T) {
 
-	defer func() {
-		testPoller.workerPool = defaultPoller.workerPool
-		testPoller.queueProvider = defaultPoller.queueProvider
-		testPoller.releaseMessagesMethod = defaultPoller.releaseMessagesMethod
-	}()
+	poller := newPollerTest()
 
 	expected := 5
 
-	testPoller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() uint32 {
-		return uint32(expected)
+	poller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() int32 {
+		return int32(expected)
 	}
-	testPoller.workerPool.(*MockWorkerPool).SubmitFunc = func(job Job) (bool, error) {
-		return false, errors.New("Test submit error")
-	}
-	testPoller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = mockReceiveMessageSuccessOfProvider
+	poller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = mockSuccessReceiveFunc
 
-	messageLength := 0
-	testPoller.releaseMessagesMethod = func(p *MaridPoller, messages []*sqs.Message) {
-		messageLength = len(messages)
-		return
+	submitCount := 0
+	poller.workerPool.(*MockWorkerPool).SubmitFunc = func(job Job) (bool, error) {
+		submitCount++
+		return false, errors.New("Submit Error")
 	}
 
-	shouldWait := testPoller.poll()
+	releaseCount := 0
+	poller.queueProvider.(*MockQueueProvider).ChangeMessageVisibilityFunc = func(message *sqs.Message, visibilityTimeout int64) error {
+		if visibilityTimeout == 0 {
+			releaseCount++
+		}
+		return nil
+	}
+
+	shouldWait := poller.poll()
 
 	assert.True(t, shouldWait)
-	assert.Equal(t, expected, messageLength)
+	assert.Equal(t, 1, submitCount)
+	assert.Equal(t, expected, releaseCount)
 }
 
 func TestPollMessageSubmitSuccess(t *testing.T) {
 
-	defer func() {
-		testPoller.workerPool = defaultPoller.workerPool
-		testPoller.queueProvider = defaultPoller.queueProvider
-	}()
+	poller := newPollerTest()
 
-	testPoller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() uint32 {
-		return uint32(rand.Int31n(5))
+	poller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() int32 {
+		return 5
 	}
-	testPoller.workerPool.(*MockWorkerPool).SubmitFunc = func(job Job) (bool, error) {
+	poller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = mockSuccessReceiveFunc
+
+	poller.workerPool.(*MockWorkerPool).SubmitFunc = func(job Job) (bool, error) {
 		return true, nil
 	}
-	testPoller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = mockReceiveMessageSuccessOfProvider
 
-	shouldWait := testPoller.poll()
+	shouldWait := poller.poll()
 
 	assert.False(t, shouldWait)
 }
 
-func TestReleaseMessage(t *testing.T) {
+// Mock Poller
+type MockPoller struct {
+	StartPollingFunc func() error
+	StopPollingFunc func() error
 
-	defer func() {
-		testPoller.queueProvider = defaultPoller.queueProvider
-	}()
-
-	var messageVerify []string
-	testPoller.queueProvider.(*MockQueueProvider).ChangeMessageVisibilityFunc = func(message *sqs.Message, i int64) error {
-		messageVerify = append(messageVerify, *message.MessageId)
-		return nil
-	}
-
-	testPoller.queueProvider.(*MockQueueProvider).GetMaridMetadataFunc = func() MaridMetadata {
-		return mockMaridMetadata1
-	}
-
-	messages, _ := mockReceiveMessageExactNumber(5, 15)
-	testPoller.releaseMessages(messages)
-
-	expected := []string{"1", "2", "3", "4", "5"}
-
-	assert.Equal(t, expected, messageVerify)
+	RefreshClientFunc func(assumeRoleResult AssumeRoleResult) error
+	QueueProviderFunc func() QueueProvider
 }
 
-func TestWaitPollingWakeUp(t *testing.T) {
-
-	defer func() {
-		testPoller.waitMethod = defaultPoller.waitMethod
-		testPoller.state = defaultPoller.state
-	}()
-
-	isQuit := make(chan struct{})
-
-	testPoller.waitMethod = func(p *MaridPoller, pollingWaitPeriod time.Duration) {
-		waitPolling(p, pollingWaitPeriod)
-		isQuit <- struct{}{}
-	}
-
-	start := time.Now()
-
-	pollingWaitPeriod := time.Second * 5
-	go testPoller.wait(pollingWaitPeriod)
-	testPoller.wakeUpChan <- struct{}{}
-
-	<- isQuit
-	close(isQuit)
-
-	took := time.Now().Sub(start)
-
-	assert.True(t, took < pollingWaitPeriod)
+func NewMockPoller() Poller {
+	return &MockPoller{}
 }
 
-func TestWaitPollingQuit(t *testing.T) {
-
-	defer func() {
-		testPoller.runMethod = defaultPoller.runMethod
-		testPoller.pollMethod = defaultPoller.pollMethod
-		testPoller.state = defaultPoller.state
-	}()
-
-	isQuit := make(chan struct{})
-
-	testPoller.waitMethod = func(p *MaridPoller, pollingPeriod time.Duration) {
-		waitPolling(p, pollingPeriod)
-		isQuit <- struct{}{}
-	}
-
-	go testPoller.wait(time.Nanosecond)
-
-	<- isQuit
-	close(isQuit)
-
-	assert.Equal(t, uint32(POLLING), testPoller.state)
+func NewMockPollerForQueueProcessor(workerPool WorkerPool, queueProvider QueueProvider, pollerConf *conf.PollerConf, actionMappings *conf.ActionMappings, apiKey, baseUrl, integrationId *string) Poller {
+	return NewMockPoller()
 }
 
-func TestWakeUp(t *testing.T) {
-
-	defer func() {
-		testPoller.state = defaultPoller.state
-	}()
-
-	testPoller.state = WAITING
-
-	go testPoller.wakeUp()
-
-	<- testPoller.wakeUpChan
+func (p *MockPoller) StartPolling() error {
+	if p.StartPollingFunc != nil {
+		return p.StartPollingFunc()
+	}
+	return nil
 }
 
-func TestRunPollerQuit(t *testing.T) {
-
-	defer func() {
-		testPoller.runMethod = defaultPoller.runMethod
-		testPoller.pollMethod = defaultPoller.pollMethod
-		testPoller.state = defaultPoller.state
-	}()
-
-	isQuit := make(chan struct{})
-
-
-	testPoller.runMethod = func(p *MaridPoller) {
-		runPoller(p)
-		isQuit <- struct{}{}
+func (p *MockPoller) StopPolling() error {
+	if p.StopPollingFunc != nil {
+		return p.StopPollingFunc()
 	}
-
-	testPoller.pollMethod = func(p *MaridPoller) (shouldWait bool) {
-		return false
-	}
-
-	go testPoller.run()
-
-	testPoller.quit <- struct{}{}
-	<- isQuit
-	close(isQuit)
+	return nil
 }
 
-func TestRunPoller(t *testing.T) {
-
-	defer func() {
-		testPoller.pollMethod = defaultPoller.pollMethod
-		testPoller.waitMethod = defaultPoller.waitMethod
-	}()
-
-	waitOnce := true
-	isWait := make(chan struct{})
-
-	testPoller.pollMethod = func(p *MaridPoller) (shouldWait bool) {
-		return waitOnce
+func (p *MockPoller) RefreshClient(assumeRoleResult AssumeRoleResult) error {
+	if p.RefreshClientFunc != nil {
+		return p.RefreshClientFunc(assumeRoleResult)
 	}
-
-	testPoller.waitMethod = func(p *MaridPoller, pollingPeriod time.Duration) {
-		isWait <- struct{}{}
-		waitOnce = false
-	}
-
-	go testPoller.run()
-
-	<- isWait
-	close(isWait)
-
-	testPoller.quit <- struct{}{}
+	return nil
 }
+
+func (p *MockPoller) QueueProvider() QueueProvider {
+	if p.QueueProviderFunc != nil {
+		return p.QueueProviderFunc()
+	}
+	return NewMockQueueProvider()
+}
+

@@ -5,8 +5,8 @@ type MaridToken struct {
 }
 
 type Data struct {
-	IntegrationId string `json:"integrationId,omitempty"`
-	MaridMetaDataList []MaridMetadata `json:"queueProperties,omitempty"`
+	IntegrationId     string          `json:"integrationId,omitempty"`
+	MaridMetadataList []MaridMetadata `json:"queueProperties,omitempty"`
 }
 
 type MaridMetadata struct {
@@ -38,14 +38,14 @@ type QueueConfiguration struct {
 	QueueUrl                      string `json:"queueUrl,omitempty"`
 }
 
-func (mmt MaridMetadata) getExpireTimeMillis() int64 {
+func (mmt MaridMetadata) ExpireTimeMillis() int64 {
 	return mmt.AssumeRoleResult.Credentials.ExpireTimeMillis
 }
 
-func (mmt MaridMetadata) getRegion() string {
+func (mmt MaridMetadata) Region() string {
 	return mmt.QueueConfiguration.Region
 }
 
-func (mmt MaridMetadata) getQueueUrl() string {
+func (mmt MaridMetadata) QueueUrl() string {
 	return mmt.QueueConfiguration.QueueUrl
 }

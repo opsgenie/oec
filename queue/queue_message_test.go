@@ -6,106 +6,117 @@ import (
 	"github.com/opsgenie/marid2/runbook"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"math/rand"
 	"testing"
 	"time"
-	"math/rand"
 )
 
-func mockProcess(mqm *MaridQueueMessage) error {
-	multip := time.Duration(rand.Int31n(100 * 3))
-	time.Sleep(time.Millisecond * multip * 10)	// simulate a process
-	return nil
+var mockActionMappings = &conf.ActionMappings{
+	"action1": conf.MappedAction{Source: "local"},
+	"action2": conf.MappedAction{Source: "github"},
+}
+
+var(
+	mockMessageId = "mockMessageId"
+	mockApiKey = "mockApiKey"
+	mockBasePath = "mockBasePath"
+	mockBaseUrl = "mockBaseUrl"
+	mockIntegrationId = "mockIntegrationId"
+	)
+
+func mockExecuteRunbook(mappedAction *conf.MappedAction, arg string) (string, string, error) {
+	return "Operation executed successfully!", "", nil
 }
 
 func TestGetMessage(t *testing.T) {
-	assert := assert.New(t)
 
 	expectedMessage := &sqs.Message{}
 	expectedMessage.SetMessageId("messageId")
 	expectedMessage.SetBody("messageBody")
 
-	queueMessage := NewMaridMessage(expectedMessage)
-	actualMessage := queueMessage.GetMessage()
+	queueMessage := NewMaridMessage(expectedMessage, mockActionMappings)
+	actualMessage := queueMessage.Message()
 
-	assert.Equal(expectedMessage, actualMessage)
+	assert.Equal(t, expectedMessage, actualMessage)
 }
 
 func TestProcessSuccessfully(t *testing.T) {
-	oldParseJsonMethod := conf.ParseJson
-	defer func() { conf.ParseJson = oldParseJsonMethod }()
-	conf.ParseJson = mockParseJson
 
-	actionMap := make(map[string]interface{})
-	actionMap["doAction"] = "mappedAction"
-	conf.Configuration = make(map[string]interface{})
-	conf.Configuration["actionMappings"] = actionMap
+	oldExecuteRunbook := runbook.ExecuteRunbookFunc
+	defer func() { runbook.ExecuteRunbookFunc = oldExecuteRunbook }()
+	runbook.ExecuteRunbookFunc = mockExecuteRunbook
 
-	oldExecuteRunbook := runbook.ExecuteRunbookMethod
-	defer func() { runbook.ExecuteRunbookMethod = oldExecuteRunbook }()
-	runbook.ExecuteRunbookMethod = mockExecuteRunbook
+	body := `{"action":"action1"}`
+	id := "MessageId"
+	message := &sqs.Message{Body: &body, MessageId: &id}
+	queueMessage := NewMaridMessage(message, mockActionMappings)
 
-	body := `{"params":{"action":"doAction"}}`
-	queueMessage := NewMaridMessage(&sqs.Message{
-		Body: &body,
-	})
-
-	err := queueMessage.Process()
+	result, err := queueMessage.Process()
 	assert.Nil(t, err)
+	assert.Equal(t, "action1", result.Action)
 }
 
 func TestProcessMappedActionNotFound(t *testing.T) {
-	oldParseJsonMethod := conf.ParseJson
-	defer func() { conf.ParseJson = oldParseJsonMethod }()
-	conf.ParseJson = mockParseJson
 
-	actionMap := make(map[string]interface{})
-	actionMap["notAction"] = "mappedAction"
-	conf.Configuration = make(map[string]interface{})
-	conf.Configuration["actionMappings"] = actionMap
+	oldExecuteRunbook := runbook.ExecuteRunbookFunc
+	defer func() { runbook.ExecuteRunbookFunc = oldExecuteRunbook }()
+	runbook.ExecuteRunbookFunc = mockExecuteRunbook
 
-	oldExecuteRunbook := runbook.ExecuteRunbookMethod
-	defer func() { runbook.ExecuteRunbookMethod = oldExecuteRunbook }()
-	runbook.ExecuteRunbookMethod = mockExecuteRunbook
+	body := `{"action":"action3"}`
+	message := &sqs.Message{Body: &body}
+	queueMessage := NewMaridMessage(message, mockActionMappings)
 
-	body := `{"params":{"action":"doAction"}}`
-	queueMessage := NewMaridMessage(&sqs.Message{
-		Body: &body,
-	})
-	err := queueMessage.Process()
-	expected := errors.New("There is no mapped action found for [doAction]").Error()
-	assert.Equal(t, expected, err.Error())
+	_, err := queueMessage.Process()
+	expectedErr := errors.New("There is no mapped action found for [action3]")
+	assert.EqualError(t, err, expectedErr.Error())
 }
 
 func TestProcessFieldMissing(t *testing.T) {
-	oldParseJsonMethod := conf.ParseJson
-	defer func() { conf.ParseJson = oldParseJsonMethod }()
-	conf.ParseJson = mockParseJson
 
-	actionMap := make(map[string]interface{})
-	actionMap["doAction"] = "mappedAction"
-	conf.Configuration = make(map[string]interface{})
-	conf.Configuration["actionMappings"] = actionMap
+	oldExecuteRunbook := runbook.ExecuteRunbookFunc
+	defer func() { runbook.ExecuteRunbookFunc = oldExecuteRunbook }()
+	runbook.ExecuteRunbookFunc = mockExecuteRunbook
 
-	oldExecuteRunbook := runbook.ExecuteRunbookMethod
-	defer func() { runbook.ExecuteRunbookMethod = oldExecuteRunbook }()
-	runbook.ExecuteRunbookMethod = mockExecuteRunbook
+	body := `{"alert":{}}`
+	message := &sqs.Message{Body: &body}
+	queueMessage := NewMaridMessage(message, mockActionMappings)
 
-	body := `{"params":{"aktion":"doAction"}}`
-	queueMessage := NewMaridMessage(&sqs.Message{
-		Body: &body,
-	})
-
-	err := queueMessage.Process()
-	expected := errors.New("SQS message does not contain action property").Error()
-	assert.Equal(t, expected, err.Error())
+	_, err := queueMessage.Process()
+	expectedErr := errors.New("SQS message does not contain action property")
+	assert.EqualError(t, err, expectedErr.Error())
 }
 
-func mockParseJson(content []byte) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
-	result["action"] = "doAction"
-	return result, nil
+// Mock Queue Message
+type MockQueueMessage struct {
+	MessageFunc func() *sqs.Message
+	ProcessFunc func() (*runbook.ActionResultPayload ,error)
 }
 
-func mockExecuteRunbook(action string) (string, string, error) {
-	return "Operation executed successfully!", "(with no errors!)", nil
+func (mqm *MockQueueMessage) Message() *sqs.Message {
+	if mqm.MessageFunc != nil {
+		return mqm.MessageFunc()
+	}
+
+	body := "mockBody"
+	messageAttr := map[string]*sqs.MessageAttributeValue{integrationId: {StringValue: &mockIntegrationId}}
+
+	return &sqs.Message{
+		MessageId: 			&mockMessageId,
+		Body:				&body,
+		MessageAttributes: 	messageAttr,
+	}
+}
+
+func (mqm *MockQueueMessage) Process() (*runbook.ActionResultPayload ,error) {
+	if mqm.ProcessFunc != nil {
+		return mqm.ProcessFunc()
+	}
+
+	multip := time.Duration(rand.Int31n(100 * 3))
+	time.Sleep(time.Millisecond * multip * 10)	// simulate a process
+	return &runbook.ActionResultPayload{}, nil
+}
+
+func NewMockQueueMessage() QueueMessage {
+	return &MockQueueMessage{}
 }

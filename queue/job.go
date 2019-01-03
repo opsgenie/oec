@@ -1,226 +1,109 @@
 package queue
 
 import (
-	"time"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"log"
-	"sync/atomic"
-	"sync"
+	"github.com/opsgenie/marid2/runbook"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	"sync"
+	"time"
 )
 
-const (	// todo change to enum and split
-	INITIAL = 0
-
-	EXECUTING = 1
-	FINISHED = 2
-	ERROR = 3
-
-	POLLING = 4
-	WAITING = 5
+const (
+	JobInitial   = iota
+	JobExecuting
+	JobFinished
+	JobError
 )
-
-const exceedRetryCount = 3
 
 type Job interface {
-	GetJobId() string
+	JobId() string
 	Execute() error
-	observe()
 }
 
 type SqsJob struct {
-	queueProvider QueueProvider
+	queueProvider	QueueProvider
+	queueMessage	QueueMessage
 
-	id               *string
-	timeoutInSeconds int64
-	queueMessage     QueueMessage
+	integrationId 	*string
+	apiKey			*string
+	baseUrl			*string
 
-	exceedCount 	uint32
-	state 			uint32
-	mu 				*sync.Mutex
-	shouldObserve 	bool
-	observer 		*time.Timer
-	observePeriod   time.Duration
-
-	setStateToExecutingMethod 	func(j *SqsJob) bool
-	GetJobIdMethod				func(j *SqsJob) string
-	GetMessageMethod 			func(j *SqsJob) *sqs.Message
-	ExecuteMethod 				func(j *SqsJob) error
-	observeMethod 				func(j *SqsJob)
-	checkJobStatusMethod 		func(j *SqsJob)
+	state         int32
+	executeMutex  *sync.Mutex
 }
 
-func NewSqsJob(queueMessage QueueMessage, queueProvider QueueProvider, timeoutInSeconds int64) Job {
+func NewSqsJob(queueMessage QueueMessage, queueProvider QueueProvider, apiKey, baseUrl, integrationId *string) Job {
 	return &SqsJob{
-		queueMessage:            	queueMessage,
-		id:                      	queueMessage.GetMessage().MessageId,
-		timeoutInSeconds:        	timeoutInSeconds,
-		observePeriod:           	time.Second * time.Duration(timeoutInSeconds - 5),
-		state:                   	INITIAL,
-		mu:                      	&sync.Mutex{},
-		shouldObserve:           	false,
-		exceedCount:             	0,
-		queueProvider:				queueProvider,
-		setStateToExecutingMethod: 	setStateToExecuting,
-		GetJobIdMethod: 		   	GetJobId,
-		GetMessageMethod: 		   	GetJobMessage,
-		ExecuteMethod:  		   	Execute,
-		observeMethod: 			   	observe,
-		checkJobStatusMethod: 	   	checkJobStatus,
+		queueProvider:  queueProvider,
+		queueMessage:	queueMessage,
+		executeMutex:	&sync.Mutex{},
+		apiKey:			apiKey,
+		baseUrl:		baseUrl,
+		integrationId:	integrationId,
+		state:          JobInitial,
 	}
 }
 
-func (j *SqsJob) GetJobId() string {
-	return j.GetJobIdMethod(j)
+func (j *SqsJob) JobId() string {
+	return *j.queueMessage.Message().MessageId
 }
 
-func (j *SqsJob) GetMessage() *sqs.Message {
-	return j.GetMessageMethod(j)
-}
-
-func (j *SqsJob) setStateToExecuting() bool {
-	return j.setStateToExecutingMethod(j)
+func (j *SqsJob) SqsMessage() *sqs.Message {
+	return j.queueMessage.Message()
 }
 
 func (j *SqsJob) Execute() error {
-	return j.ExecuteMethod(j)
-}
 
-func (j *SqsJob) observe() {
-	j.observeMethod(j)
-}
+	defer j.executeMutex.Unlock()
+	j.executeMutex.Lock()
 
-func (j *SqsJob) checkJobStatus() {
-	j.checkJobStatusMethod(j)
-}
-
-func GetJobId(j *SqsJob) string {
-	return *j.id
-}
-
-func GetJobMessage(j *SqsJob) *sqs.Message {
-	return j.queueMessage.GetMessage()
-}
-
-func setStateToExecuting(j *SqsJob) bool {
-	defer j.mu.Unlock()
-	j.mu.Lock()
-
-	if atomic.LoadUint32(&j.state) != INITIAL {
-		return false
+	if j.state != JobInitial {
+		return errors.Errorf("Job[%s] is already executing or finished.", j.JobId())
 	}
-	atomic.StoreUint32(&j.state, EXECUTING)
-	return true
-}
+	j.state = JobExecuting
 
-func Execute(j *SqsJob) (err error) {
-	if !j.setStateToExecuting() {
-		return errors.New("Job[" + j.GetJobId() + "] is already executing.")
+	region := j.queueProvider.MaridMetadata().Region()
+	messageId := j.JobId()
+
+	err := j.queueProvider.DeleteMessage(j.SqsMessage())
+	if err != nil {
+		j.state = JobError
+		return errors.Errorf("Message[%s] could not be deleted from the queue[%s]: %s", messageId, region, err)
 	}
 
-	defer func() {
-		if j.shouldObserve {
-			j.observer.Stop()
+	logrus.Debugf("Message[%s] is deleted from the queue[%s].", messageId, region)
+
+	messageAttr := j.SqsMessage().MessageAttributes
+
+	if  messageAttr == nil ||
+		*messageAttr[integrationId].StringValue != *j.integrationId {
+		j.state = JobError
+		return errors.Errorf("Message[%s] is invalid, will not be processed.", messageId)
+	}
+
+	start := time.Now()
+	result, err := j.queueMessage.Process()
+	if err != nil {
+		j.state = JobError
+		return errors.Errorf("Message[%s] could not be processed: %s.", messageId, err)
+	}
+	took := time.Now().Sub(start)
+	logrus.Debugf("Message[%s] processing has been done and it took %f seconds.", messageId, took.Seconds())
+
+
+	go func() {
+		start = time.Now()
+
+		err = runbook.SendResultToOpsGenieFunc(result, j.apiKey, j.baseUrl)
+		if err != nil {
+			logrus.Warnf("Could not send action result[%+v] of message[%s] to Opsgenie: %s", result, messageId, err)
+		} else {
+			took := time.Now().Sub(start)
+			logrus.Debugf("Successfully sent result of message[%s] to OpsGenie and it took %f seconds.", messageId, took.Seconds())
 		}
 	}()
 
-	if j.shouldObserve {
-		j.observe()
-	}
-
-	err = j.queueProvider.DeleteMessage(j.GetMessage())
-	if err != nil {
-		atomic.StoreUint32(&j.state, ERROR)
-		return err
-	}
-	log.Printf("Message of job[%s] has been deleted.", j.GetJobId())
-
-	start := time.Now()
-	err = j.queueMessage.Process()
-	if err != nil {
-		atomic.StoreUint32(&j.state, ERROR)	// todo changeVisibility?
-		return err
-	}
-	took := time.Now().Sub(start)
-	log.Printf("Process job[%s] has been done and it took %f seconds.", j.GetJobId(), took.Seconds())
-
-	atomic.StoreUint32(&j.state, FINISHED)
+	j.state = JobFinished
 	return nil
 }
-
-func observe(j *SqsJob) {
-	state := atomic.LoadUint32(&j.state)
-	if state == EXECUTING {
-		j.observer = time.AfterFunc(j.observePeriod, j.checkJobStatus)
-	}
-}
-
-func checkJobStatus(j *SqsJob) {
-	state := atomic.LoadUint32(&j.state)
-	if state == EXECUTING {
-		j.exceedCount++
-		if j.exceedCount > exceedRetryCount {
-			return
-		}
-		log.Printf("Timeout is exceed for job[%s] for %d times.", j.GetJobId(), j.exceedCount)
-		err := j.queueProvider.ChangeMessageVisibility(j.queueMessage.GetMessage(), j.timeoutInSeconds)
-		if err != nil {
-			// todo retry ?
-		}
-		log.Printf("Message visibility of job[%s] has been changed.", j.GetJobId())
-		j.observePeriod = time.Duration(j.timeoutInSeconds) * time.Second
-		j.observe()
-	}
-}
-
-/******************************************************************************************/
-
-type JobQueue struct {
-	queue chan Job
-	queueSize uint32
-	load uint32
-}
-
-func NewJobQueue(queueSize uint32) *JobQueue {
-	return &JobQueue{
-		queue: make(chan Job, queueSize),
-		queueSize: queueSize,
-		load: 0,
-	}
-}
-
-func (jq *JobQueue) Increment() {
-	atomic.AddUint32(&jq.load, 1)
-}
-
-func (jq *JobQueue) Decrement() {
-	atomic.AddUint32(&jq.load, ^uint32(0))
-}
-
-func (jq *JobQueue) GetChan() chan Job {
-	return jq.queue
-}
-
-func (jq *JobQueue) GetLoad() uint32 {
-	return atomic.LoadUint32(&jq.load)
-}
-
-func (jq *JobQueue) GetSize() uint32 {
-	return atomic.LoadUint32(&jq.queueSize)
-}
-
-func (jq *JobQueue) GetLoadFactor() float32 {
-	if jq.queueSize == 0 {
-		return 0
-	}
-	return float32(atomic.LoadUint32(&jq.load) / jq.queueSize)
-}
-
-func (jq *JobQueue) IsFull() bool {
-	return atomic.LoadUint32(&jq.load) >= jq.queueSize
-}
-
-func (jq *JobQueue) Close() {
-	close(jq.queue)
-}
-

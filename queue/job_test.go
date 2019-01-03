@@ -1,203 +1,137 @@
 package queue
 
 import (
-	"testing"
-	"github.com/stretchr/testify/assert"
-	"sync"
-	"sync/atomic"
+	"encoding/json"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"time"
+	"github.com/opsgenie/marid2/runbook"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"testing"
 )
 
-func TestGetJobId(t *testing.T) {
+var mockActionResultPayload = &runbook.ActionResultPayload{Action: "MockAction"}
 
-	expectedId := "jobId"
-
-	sqsJob := SqsJob {
-		id: &expectedId,
-		GetJobIdMethod: GetJobId,
+func newJobTest() *SqsJob {
+	mockQueueMessage := NewMockQueueMessage().(*MockQueueMessage)
+	mockQueueMessage.ProcessFunc = func() (payload *runbook.ActionResultPayload, e error) {
+		return mockActionResultPayload, nil
 	}
 
-	actualId := sqsJob.GetJobId()
-
-	assert.Equal(t, expectedId, actualId)
+	return &SqsJob {
+		queueProvider: 	NewMockQueueProvider(),
+		queueMessage:  	mockQueueMessage,
+		executeMutex:  	&sync.Mutex{},
+		apiKey:			&mockApiKey,
+		baseUrl:		&mockBaseUrl,
+		integrationId: 	&mockIntegrationId,
+		state:         	JobInitial,
+	}
 }
 
-func TestGetJobMessage(t *testing.T) {
+func TestJobId(t *testing.T) {
 
-	expectedMessage := &sqs.Message{}
+	job := newJobTest()
 
-	maridMessage := &MaridQueueMessage {
-		Message: expectedMessage,
-		GetMessageMethod: GetMessage,
-	}
+	actualId := job.JobId()
 
-	sqsJob := SqsJob{
-		queueMessage: maridMessage,
-		GetMessageMethod: GetJobMessage,
-	}
-
-	actualMessage := sqsJob.GetMessage()
-
-	assert.Equal(t, expectedMessage, actualMessage)
-}
-
-func TestSetStateToExecutingInInitialState(t *testing.T) {
-
-	sqsJob := SqsJob {
-		state: INITIAL,
-		mu:	 &sync.Mutex{},
-		setStateToExecutingMethod: setStateToExecuting,
-	}
-
-	wg := &sync.WaitGroup{}
-
-	expectedCount := int32(1)
-	actualCount := int32(0)
-
-	for i := 0; i < 25 ; i++ {
-		go func() {
-			defer wg.Done()
-			wg.Add(1)
-			if sqsJob.setStateToExecuting() {
-				atomic.AddInt32(&actualCount, 1)
-			}
-		}()
-	}
-
-	wg.Wait()
-	expectedState := uint32(EXECUTING)
-	actualState := sqsJob.state
-
-	assert.Equal(t, expectedState, actualState)
-	assert.Equal(t, expectedCount, actualCount)
-}
-
-func TestSetStateToExecutingInExecutingState(t *testing.T) {
-
-	sqsJob := SqsJob {
-		state: EXECUTING,
-		mu:	 &sync.Mutex{},
-		setStateToExecutingMethod: setStateToExecuting,
-	}
-
-	wg := &sync.WaitGroup{}
-
-	expectedCount := int32(0)
-	actualCount := int32(0)
-
-	for i := 0; i < 25 ; i++ {
-		go func() {
-			defer wg.Done()
-			wg.Add(1)
-			if sqsJob.setStateToExecuting() {
-				atomic.AddInt32(&actualCount, 1)
-			}
-		}()
-	}
-
-	wg.Wait()
-	expectedState := uint32(EXECUTING)
-	actualState := sqsJob.state
-
-	assert.Equal(t, expectedState, actualState)
-	assert.Equal(t, expectedCount, actualCount)
+	assert.Equal(t, mockMessageId, actualId)
 }
 
 func TestExecute(t *testing.T) {
+	wg := &sync.WaitGroup{}
 
-	maridMessage := &MaridQueueMessage {
-		Message: &sqs.Message{},
-		ProcessMethod: func(mqm *MaridQueueMessage) error {
-			return nil
-		},
-		GetMessageMethod: GetMessage,
-	}
+	testServer := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		res.WriteHeader(http.StatusAccepted)
 
-	sqsJob := SqsJob {
-		queueMessage: maridMessage,
-		shouldObserve: true,
-		setStateToExecutingMethod: func(j *SqsJob) bool {
-			return true
-		},
-		observeMethod: func(j *SqsJob) {
-			j.observer = time.NewTimer(time.Second)
-		},
-		ExecuteMethod: Execute,
-		queueProvider: &MaridQueueProvider{DeleteMessageMethod: func(mqp *MaridQueueProvider, message *sqs.Message) error {
-			return nil
-		}},
-		GetMessageMethod: GetJobMessage,
-		GetJobIdMethod: func(j *SqsJob) string {
-			return "jobId"
-		},
-	}
+		actionResult := &runbook.ActionResultPayload{}
+		body, _ := ioutil.ReadAll(req.Body)
+		json.Unmarshal(body, actionResult)
 
+		assert.Equal(t, mockActionResultPayload, actionResult)
+		assert.Equal(t, "GenieKey " + mockApiKey, req.Header.Get("Authorization"))
+		wg.Done()
+	}))
+	defer testServer.Close()
+
+	sqsJob := newJobTest()
+	sqsJob.baseUrl = &testServer.URL
+
+	wg.Add(1)
 	err := sqsJob.Execute()
 
+	wg.Wait()
 	assert.Nil(t, err)
 
-	expectedState := uint32(FINISHED)
+	expectedState := int32(JobFinished)
 	actualState := sqsJob.state
 
 	assert.Equal(t, expectedState, actualState)
+}
+
+func TestMultipleExecute(t *testing.T) {
+	wg := &sync.WaitGroup{}
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		res.WriteHeader(http.StatusAccepted)
+		wg.Done()
+	}))
+	defer testServer.Close()
+
+	sqsJob := newJobTest()
+	sqsJob.baseUrl = &testServer.URL
+
+	errorResults := make(chan error, 25)
+
+	wg.Add(26) // 25 execute try + 1 successful execute send result to testServer
+	for i := 0; i < 25 ; i++ {
+		go func() {
+			defer wg.Done()
+			err := sqsJob.Execute()
+			if err != nil {
+				errorResults <- sqsJob.Execute()
+			}
+		}()
+	}
+
+	wg.Wait()
+	expectedState := int32(JobFinished)
+	actualState := sqsJob.state
+
+	assert.Equal(t, expectedState, actualState) 	// only one execute finished
+	assert.Equal(t, 24, len(errorResults))	// other executes will fail
 }
 
 func TestExecuteInNotInitialState(t *testing.T) {
 
-	sqsJob := SqsJob {
-		setStateToExecutingMethod: func(j *SqsJob) bool {
-			return false
-		},
-		ExecuteMethod: Execute,
-		GetJobIdMethod: func(j *SqsJob) string {
-			return "jobId"
-		},
-	}
+	sqsJob := newJobTest()
+	sqsJob.state = JobExecuting
 
 	err := sqsJob.Execute()
-
 	assert.NotNil(t, err)
-	assert.Equal(t, "Job[" + sqsJob.GetJobId() + "] is already executing.", err.Error())
+
+	expectedErr := errors.Errorf("Job[%s] is already executing or finished.", sqsJob.JobId())
+	assert.EqualError(t, err, expectedErr.Error())
 }
 
 func TestExecuteWithProcessError(t *testing.T) {
 
-	maridMessage := &MaridQueueMessage {
-		Message: &sqs.Message{},
-		ProcessMethod: func(mqm *MaridQueueMessage) error {
-			return errors.New("Process Error")
-		},
-		GetMessageMethod: GetMessage,
-	}
+	sqsJob := newJobTest()
 
-	sqsJob := SqsJob {
-		queueMessage:  maridMessage,
-		queueProvider: NewMockQueueProvider(),
-		shouldObserve: false,
-		setStateToExecutingMethod: func(j *SqsJob) bool {
-			return true
-		},
-		ExecuteMethod: Execute,
-		GetJobIdMethod: func(j *SqsJob) string {
-			return "jobId"
-		},
-		GetMessageMethod: func(j *SqsJob) *sqs.Message {
-			return &sqs.Message{}
-		},
-	}
-
-	sqsJob.queueProvider.(*MockQueueProvider).DeleteMessageFunc = func(message *sqs.Message) error {
-		return nil
+	sqsJob.queueMessage.(*MockQueueMessage).ProcessFunc = func() (payload *runbook.ActionResultPayload, e error) {
+		return nil, errors.New("Process Error")
 	}
 
 	err := sqsJob.Execute()
-
 	assert.NotNil(t, err)
-	assert.Equal(t, "Process Error", err.Error())
 
-	expectedState := uint32(ERROR)
+	expectedErr := errors.Errorf("Message[%s] could not be processed: %s.", sqsJob.JobId(), "Process Error")
+	assert.EqualError(t, err, expectedErr.Error())
+
+	expectedState := int32(JobError)
 	actualState := sqsJob.state
 
 	assert.Equal(t, expectedState, actualState)
@@ -205,146 +139,67 @@ func TestExecuteWithProcessError(t *testing.T) {
 
 func TestExecuteWithDeleteError(t *testing.T) {
 
-	maridMessage := &MaridQueueMessage {
-		Message: &sqs.Message{},
-		ProcessMethod: func(mqm *MaridQueueMessage) error {
-			return nil
-		},
-		GetMessageMethod: GetMessage,
-	}
+	sqsJob := newJobTest()
 
-	sqsJob := SqsJob {
-		queueMessage: maridMessage,
-		shouldObserve: false,
-		setStateToExecutingMethod: func(j *SqsJob) bool {
-			return true
-		},
-		ExecuteMethod: Execute,
-		queueProvider: &MaridQueueProvider{DeleteMessageMethod: func(mqp *MaridQueueProvider, message *sqs.Message) error {
-			return errors.New("Delete Error")
-		}},
-		GetJobIdMethod: func(j *SqsJob) string {
-			return "jobId"
-		},
-		GetMessageMethod: GetJobMessage,
+	sqsJob.queueProvider.(*MockQueueProvider).DeleteMessageFunc = func(message *sqs.Message) error {
+		return errors.New("Delete Error")
 	}
 
 	err := sqsJob.Execute()
-
 	assert.NotNil(t, err)
-	assert.Equal(t, "Delete Error", err.Error())
 
-	expectedState := uint32(ERROR)
+	expectedErr := errors.Errorf("Message[%s] could not be deleted from the queue[%s]: %s", sqsJob.JobId(), sqsJob.queueProvider.MaridMetadata().Region(), "Delete Error")
+	assert.EqualError(t, err, expectedErr.Error())
+
+	expectedState := int32(JobError)
 	actualState := sqsJob.state
 
 	assert.Equal(t, expectedState, actualState)
 }
 
-func TestObserve(t *testing.T) {
+func TestExecuteWithInvalidQueueMessage(t *testing.T) {
 
-	maridMessage := &MaridQueueMessage {
-		Message: &sqs.Message{},
-		GetMessageMethod: GetMessage,
+	sqsJob := newJobTest()
+
+	sqsJob.queueMessage.(*MockQueueMessage).MessageFunc = func() *sqs.Message {
+		falseIntegrationId := "falseIntegrationId"
+		messageAttr := map[string]*sqs.MessageAttributeValue{integrationId: {StringValue: &falseIntegrationId} }
+		return &sqs.Message{MessageAttributes: messageAttr, MessageId: &mockMessageId}
 	}
 
-	sqsJob := SqsJob {
-		queueMessage: maridMessage,
-		state:				EXECUTING,
-		exceedCount:		0,
-		timeoutInSeconds:	1,
-		GetJobIdMethod: func(j *SqsJob) string {
-			return "jobId"
-		},
-		checkJobStatusMethod:	checkJobStatus,
-		observeMethod:	observe,
-		observePeriod:	time.Nanosecond,
-		queueProvider: &MaridQueueProvider{ChangeMessageVisibilityMethod: func(mqp *MaridQueueProvider, message *sqs.Message, visibilityTimeout int64) error {
-			return nil
-		}},
-	}
+	err := sqsJob.Execute()
+	assert.NotNil(t, err)
 
-	sqsJob.observe()
+	expectedErr := errors.Errorf("Message[%s] is invalid, will not be processed.", sqsJob.JobId())
+	assert.EqualError(t, err, expectedErr.Error())
 
-	time.Sleep(time.Millisecond)
-	sqsJob.state = FINISHED  // or  sqsJob.observer.Stop()
+	expectedState := int32(JobError)
+	actualState := sqsJob.state
 
-	expectedExceedCount := uint32(1)
-	actualExceedCount := sqsJob.exceedCount
-
-	assert.Equal(t, expectedExceedCount, actualExceedCount)
+	assert.Equal(t, expectedState, actualState)
 }
 
-/******************************************************************************************/
+// Mock Job
+type MockJob struct {
 
-func TestGetQueue(t *testing.T) {
-
-	expectedQueue := make(chan Job)
-
-	jobQueue := &JobQueue{
-		queue: expectedQueue,
-	}
-
-	actualQueue := jobQueue.GetChan()
-
-	assert.Equal(t, expectedQueue, actualQueue)
+	JobIdFunc func() string
+	ExecuteFunc func() error
 }
 
-func TestIncrement(t *testing.T) {
-
-	jobQueue := &JobQueue{
-		load:	0,
-	}
-
-	wg := &sync.WaitGroup{}
-
-	wg.Add(15)
-	func() {
-		for i := 0; i < 15; i++ {
-			go func() {
-				defer wg.Done()
-				jobQueue.Increment()
-			}()
-		}
-	}()
-
-	wg.Wait()
-	expectedLoad := uint32(15)
-	actualLoad := jobQueue.load
-
-	assert.Equal(t, expectedLoad, actualLoad)
+func NewMockJob() *MockJob {
+	return &MockJob{}
 }
 
-func TestDecrement(t *testing.T) {
-
-	jobQueue := &JobQueue{
-		load:	15,
+func (mj *MockJob) JobId() string {
+	if mj.JobIdFunc != nil {
+		return mj.JobIdFunc()
 	}
-
-	wg := &sync.WaitGroup{}
-
-	wg.Add(10)
-	func() {
-		for i := 0; i < 10; i++ {
-			go func() {
-				defer wg.Done()
-				jobQueue.Decrement()
-			}()
-		}
-	}()
-
-	wg.Wait()
-	expectedLoad := uint32(5)
-	actualLoad := jobQueue.load
-
-	assert.Equal(t, expectedLoad, actualLoad)
+	return "mockJobId"
 }
 
-func TestIsFull(t *testing.T) {
-
-	jobQueue := &JobQueue{
-		load:	15,
-		queueSize:	15,
+func (mj *MockJob) Execute() error {
+	if mj.ExecuteFunc != nil {
+		return mj.ExecuteFunc()
 	}
-
-	assert.True(t, jobQueue.IsFull())
+	return nil
 }

@@ -2,18 +2,23 @@ package queue
 
 import (
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/service/sqs"
-
 	"github.com/aws/aws-sdk-go/aws/session"
-	"log"
+	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/aws/aws-sdk-go/service/sts"
 	"sync"
-	"net/http"
 )
 
-const tokenUrl = "https://app.opsgenie.com/v2/integrations/maridv2/credentials"
-var httpNewRequest = http.NewRequest
-var newSession = session.NewSession
+const integrationId = "integrationId"
+
+type SQS interface {
+	DeleteMessage(input *sqs.DeleteMessageInput) (*sqs.DeleteMessageOutput, error)
+	ChangeMessageVisibility(input *sqs.ChangeMessageVisibilityInput) (*sqs.ChangeMessageVisibilityOutput, error)
+	ReceiveMessage(input *sqs.ReceiveMessageInput) (*sqs.ReceiveMessageOutput, error)
+}
+
+/************************************************************************************************/
 
 type QueueProvider interface {
 	ChangeMessageVisibility(message *sqs.Message, visibilityTimeout int64) error
@@ -21,41 +26,24 @@ type QueueProvider interface {
 	ReceiveMessage(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error)
 
 	RefreshClient(assumeRoleResult AssumeRoleResult) error
-	GetMaridMetadata() MaridMetadata
-	GetIntegrationId() string
+	MaridMetadata() MaridMetadata
+	IsTokenExpired() bool
 }
 
 type MaridQueueProvider struct {
 
-	maridMetadata MaridMetadata
-	integrationId string
-
-	client	*sqs.SQS
-	rwMu	*sync.RWMutex
-
-	ChangeMessageVisibilityMethod func(mqp *MaridQueueProvider, message *sqs.Message, visibilityTimeout int64) error
-	DeleteMessageMethod           func(mqp *MaridQueueProvider, message *sqs.Message) error
-	ReceiveMessageMethod          func(mqp *MaridQueueProvider, numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error)
-
-	awsChangeMessageVisibilityMethod 	func(input *sqs.ChangeMessageVisibilityInput) (*sqs.ChangeMessageVisibilityOutput, error)
-	awsDeleteMessageMethod 				func(input *sqs.DeleteMessageInput) (*sqs.DeleteMessageOutput, error)
-	awsReceiveMessageMethod       		func(input *sqs.ReceiveMessageInput) (*sqs.ReceiveMessageOutput, error)
-
-	refreshClientMethod func(mqp *MaridQueueProvider, assumeRoleResult AssumeRoleResult) error
-	newConfigMethod     func(mqp *MaridQueueProvider, assumeRoleResult AssumeRoleResult) *aws.Config
+	maridMetadata 		MaridMetadata
+	client             	SQS
+	isTokenExpired     	bool
+	refreshClientMutex 	*sync.RWMutex
 }
 
-func NewQueueProvider(maridMetadata MaridMetadata, integrationId string) (QueueProvider, error) {
-	 provider := &MaridQueueProvider {
-		maridMetadata:                 	maridMetadata,
-		integrationId:					integrationId,
-		rwMu:                          	&sync.RWMutex{},
-		ChangeMessageVisibilityMethod: 	ChangeMessageVisibility,
-		DeleteMessageMethod:           	DeleteMessage,
-		ReceiveMessageMethod:          	ReceiveMessage,
-		refreshClientMethod:           	RefreshClient,
-		newConfigMethod:               	newConfig,
+func NewQueueProvider(maridMetadata MaridMetadata) (QueueProvider, error) {
+	provider := &MaridQueueProvider {
+		maridMetadata:      maridMetadata,
+		refreshClientMutex: &sync.RWMutex{},
 	}
+
 	err := provider.RefreshClient(maridMetadata.AssumeRoleResult)
 	if err != nil {
 		return nil, err
@@ -63,37 +51,21 @@ func NewQueueProvider(maridMetadata MaridMetadata, integrationId string) (QueueP
 	return provider, nil
 }
 
-func (mqp *MaridQueueProvider) GetMaridMetadata() MaridMetadata {
+func (mqp *MaridQueueProvider) MaridMetadata() MaridMetadata {
+	mqp.refreshClientMutex.RLock()
+	defer mqp.refreshClientMutex.RUnlock()
 	return mqp.maridMetadata
 }
 
-func (mqp *MaridQueueProvider) GetIntegrationId() string {
-	return mqp.integrationId
+func (mqp *MaridQueueProvider) IsTokenExpired() bool {
+	mqp.refreshClientMutex.RLock()
+	defer mqp.refreshClientMutex.RUnlock()
+	return mqp.isTokenExpired
 }
 
 func (mqp *MaridQueueProvider) ChangeMessageVisibility(message *sqs.Message, visibilityTimeout int64) error {
-	return mqp.ChangeMessageVisibilityMethod(mqp, message, visibilityTimeout)
-}
 
-func (mqp *MaridQueueProvider) DeleteMessage(message *sqs.Message) error {
-	return mqp.DeleteMessageMethod(mqp, message)
-}
-
-func (mqp *MaridQueueProvider) ReceiveMessage(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
-	return mqp.ReceiveMessageMethod(mqp, numOfMessage, visibilityTimeout)
-}
-
-func (mqp *MaridQueueProvider) RefreshClient(assumeRoleResult AssumeRoleResult) error {
-	return mqp.refreshClientMethod(mqp, assumeRoleResult)
-}
-
-func (mqp *MaridQueueProvider) newConfig(assumeRoleResult AssumeRoleResult) *aws.Config {
-	return mqp.newConfigMethod(mqp, assumeRoleResult)
-}
-
-func ChangeMessageVisibility(mqp *MaridQueueProvider, message *sqs.Message, visibilityTimeout int64) error {
-
-	queueUrl := mqp.maridMetadata.getQueueUrl()
+	queueUrl := mqp.maridMetadata.QueueUrl()
 
 	request := &sqs.ChangeMessageVisibilityInput{
 		ReceiptHandle:     message.ReceiptHandle,
@@ -101,50 +73,46 @@ func ChangeMessageVisibility(mqp *MaridQueueProvider, message *sqs.Message, visi
 		VisibilityTimeout: &visibilityTimeout,
 	}
 
-	mqp.rwMu.RLock()
-	resultVisibility, err := mqp.awsChangeMessageVisibilityMethod(request)
-	mqp.rwMu.RUnlock()
+	mqp.refreshClientMutex.RLock()
+	_, err := mqp.client.ChangeMessageVisibility(request)
+	mqp.refreshClientMutex.RUnlock()
+
+	mqp.checkExpiration(err)
 
 	if err != nil {
-		log.Printf("Change Message Visibility Error: %s", err)
 		return err
 	}
-
-	log.Printf("Visibility Time Changed: %s", resultVisibility.String())
 	return nil
 }
 
-func DeleteMessage(mqp *MaridQueueProvider, message *sqs.Message) error {
+func (mqp *MaridQueueProvider) DeleteMessage(message *sqs.Message) error {
 
-	queueUrl := mqp.maridMetadata.getQueueUrl()
+	queueUrl := mqp.maridMetadata.QueueUrl()
 
 	request := &sqs.DeleteMessageInput{
 		QueueUrl:      &queueUrl,
 		ReceiptHandle: message.ReceiptHandle,
 	}
 
-	mqp.rwMu.RLock()
-	_, err := mqp.awsDeleteMessageMethod(request)
-	mqp.rwMu.RUnlock()
+	mqp.refreshClientMutex.RLock()
+	_, err := mqp.client.DeleteMessage(request)
+	mqp.refreshClientMutex.RUnlock()
+
+	mqp.checkExpiration(err)
 
 	if err != nil {
-		log.Printf("Delete message error: %s", err)
 		return err
 	}
-	log.Printf("Message[%s] is deleted.", *message.MessageId)
 	return nil
 }
 
-func ReceiveMessage(mqp *MaridQueueProvider, maxNumOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
+func (mqp *MaridQueueProvider) ReceiveMessage(maxNumOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
 
-	queueUrl := mqp.maridMetadata.getQueueUrl()
+	queueUrl := mqp.maridMetadata.QueueUrl()
 
-	request := &sqs.ReceiveMessageInput{ // todo check attributes
-		AttributeNames: []*string{
-			aws.String(sqs.QueueAttributeNameAll),
-		},
+	request := &sqs.ReceiveMessageInput{
 		MessageAttributeNames: []*string{
-			aws.String(sqs.QueueAttributeNameAll),
+			aws.String(integrationId),
 		},
 		QueueUrl:            &queueUrl,
 		MaxNumberOfMessages: aws.Int64(maxNumOfMessage),
@@ -152,43 +120,37 @@ func ReceiveMessage(mqp *MaridQueueProvider, maxNumOfMessage int64, visibilityTi
 		WaitTimeSeconds:     aws.Int64(0),
 	}
 
-	mqp.rwMu.RLock()
-	result, err := mqp.awsReceiveMessageMethod(request)
-	mqp.rwMu.RUnlock()
+	mqp.refreshClientMutex.RLock()
+	result, err := mqp.client.ReceiveMessage(request)
+	mqp.refreshClientMutex.RUnlock()
+
+	mqp.checkExpiration(err)
 
 	if err != nil {
-		log.Printf("Receive message error: %s", err)
 		return nil, err
 	}
-
-	log.Printf("Received %d messages.", len(result.Messages))
-
 	return result.Messages, nil
 }
 
-func RefreshClient(mqp *MaridQueueProvider, assumeRoleResult AssumeRoleResult) error {
+func (mqp *MaridQueueProvider) RefreshClient(assumeRoleResult AssumeRoleResult) error {
 
 	config := mqp.newConfig(assumeRoleResult)
-	sess, err := newSession(config)
+	sess, err := session.NewSession(config)
 	if err != nil {
 		return err
 	}
 
-	mqp.rwMu.Lock()
+	mqp.refreshClientMutex.Lock()
 	mqp.client = sqs.New(sess)
 	mqp.maridMetadata.AssumeRoleResult = assumeRoleResult
-	mqp.awsChangeMessageVisibilityMethod = mqp.client.ChangeMessageVisibility
-	mqp.awsDeleteMessageMethod = mqp.client.DeleteMessage
-	mqp.awsReceiveMessageMethod = mqp.client.ReceiveMessage
-	mqp.rwMu.Unlock()
-
-	log.Printf("Client of queue provider[%s] has refreshed.", mqp.maridMetadata.getQueueUrl())
+	mqp.isTokenExpired = false
+	mqp.refreshClientMutex.Unlock()
 
 	return nil
 }
 
 
-func newConfig(mqp *MaridQueueProvider, assumeRoleResult AssumeRoleResult) *aws.Config {
+func (mqp *MaridQueueProvider) newConfig(assumeRoleResult AssumeRoleResult) *aws.Config {
 
 	assumeRoleResultCredentials := assumeRoleResult.Credentials
 	creds := credentials.NewStaticCredentials(
@@ -198,8 +160,18 @@ func newConfig(mqp *MaridQueueProvider, assumeRoleResult AssumeRoleResult) *aws.
 	)
 
 	awsConfig := aws.NewConfig().
-		WithRegion(mqp.maridMetadata.getRegion()).
+		WithRegion(mqp.maridMetadata.Region()).
 		WithCredentials(creds)
 
 	return awsConfig
+}
+
+func (mqp *MaridQueueProvider) checkExpiration(err error) {
+	if err, ok := err.(awserr.Error); ok {
+		if err.Code() == sts.ErrCodeExpiredTokenException {
+			mqp.refreshClientMutex.Lock()
+			mqp.isTokenExpired = true
+			mqp.refreshClientMutex.Unlock()
+		}
+	}
 }

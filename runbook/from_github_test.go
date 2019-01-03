@@ -1,31 +1,31 @@
 package runbook
 
 import (
-	"testing"
 	"github.com/stretchr/testify/assert"
 	"os"
+	"testing"
 )
 
 var getRunbookFromGithubCalled = false
 
-func mockGetRunbookFromGithub(owner string, repo string, filepath string, token string) (string, error) {
+func mockGetRunbookFromGithub(owner, repo, filepath, token string) ([]byte, error) {
 	getRunbookFromGithubCalled = true
 
-	return "echo \"testcontent\"\n", nil
+	return []byte("echo \"testContent\"\n"), nil
 }
 
 func TestExecuteRunbookFromGithub(t *testing.T) {
 	var testScriptPath = os.TempDir() + string(os.PathSeparator) + "test.sh"
 
-	oldGetRunbookFromGithubMethod := getRunbookFromGithubFunction
-	defer func() { getRunbookFromGithubFunction = oldGetRunbookFromGithubMethod }()
-	getRunbookFromGithubFunction = mockGetRunbookFromGithub
+	oldGetRunbookFromGithubMethod := getRunbookFromGithubFunc
+	defer func() { getRunbookFromGithubFunc = oldGetRunbookFromGithubMethod }()
+	getRunbookFromGithubFunc = mockGetRunbookFromGithub
 
 	cmdOut, cmdErr, err := executeRunbookFromGithub("testOwner", "testRepo", "test.sh",
-		"testToken", nil)
+		"testToken", nil, nil)
 
 	assert.NoError(t, err, "Error from execute operation was not empty.")
-	assert.Equal(t, "testcontent\n", cmdOut, "Output stream was not equal to expected.")
+	assert.Equal(t, "testContent\n", cmdOut, "Output stream was not equal to expected.")
 	assert.Equal(t, "", cmdErr, "Error stream from executed file was not empty.")
 
 	if _, err := os.Stat(testScriptPath); !os.IsNotExist(err) {

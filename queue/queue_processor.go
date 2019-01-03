@@ -1,44 +1,45 @@
 package queue
 
 import (
+	"encoding/json"
+	"github.com/opsgenie/marid2/conf"
+	"github.com/opsgenie/marid2/retryer"
 	"github.com/pkg/errors"
-	"log"
+	"github.com/sirupsen/logrus"
+	"io/ioutil"
+	"net/http"
+	"strconv"
 	"sync"
 	"time"
-	"github.com/opsgenie/marid2/conf"
-	"encoding/json"
-	"strconv"
 )
 
-const maxNumberOfWorker = 50
-const minNumberOfWorker = 15
-const queueSize = 0
-const keepAliveTime = time.Second
-const monitoringPeriod = time.Second * 2
+var UserAgentHeader string
 
-const pollingWaitInterval = time.Second * 5
-const visibilityTimeoutInSeconds = 30
-const maxNumberOfMessages = 10
+const (
+	maxNumberOfWorker = 12
+	minNumberOfWorker = 4
+	queueSize = 0
+	keepAliveTimeInMillis = 6000
+	monitoringPeriodInMillis = 15000
 
-const successRefreshPeriod = time.Minute
-const errorRefreshPeriod = time.Minute
+	pollingWaitIntervalInMillis = 100
+	visibilityTimeoutInSec = 30
+	maxNumberOfMessages = 10
+
+	successRefreshPeriod = time.Minute
+	errorRefreshPeriod = time.Minute
+)
+
+const tokenPath = "/v2/integrations/maridv2/credentials"
+
+var newPollerFunc = NewPoller
+var newRequestFunc = retryer.NewRequest
 
 type QueueProcessor interface {
-	Start() error
-	Stop() error
 
-	Wait()
+	StartProcessing() error
+	StopProcessing() error
 	IsRunning() bool
-
-	SetMaxNumberOfWorker(max uint32) QueueProcessor
-	SetMinNumberOfWorker(max uint32) QueueProcessor
-	SetQueueSize(queueSize uint32) QueueProcessor
-	SetKeepAliveTime(keepAliveTime time.Duration) QueueProcessor
-	SetMonitoringPeriod(monitoringPeriod time.Duration) QueueProcessor
-
-	SetPollingWaitInterval(interval time.Duration) QueueProcessor
-	SetMaxNumberOfMessages(max int64) QueueProcessor
-	SetMessageVisibilityTimeout(timeoutInSeconds int64) QueueProcessor
 }
 
 type MaridQueueProcessor struct {
@@ -46,9 +47,8 @@ type MaridQueueProcessor struct {
 	successRefreshPeriod 	time.Duration
 	errorRefreshPeriod 		time.Duration
 
-	pollingWaitInterval 		time.Duration
-	visibilityTimeoutInSeconds 	int64
-	maxNumberOfMessages 		int64
+	conf 			*conf.Configuration
+	maridVersion 	string
 
 	workerPool  WorkerPool
 	pollers 	map[string]Poller
@@ -57,73 +57,39 @@ type MaridQueueProcessor struct {
 	isRunningWaitGroup *sync.WaitGroup
 	startStopMutex     *sync.Mutex
 
-	retryer *Retryer
+	retryer *retryer.Retryer
 	quit    chan struct{}
-
-	StartMethod func(qp *MaridQueueProcessor) 	error
-	StopMethod func(qp *MaridQueueProcessor) 	error
-
-	runMethod           	func(qp *MaridQueueProcessor)
-	receiveTokenMethod  	func(qp *MaridQueueProcessor) (*MaridToken, error)
-	addPollerMethod 		func(qp *MaridQueueProcessor, queueProvider QueueProvider) Poller
-	removePollerMethod 		func(qp *MaridQueueProcessor, queueUrl string) Poller
-	refreshPollersMethod	func(qp *MaridQueueProcessor, token *MaridToken)
 }
 
-func NewQueueProcessor() QueueProcessor {
+func NewQueueProcessor(conf *conf.Configuration) QueueProcessor {
+
+	if conf.PollerConf.MaxNumberOfMessages <= 0 {
+		logrus.Infof("Max number of messages should be greater than 0, default value[%d] is set.", maxNumberOfMessages)
+		conf.PollerConf.MaxNumberOfMessages = maxNumberOfMessages
+	}
+
+	if conf.PollerConf.PollingWaitIntervalInMillis <= 0 {
+		logrus.Infof("Max number of messages should be greater than 0, default value[%d] is set.", maxNumberOfMessages)
+		conf.PollerConf.PollingWaitIntervalInMillis = pollingWaitIntervalInMillis
+	}
+
+	if conf.PollerConf.VisibilityTimeoutInSeconds < 15 {
+		logrus.Infof("Visibility timeout cannot be lesser than 15 seconds or greater than 12 hours, default value[%d ms.] is set.", pollingWaitIntervalInMillis)
+		conf.PollerConf.VisibilityTimeoutInSeconds = visibilityTimeoutInSec
+	}
+
 	return &MaridQueueProcessor{
-		quit:                       make(chan struct{}),
-		startStopMutex:             &sync.Mutex{},
-		isRunningWaitGroup:         &sync.WaitGroup{},
-		isRunning:					false,
-		retryer:                    NewRetryer(),
-		workerPool:					NewWorkerPool(maxNumberOfWorker, minNumberOfWorker, queueSize, keepAliveTime, monitoringPeriod),
-		pollers:                    make(map[string]Poller),
-		StartMethod:                Start,
-		StopMethod:                 Stop,
-		receiveTokenMethod:         receiveToken,
-		runMethod:                  runQueueProcessor,
-		addPollerMethod:            addPoller,
-		removePollerMethod:         removePoller,
-		refreshPollersMethod:       refreshPollers,
 		successRefreshPeriod:       successRefreshPeriod,
 		errorRefreshPeriod:         errorRefreshPeriod,
-		pollingWaitInterval:        pollingWaitInterval,
-		visibilityTimeoutInSeconds: visibilityTimeoutInSeconds,
-		maxNumberOfMessages:        maxNumberOfMessages,
+		workerPool:					NewWorkerPool(&conf.PoolConf),
+		conf:						conf,
+		pollers:                    make(map[string]Poller),
+		quit:                       make(chan struct{}),
+		isRunning:					false,
+		isRunningWaitGroup:         &sync.WaitGroup{},
+		startStopMutex:             &sync.Mutex{},
+		retryer:                    &retryer.Retryer{},
 	}
-}
-
-func (qp *MaridQueueProcessor) Wait() {
-	qp.isRunningWaitGroup.Wait()
-}
-
-func (qp *MaridQueueProcessor) Start() error {
-	return qp.StartMethod(qp)
-}
-
-func (qp *MaridQueueProcessor) Stop() error {
-	return qp.StopMethod(qp)
-}
-
-func (qp *MaridQueueProcessor) run() {
-	go qp.runMethod(qp)
-}
-
-func (qp *MaridQueueProcessor) receiveToken() (*MaridToken, error) {
-	return qp.receiveTokenMethod(qp)
-}
-
-func (qp *MaridQueueProcessor) addPoller(queueProvider QueueProvider) Poller {
-	return qp.addPollerMethod(qp, queueProvider)
-}
-
-func (qp *MaridQueueProcessor) removePoller(queueUrl string) Poller {
-	return qp.removePollerMethod(qp, queueUrl)
-}
-
-func (qp *MaridQueueProcessor) refreshPollers(token *MaridToken) {
-	qp.refreshPollersMethod(qp, token)
 }
 
 func (qp *MaridQueueProcessor) IsRunning() bool {
@@ -133,47 +99,7 @@ func (qp *MaridQueueProcessor) IsRunning() bool {
 	return qp.isRunning
 }
 
-func (qp *MaridQueueProcessor) SetMaxNumberOfWorker(max uint32) QueueProcessor {
-	qp.workerPool.SetMaxNumberOfWorker(max)
-	return qp
-}
-
-func (qp *MaridQueueProcessor) SetMinNumberOfWorker(min uint32) QueueProcessor {
-	qp.workerPool.SetMinNumberOfWorker(min)
-	return qp
-}
-
-func (qp *MaridQueueProcessor) SetQueueSize(queueSize uint32) QueueProcessor {
-	qp.workerPool.SetQueueSize(queueSize)
-	return qp
-}
-
-func (qp *MaridQueueProcessor) SetKeepAliveTime(keepAliveTime time.Duration) QueueProcessor {
-	qp.workerPool.SetKeepAliveTime(keepAliveTime)
-	return qp
-}
-
-func (qp *MaridQueueProcessor) SetMonitoringPeriod(monitoringPeriod time.Duration) QueueProcessor {
-	qp.workerPool.SetMonitoringPeriod(monitoringPeriod)
-	return qp
-}
-
-func (qp *MaridQueueProcessor) SetPollingWaitInterval(pollingWaitInterval time.Duration) QueueProcessor {
-	qp.pollingWaitInterval = pollingWaitInterval
-	return qp
-}
-
-func (qp *MaridQueueProcessor) SetMaxNumberOfMessages(maxNumberOfMessages int64) QueueProcessor {
-	qp.maxNumberOfMessages = maxNumberOfMessages
-	return qp
-}
-
-func (qp *MaridQueueProcessor) SetMessageVisibilityTimeout(visibilityTimeoutInSeconds int64) QueueProcessor {
-	qp.visibilityTimeoutInSeconds = visibilityTimeoutInSeconds
-	return qp
-}
-
-func Start(qp *MaridQueueProcessor) error {
+func (qp *MaridQueueProcessor) StartProcessing() error {
 	defer qp.startStopMutex.Unlock()
 	qp.startStopMutex.Lock()
 
@@ -181,23 +107,23 @@ func Start(qp *MaridQueueProcessor) error {
 		return errors.New("Queue processor is already running.")
 	}
 
-	log.Printf("Queue processor is starting.")
+	logrus.Infof("Queue processor is starting.")
 	token, err := qp.receiveToken()
 	if err != nil {
-		log.Printf("Queue processor could not get initial token and will terminate.")
+		logrus.Errorf("Queue processor could not get initial token and will terminate.")
 		return err
 	}
 
 	qp.workerPool.Start()
 	qp.refreshPollers(token)
-	qp.run()
+	go qp.run()
 
 	qp.isRunning = true
 	qp.isRunningWaitGroup.Add(1)
 	return nil
 }
 
-func Stop(qp *MaridQueueProcessor) error {
+func (qp *MaridQueueProcessor) StopProcessing() error {
 	defer qp.startStopMutex.Unlock()
 	qp.startStopMutex.Lock()
 
@@ -205,34 +131,36 @@ func Stop(qp *MaridQueueProcessor) error {
 		return errors.New("Queue processor is not running.")
 	}
 
-	log.Println("Queue processor is stopping.")
+	logrus.Infof("Queue processor is stopping.")
 
 	close(qp.quit)
 	qp.workerPool.Stop()
 
 	qp.isRunning = false
-	qp.isRunningWaitGroup.Done()
+	qp.isRunningWaitGroup.Wait()
+	logrus.Infof("Queue processor has stopped.")
 	return nil
 }
 
-func receiveToken(qp *MaridQueueProcessor) (*MaridToken, error) {
+func (qp *MaridQueueProcessor) receiveToken() (*MaridToken, error) {
 
-	request, err := httpNewRequest("GET", tokenUrl, nil)
+	tokenUrl := qp.conf.BaseUrl + tokenPath
+
+	request, err := newRequestFunc("GET", tokenUrl, nil)
 	if err != nil {
 		return nil, err
 	}
-	apiKey, ok := conf.Configuration["apiKey"].(string)
-	if !ok {
-		return nil, errors.New("The configuration does not have an api key.")
-	}
-	request.Header.Add("Authorization", "GenieKey " + apiKey)
+
+	request.Header.Add("Authorization", "GenieKey " + qp.conf.ApiKey)
+	request.Header.Add("X-Marid-Client-Info", UserAgentHeader)
+
 
 	query := request.URL.Query()
 	for _, poller := range qp.pollers {
-		maridMetadata := poller.GetQueueProvider().GetMaridMetadata()
+		maridMetadata := poller.QueueProvider().MaridMetadata()
 		query.Add(
-			maridMetadata.getRegion(),
-			strconv.FormatInt(maridMetadata.getExpireTimeMillis(), 10),
+			maridMetadata.Region(),
+			strconv.FormatInt(maridMetadata.ExpireTimeMillis(), 10),
 		)
 	}
 	request.URL.RawQuery = query.Encode()
@@ -241,11 +169,12 @@ func receiveToken(qp *MaridQueueProcessor) (*MaridToken, error) {
 	if err != nil {
 		return nil, err
 	}
-	if response.StatusCode != 200 {
-		return nil, errors.Errorf("Token could not be received from Opsgenie, status: %s", response.Status)
-	}
-
 	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		body, _ := ioutil.ReadAll(response.Body)
+		return nil, errors.Errorf("Token could not be received from Opsgenie, status: %s, message: %s", response.Status, body)
+	}
 
 	token := &MaridToken{}
 	err = json.NewDecoder(response.Body).Decode(&token)
@@ -256,81 +185,87 @@ func receiveToken(qp *MaridQueueProcessor) (*MaridToken, error) {
 	return token, nil
 }
 
-func addPoller(qp *MaridQueueProcessor, queueProvider QueueProvider) Poller {
-	poller := NewPoller(
+func (qp *MaridQueueProcessor) addPoller(queueProvider QueueProvider, integrationId *string) Poller {
+	poller := newPollerFunc(
 		qp.workerPool,
 		queueProvider,
-		&qp.pollingWaitInterval,
-		&qp.maxNumberOfMessages,
-		&qp.visibilityTimeoutInSeconds,
+		&qp.conf.PollerConf,
+		&qp.conf.ActionMappings,
+		&qp.conf.ApiKey,
+		&qp.conf.BaseUrl,
+		integrationId,
 	)
-	qp.pollers[queueProvider.GetMaridMetadata().getQueueUrl()] = poller
+	qp.pollers[queueProvider.MaridMetadata().QueueUrl()] = poller
 	return poller
 }
 
-func removePoller(qp *MaridQueueProcessor, queueUrl string) Poller {
+func (qp *MaridQueueProcessor) removePoller(queueUrl string) Poller {
 	poller := qp.pollers[queueUrl]
 	delete(qp.pollers, queueUrl)
 	return poller
 }
 
-func refreshPollers(qp *MaridQueueProcessor, token *MaridToken) {
+func (qp *MaridQueueProcessor) refreshPollers(token *MaridToken) {
 	pollerKeys := make(map[string]struct{}, len(qp.pollers))
 	for key := range qp.pollers {
 		pollerKeys[key] = struct{}{}
 	}
 
-	for _, maridMetadata := range token.Data.MaridMetaDataList {
-		queueUrl := maridMetadata.getQueueUrl()
-		if poller, contains := qp.pollers[queueUrl]; contains {
+	for _, maridMetadata := range token.Data.MaridMetadataList {
+		queueUrl := maridMetadata.QueueUrl()
+		if poller, contains := qp.pollers[queueUrl]; contains {	// refresh existing pollers if there comes new assumeRoleResult
 			isTokenRefreshed := maridMetadata.AssumeRoleResult != AssumeRoleResult{}
 			if isTokenRefreshed {
-				poller.RefreshClient(maridMetadata.AssumeRoleResult)
+				err := poller.RefreshClient(maridMetadata.AssumeRoleResult)
+				if err != nil {
+					logrus.Errorf("Client of queue provider[%s] could not be refreshed.", queueUrl)
+				}
+				logrus.Infof("Client of queue provider[%s] has refreshed.", queueUrl)
 			}
 			delete(pollerKeys, queueUrl)
-		} else {
-			queueProvider, err := NewQueueProvider(maridMetadata, token.Data.IntegrationId)
+		} else {	// add new pollers
+			queueProvider, err := NewQueueProvider(maridMetadata)
 			if err != nil {
-				log.Printf("Poller[%s] could not be added: %s.", queueUrl, err.Error())
+				logrus.Errorf("Poller[%s] could not be added: %s.", queueUrl, err)
 				continue
 			}
-			qp.addPoller(queueProvider).StartPolling()
-			log.Printf("Poller[%s] is added.", queueUrl)
+			qp.addPoller(queueProvider, &token.Data.IntegrationId).StartPolling()
+			logrus.Debugf("Poller[%s] is added.", queueUrl)
 		}
 	}
-	for queueUrl := range pollerKeys {
+
+	for queueUrl := range pollerKeys {	// remove unnecessary pollers
 		qp.removePoller(queueUrl).StopPolling()
-		log.Printf("Poller[%s] is removed.", queueUrl)
+		logrus.Debugf("Poller[%s] is removed.", queueUrl)
 	}
 
-	if len(token.Data.MaridMetaDataList) != 0 {
-		qp.successRefreshPeriod = time.Second * time.Duration(token.Data.MaridMetaDataList[0].QueueConfiguration.SuccessRefreshPeriodInSeconds)
-		qp.errorRefreshPeriod = time.Second * time.Duration(token.Data.MaridMetaDataList[0].QueueConfiguration.ErrorRefreshPeriodInSeconds)
+	if len(token.Data.MaridMetadataList) != 0 { // pick first maridMetadata to refresh waitPeriods, can be change for further usage
+		qp.successRefreshPeriod = time.Second * time.Duration(token.Data.MaridMetadataList[0].QueueConfiguration.SuccessRefreshPeriodInSeconds)
+		qp.errorRefreshPeriod = time.Second * time.Duration(token.Data.MaridMetadataList[0].QueueConfiguration.ErrorRefreshPeriodInSeconds)
 	}
 }
 
-func runQueueProcessor(qp *MaridQueueProcessor) {
+func (qp *MaridQueueProcessor) run() {
 
-	log.Printf("Queue processor has started to run. Refresh client period: %s.", qp.successRefreshPeriod.String())
+	logrus.Infof("Queue processor has started to run. Refresh client period: %s.", qp.successRefreshPeriod.String())
 
 	ticker := time.NewTicker(qp.successRefreshPeriod)
 
 	for {
 		select {
-		case <-qp.quit:
+		case <- qp.quit:
 			ticker.Stop()
-			for queueUrl, poller := range qp.pollers {
+			for _, poller := range qp.pollers {
 				poller.StopPolling()
-				delete(qp.pollers, queueUrl)
 			}
-			log.Printf("Queue processor has stopped to refresh client.")
+			qp.isRunningWaitGroup.Done()
 			return
-		case <-ticker.C:
+		case <- ticker.C:
 			ticker.Stop()
 			token, err := qp.receiveToken()
 			if err != nil {
-				log.Printf("Refresh cycle of queue processor has failed: %s", err.Error())
-				log.Printf("Will refresh token after %s", qp.errorRefreshPeriod.String())
+				logrus.Warnf("Refresh cycle of queue processor has failed: %s", err)
+				logrus.Infof("Will refresh token after %s", qp.errorRefreshPeriod.String())
 				ticker = time.NewTicker(qp.errorRefreshPeriod)
 				break
 			}

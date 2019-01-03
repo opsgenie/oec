@@ -1,22 +1,20 @@
 package runbook
 
 import (
-	"testing"
-	"os"
 	"github.com/stretchr/testify/assert"
+	"os"
 	"runtime"
+	"testing"
 )
 
 var testScriptFilePathNonWindows = os.TempDir() + string(os.PathSeparator) + "executorTestScript.sh"
 var testScriptFilePathWindows = os.TempDir() + string(os.PathSeparator) + "executorTestScript.bat"
 
 func TestExecuteSuccess(t *testing.T) {
-	testEnvironmentVariables := map[string]interface{}{
-		"TESTENVVAR": "test env var",
-	}
+	testEnvironmentVariables := []string{"TESTENVVAR=test env var", "ANOTHERVAR=another"}
 
 	if runtime.GOOS != "windows" {
-		content := "echo \"Test output\"\necho \"Given Environment Variable: TESTENVVAR: $TESTENVVAR\"\n"
+		content := []byte("echo \"Test output\"\necho \"Given Environment Variable: TESTENVVAR: $TESTENVVAR\"\n")
 		err := createTestScriptFile(content, testScriptFilePathNonWindows)
 		defer os.Remove(testScriptFilePathNonWindows)
 
@@ -31,7 +29,7 @@ func TestExecuteSuccess(t *testing.T) {
 		assert.Equal(t, "Test output\nGiven Environment Variable: TESTENVVAR: test env var\n", cmdOutput,
 			"Output stream was not equal to expected.")
 	} else {
-		content := "@echo off\r\necho Test output\r\necho Given Environment Variable: TESTENVVAR: %TESTENVVAR%\n"
+		content := []byte("@echo off\r\necho Test output\r\necho Given Environment Variable: TESTENVVAR: %TESTENVVAR%\n")
 		err := createTestScriptFile(content, testScriptFilePathWindows)
 		defer os.Remove(testScriptFilePathWindows)
 
@@ -50,7 +48,7 @@ func TestExecuteSuccess(t *testing.T) {
 
 func TestExecuteWithErrorStream(t *testing.T) {
 	if runtime.GOOS != "windows" {
-		content := ">&2 echo \"test error\"\n"
+		content := []byte(">&2 echo \"test error\"\n")
 		err := createTestScriptFile(content, testScriptFilePathNonWindows)
 		defer os.Remove(testScriptFilePathNonWindows)
 
@@ -64,7 +62,7 @@ func TestExecuteWithErrorStream(t *testing.T) {
 		assert.Equal(t, "", cmdOutput, "Output stream from executed file was not empty.")
 		assert.Equal(t, "test error\n", cmdErr, "Error stream was not equal to expected.")
 	} else {
-		content := "@echo off\r\necho test error>&2\r\n"
+		content := []byte("@echo off\r\necho test error>&2\r\n")
 		err := createTestScriptFile(content, testScriptFilePathWindows)
 		defer os.Remove(testScriptFilePathWindows)
 
@@ -82,7 +80,7 @@ func TestExecuteWithErrorStream(t *testing.T) {
 
 func TestExecuteWithError(t *testing.T) {
 	if runtime.GOOS != "windows" {
-		content := "sacmasapan"
+		content := []byte("sacmasapan")
 		err := createTestScriptFile(content, testScriptFilePathNonWindows)
 		defer os.Remove(testScriptFilePathNonWindows)
 
@@ -97,7 +95,7 @@ func TestExecuteWithError(t *testing.T) {
 		assert.Equal(t, "", cmdOutput, "Output stream from executed file was not empty.")
 		assert.Equal(t, "", cmdErr, "Error stream from executed file was not empty.")
 	} else {
-		content := "sacmasapan"
+		content := []byte("sacmasapan")
 		err := createTestScriptFile(content, testScriptFilePathWindows)
 		defer os.Remove(testScriptFilePathWindows)
 
@@ -115,14 +113,14 @@ func TestExecuteWithError(t *testing.T) {
 }
 
 func TestDetermineExecutable(t *testing.T) {
-	result := determineExecutable("test.bat")
+	result := executables[".bat"]
 	assert.Equal(t, "cmd", result)
-	result = determineExecutable("test.cmd")
+	result = executables[".cmd"]
 	assert.Equal(t, "cmd", result)
-	result = determineExecutable("test.ps1")
+	result = executables[".ps1"]
 	assert.Equal(t, "powershell", result)
-	result = determineExecutable("test.sh")
+	result = executables[".sh"]
 	assert.Equal(t, "sh", result)
-	result = determineExecutable("/some/path/to/some/executable.bin")
+	result = executables[".bin"]
 	assert.Equal(t, "", result)
 }
