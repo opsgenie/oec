@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-var MaridVersion string
+var UserAgentHeader string
 
 const (
 	maxNumberOfWorker = 12
@@ -152,8 +152,7 @@ func (qp *MaridQueueProcessor) receiveToken() (*MaridToken, error) {
 	}
 
 	request.Header.Add("Authorization", "GenieKey " + qp.conf.ApiKey)
-	request.Header.Add("X-Marid-Client-Info", "Version :" + qp.maridVersion)
-	// todo add user agent (version etc.)
+	request.Header.Add("X-Marid-Client-Info", UserAgentHeader)
 
 
 	query := request.URL.Query()

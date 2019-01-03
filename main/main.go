@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/opsgenie/marid2/conf"
 	"github.com/opsgenie/marid2/queue"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"os/user"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -20,8 +22,8 @@ import (
 var addr = flag.String("marid-metrics", "8081", "The address to listen on for HTTP requests.")
 var logPath = strings.Join([]string{"opsgenie", "logs", "marid.log"}, string(os.PathSeparator))
 
-var MaridCommitVersion string
 var MaridVersion string
+var MaridCommitVersion string
 
 func main() {
 
@@ -50,7 +52,7 @@ func main() {
 
 	logger := &lumberjack.Logger {
 		Filename:  strings.Join([]string{usr.HomeDir, logPath}, string(os.PathSeparator)),
-		MaxSize:   1, 	// MB
+		MaxSize:   3, 	// MB
 		MaxAge:    10, 	// Days
 		LocalTime: true,
 	}
@@ -65,7 +67,7 @@ func main() {
 	logrus.SetLevel(configuration.LogLevel)
 
 	queueProcessor := queue.NewQueueProcessor(configuration)
-	queue.MaridVersion = MaridVersion
+	queue.UserAgentHeader = fmt.Sprintf("%s/%s %s (%s/%s)",  MaridVersion, MaridCommitVersion, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 
 	go func() {
 		err = queueProcessor.StartProcessing()
