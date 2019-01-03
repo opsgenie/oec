@@ -4,6 +4,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -47,12 +48,12 @@ type PoolConf struct {
 var readConfigurationFromGitHubFunc = readConfigurationFromGitHub
 var readConfigurationFromLocalFunc = readConfigurationFromLocal
 
-const defaultConfPath = string(os.PathSeparator) + ".opsgenie" + string(os.PathSeparator) + "maridConfig.json"
+var defaultConfPath = strings.Join([]string{"opsgenie", "maridConfig.json"}, string(os.PathSeparator))
 
 func ReadConfFile() (*Configuration, error) {
 
-	confSource := os.Getenv("MARIDCONFSOURCE")
-	conf, err := readConfFileFromSource(confSource)
+	confSource := os.Getenv("MARID_CONF_SOURCE")
+	conf, err := readConfFileFromSource(strings.ToLower(confSource))
 
 	if err != nil {
 		return nil, err
@@ -72,16 +73,16 @@ func ReadConfFile() (*Configuration, error) {
 
 func readConfFileFromSource(confSource string) (*Configuration, error) {
 
-	if confSource == "github" {
-		owner := os.Getenv("MARIDCONFGITHUBOWNER")
-		repo := os.Getenv("MARIDCONFGITHUBREPO")
-		filepath := os.Getenv("MARIDCONFGITHUBFILEPATH")
-		token := os.Getenv("MARIDCONFGITHUBTOKEN")
+	switch confSource {
+	case "github":
+		owner := os.Getenv("MARID_CONF_GITHUB_OWNER")
+		repo := os.Getenv("MARID_CONF_GITHUB_REPO")
+		filepath := os.Getenv("MARID_CONF_GITHUB_FILEPATH")
+		token := os.Getenv("MARID_CONF_GITHUB_TOKEN")
 
 		return readConfigurationFromGitHubFunc(owner, repo, filepath, token)
-
-	} else if confSource == "local" {
-		maridConfPath := os.Getenv("MARIDCONFLOCALFILEPATH")
+	case "local":
+		maridConfPath := os.Getenv("MARID_CONF_LOCAL_FILEPATH")
 
 		if len(maridConfPath) <= 0 {
 			homePath, err := getHomePath()
@@ -89,11 +90,11 @@ func readConfFileFromSource(confSource string) (*Configuration, error) {
 				return nil, err
 			}
 
-			maridConfPath = homePath + defaultConfPath
+			maridConfPath = strings.Join([]string{homePath, defaultConfPath}, string(os.PathSeparator))
 		}
 
 		return readConfigurationFromLocalFunc(maridConfPath)
-	} else {
+	default:
 		return nil, errors.Errorf("Unknown configuration source [%s].", confSource)
 	}
 }

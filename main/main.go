@@ -8,27 +8,28 @@ import (
 	"github.com/sirupsen/logrus"
 	"gopkg.in/natefinch/lumberjack.v2"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"os/user"
+	"strings"
 	"syscall"
 	"time"
 )
 
-var newQueueProcessorFunc = queue.NewQueueProcessor
-var readConfFileFunc = conf.ReadConfFile
+var addr = flag.String("marid-metrics", "8081", "The address to listen on for HTTP requests.")
+var logPath = strings.Join([]string{"opsgenie", "logs", "marid.log"}, string(os.PathSeparator))
 
-var addr = flag.String("marid-metrics", ":8081", "The address to listen on for HTTP requests.")
-const logPath = string(os.PathSeparator) + ".opsgenie" + string(os.PathSeparator) + "marid.log"
+var MaridCommitVersion string
+var MaridVersion string
 
 func main() {
 
 	flag.Parse()
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		log.Fatal(http.ListenAndServe(*addr, nil))
+		logrus.Infof("Marid-metrics serves in http://localhost:%s/metrics.", *addr)
+		logrus.Error("Marid-metrics error: ", http.ListenAndServe(":" + *addr, nil))
 	}()
 
 	logrus.SetFormatter(
@@ -39,13 +40,16 @@ func main() {
 		},
 	)
 
+	logrus.Infof("Marid version is %s", MaridVersion)
+	logrus.Infof("Marid commit version is %s", MaridCommitVersion)
+
 	usr, err := user.Current()
 	if err != nil {
 		logrus.Fatalln(err)
 	}
 
 	logger := &lumberjack.Logger {
-		Filename:  usr.HomeDir + logPath,
+		Filename:  strings.Join([]string{usr.HomeDir, logPath}, string(os.PathSeparator)),
 		MaxSize:   1, 	// MB
 		MaxAge:    10, 	// Days
 		LocalTime: true,
@@ -53,14 +57,15 @@ func main() {
 
 	logrus.SetOutput(io.MultiWriter(os.Stdout, logger))
 
-	configuration, err := readConfFileFunc()
+	configuration, err := conf.ReadConfFile()
 	if err != nil {
 		logrus.Fatalln("Could not read configuration: ", err)
 	}
 
 	logrus.SetLevel(configuration.LogLevel)
 
-	queueProcessor := newQueueProcessorFunc(configuration)
+	queueProcessor := queue.NewQueueProcessor(configuration)
+	queue.MaridVersion = MaridVersion
 
 	go func() {
 		err = queueProcessor.StartProcessing()

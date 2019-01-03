@@ -31,23 +31,23 @@ var mockActionMappings = (map[conf.ActionName]conf.MappedAction)(conf.ActionMapp
 var executeRunbookFromGithubCalled = false
 var executeRunbookFromLocalCalled = false
 
-func mockExecuteRunbookFromGithub(runbookRepoOwner, runbookRepoName, runbookRepoFilePath, runbookRepoToken string, args []string, environmentVariables []string) (string, string, error) {
+func mockExecuteRunbookFromGithub(owner, repo, filepath, token string, args, environmentVariables []string) (string, string, error) {
 	executeRunbookFromGithubCalled = true
 
-	if len(runbookRepoOwner) <= 0 {
-		return "", "", errors.New("runbookRepoOwner was empty.")
+	if len(owner) <= 0 {
+		return "", "", errors.New("owner was empty.")
 	}
 
-	if len(runbookRepoName) <= 0 {
-		return "", "", errors.New("runbookRepoName was empty.")
+	if len(repo) <= 0 {
+		return "", "", errors.New("repo was empty.")
 	}
 
-	if len(runbookRepoFilePath) <= 0 {
-		return "", "", errors.New("runbookRepoFilePath was empty.")
+	if len(filepath) <= 0 {
+		return "", "", errors.New("filepath was empty.")
 	}
 
-	if len(runbookRepoToken) <= 0 {
-		return "", "", errors.New("runbookRepoToken was empty.")
+	if len(token) <= 0 {
+		return "", "", errors.New("token was empty.")
 	}
 
 	if len(environmentVariables) <= 0 {
@@ -57,7 +57,7 @@ func mockExecuteRunbookFromGithub(runbookRepoOwner, runbookRepoName, runbookRepo
 	return "", "", nil
 }
 
-func mockExecuteRunbookFromLocal(executablePath string, args []string, environmentVariables []string) (string, string, error) {
+func mockExecuteRunbookFromLocal(executablePath string, args, environmentVariables []string) (string, string, error) {
 	executeRunbookFromLocalCalled = true
 
 	if len(executablePath) <= 0 {
@@ -106,28 +106,28 @@ func TestExecuteRunbookLocal(t *testing.T) {
 }
 
 func TestSendResultToOpsGenie(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusAccepted)
+	ts := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		res.WriteHeader(http.StatusAccepted)
 
-		if r.Method != "POST" {
-			t.Errorf("Expected ‘POST’ request, got ‘%s’", r.Method)
+		if req.Method != "POST" {
+			t.Errorf("Expected ‘POST’ request, got ‘%s’", req.Method)
 		}
 
-		apiKey := r.Header.Get("Authorization")
+		apiKey := req.Header.Get("Authorization")
 		if apiKey != "GenieKey testKey" {
 			t.Errorf("Expected request to have ‘apiKey=GenieKey testKey’, got: ‘%s’", apiKey)
 		}
 
-		contentType := r.Header.Get("Content-Type")
+		contentType := req.Header.Get("Content-Type")
 		if contentType != "application/json; charset=UTF-8" {
 			t.Errorf("Expected request to have ‘Content-Type=application/json; charset=UTF-8’, got: ‘%s’", contentType)
 		}
 
 		actionResult := &ActionResultPayload{}
-		body, _ := ioutil.ReadAll(r.Body)
+		body, _ := ioutil.ReadAll(req.Body)
 		json.Unmarshal(body, actionResult)
 
-		r.Body.Close()
+		req.Body.Close()
 
 		if actionResult.Action != "testAction" {
 			t.Errorf("Expected request to have ‘mappedAction=testAction’, got: ‘%s’", actionResult.Action)
@@ -181,7 +181,7 @@ func TestSendResultToOpsGenieClientError(t *testing.T) {
 	defer ts.Close()
 
 	defer func() {client.DoFunc = nil }()
-	client.DoFunc = func(retryer *retryer.Retryer, request *http.Request) (*http.Response, error) {
+	client.DoFunc = func(retryer *retryer.Retryer, request *retryer.Request) (*http.Response, error) {
 		return nil, errors.New("Test client error")
 	}
 

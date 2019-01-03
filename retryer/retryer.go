@@ -1,31 +1,31 @@
 package retryer
 
 import (
+	"bytes"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	"io"
+	"io/ioutil"
 	"math"
 	"net"
 	"net/http"
 	"time"
 )
-
+const maxRetryCount = 5
 const timeout = 30 * time.Second
 
 var DefaultClient = &http.Client{Timeout: timeout}
-
-const maxRetryCount = 5
 
 var retryStatusCodes = map[int]struct{}{
 	429: {},
 }
 
-type doFunc func(retryer *Retryer, request *http.Request) (*http.Response, error)
-
 type Retryer struct {
-	DoFunc doFunc
+	DoFunc func(retryer *Retryer, request *Request) (*http.Response, error)
 	client *http.Client
 }
 
-func (r *Retryer) Do(request *http.Request) (*http.Response, error) {
+func (r *Retryer) Do(request *Request) (*http.Response, error) {
 	if r.DoFunc != nil {
 		return r.DoFunc(r, request)
 	}
@@ -46,32 +46,74 @@ func getWaitTime(retryCount int) time.Duration {
 	return time.Duration(waitTime) * time.Millisecond
 }
 
-func DoWithExponentialBackoff(retryer *Retryer, request *http.Request) (*http.Response, error) {
+func DoWithExponentialBackoff(retryer *Retryer, request *Request) (*http.Response, error) {
 
-	for retryCount := 0; retryCount < maxRetryCount; retryCount++ {
+	client := DefaultClient
+	if retryer.client != nil {
+		client = retryer.client
+	}
 
-		waitDuration := getWaitTime(retryCount)
-		time.Sleep(waitDuration)
+	retryCount := 0
+	for {
 
-		client := DefaultClient
-		if retryer.client != nil {
-			client = retryer.client
+		if request.body != nil {
+			_, err := request.body.Seek(0, 0)
+			if err != nil {
+				return nil, err
+			}
 		}
-
-		response, err := client.Do(request)
+		response, err := client.Do(request.Request)
 
 		if err, ok := err.(net.Error); ok {
-			if err.Timeout() {
-				continue
+			logrus.Println(err)
+			// On error, any Response can be ignored.
+			if !err.Timeout() {
+				return nil, err
 			}
-			return nil, err
 		} else if shouldRetry(response.StatusCode) {
-			continue
+			// If the returned error is nil, the Response will contain a non-nil
+			// Body which the user is expected to close.
+			io.Copy(ioutil.Discard, response.Body)
+			response.Body.Close()
 		} else {
 			return response, err
 		}
 
+		if retryCount < maxRetryCount - 1 {
+			waitDuration := getWaitTime(retryCount)
+			time.Sleep(waitDuration)
+			retryCount++
+			continue
+		}
+		break
 	}
 
-	return nil, errors.Errorf("Couldn't get response, maximum retry count[%d] is exceeded.", maxRetryCount)
+	return nil, errors.Errorf("Couldn't get a proper response, maximum retry count[%d] is exceeded.", maxRetryCount)
 }
+
+/******************************************************************************************/
+
+type Request struct {
+	body io.ReadSeeker
+	*http.Request
+}
+
+func NewRequest(method, url string, body io.Reader) (*Request, error) {
+
+	rs, ok := body.(io.ReadSeeker)
+	if !ok && body != nil {
+		data, err := ioutil.ReadAll(body)
+		if err != nil {
+			return nil, err
+		}
+		rs = bytes.NewReader(data)
+	}
+
+	request, err := http.NewRequest(method, url, rs)
+	if err != nil {
+		return nil, err
+	}
+	return &Request{rs, request}, nil
+}
+
+

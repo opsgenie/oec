@@ -11,7 +11,7 @@ import (
 	"strconv"
 )
 
-var resultPath = "/v2/integrations/maridv2/actionExecutionResult"
+var ResultPath = "/v2/integrations/maridv2/actionExecutionResult"
 
 var executeRunbookFromGithubFunc = executeRunbookFromGithub
 var executeRunbookFromLocalFunc = executeRunbookFromLocal
@@ -25,32 +25,33 @@ func ExecuteRunbook(mappedAction *conf.MappedAction, arg string) (string, string
 	source := mappedAction.Source
 	environmentVariables := mappedAction.EnvironmentVariables
 
-	if source == "github" {
+	switch source {
+	case "github":
 		repoOwner := mappedAction.RepoOwner
 		repoName := mappedAction.RepoName
 		repoFilePath := mappedAction.RepoFilePath
 		repoToken := mappedAction.RepoToken
 
 		return executeRunbookFromGithubFunc(repoOwner, repoName, repoFilePath, repoToken, []string{arg}, environmentVariables)
-	} else if source == "local" {
-		runbookFilePath := mappedAction.FilePath
+	case "local":
+		filePath := mappedAction.FilePath
 
-		return executeRunbookFromLocalFunc(runbookFilePath, []string{arg}, environmentVariables)
-	} else {
+		return executeRunbookFromLocalFunc(filePath, []string{arg}, environmentVariables)
+	default:
 		return "", "", errors.Errorf("Unknown runbook source [%s].", source)
 	}
 }
 
-func SendResultToOpsGenie(resultPayload *ActionResultPayload, apiKey *string, baseUrl *string) error {
+func SendResultToOpsGenie(resultPayload *ActionResultPayload, apiKey, baseUrl *string) error {
 
 	body, err := json.Marshal(resultPayload)
 	if err != nil {
 		return  errors.Errorf("Cannot marshall payload: %s", err)
 	}
 
-	resultUrl := *baseUrl + resultPath
+	resultUrl := *baseUrl + ResultPath
 
-	request, err := http.NewRequest("POST", resultUrl, bytes.NewBuffer(body))
+	request, err := retryer.NewRequest("POST", resultUrl, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}

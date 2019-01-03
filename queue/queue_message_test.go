@@ -1,14 +1,11 @@
 package queue
 
 import (
-	"bytes"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/opsgenie/marid2/conf"
 	"github.com/opsgenie/marid2/runbook"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
-	"io/ioutil"
 	"math/rand"
 	"testing"
 	"time"
@@ -19,12 +16,16 @@ var mockActionMappings = &conf.ActionMappings{
 	"action2": conf.MappedAction{Source: "github"},
 }
 
-var mockApiKey = "mockApiKey"
-var mockBasePath = "mockBasePath"
-var mockBaseUrl = "mockBaseUrl"
+var(
+	mockMessageId = "mockMessageId"
+	mockApiKey = "mockApiKey"
+	mockBasePath = "mockBasePath"
+	mockBaseUrl = "mockBaseUrl"
+	mockIntegrationId = "mockIntegrationId"
+	)
 
 func mockExecuteRunbook(mappedAction *conf.MappedAction, arg string) (string, string, error) {
-	return "Operation executed successfully!", "(with no errors!)", nil
+	return "Operation executed successfully!", "", nil
 }
 
 func TestGetMessage(t *testing.T) {
@@ -33,7 +34,7 @@ func TestGetMessage(t *testing.T) {
 	expectedMessage.SetMessageId("messageId")
 	expectedMessage.SetBody("messageBody")
 
-	queueMessage := NewMaridMessage(expectedMessage, mockActionMappings, &mockApiKey, &mockBasePath)
+	queueMessage := NewMaridMessage(expectedMessage, mockActionMappings)
 	actualMessage := queueMessage.Message()
 
 	assert.Equal(t, expectedMessage, actualMessage)
@@ -45,28 +46,14 @@ func TestProcessSuccessfully(t *testing.T) {
 	defer func() { runbook.ExecuteRunbookFunc = oldExecuteRunbook }()
 	runbook.ExecuteRunbookFunc = mockExecuteRunbook
 
-	oldSendResultToOpsgenie := runbook.SendResultToOpsGenie
-	defer func() { runbook.SendResultToOpsGenieFunc = oldSendResultToOpsgenie }()
-	runbook.SendResultToOpsGenieFunc = func(resultPayload *runbook.ActionResultPayload, apiKey *string, baseUrl *string) error {
-		return nil
-	}
-
 	body := `{"action":"action1"}`
 	id := "MessageId"
 	message := &sqs.Message{Body: &body, MessageId: &id}
-	queueMessage := NewMaridMessage(message, mockActionMappings, &mockApiKey, &mockBasePath)
+	queueMessage := NewMaridMessage(message, mockActionMappings)
 
-	defer func() {
-		logrus.SetOutput(ioutil.Discard)
-	}()
-
-	buffer := &bytes.Buffer{}
-	logrus.SetOutput(buffer)
-	logrus.SetLevel(logrus.DebugLevel)
-
-	err := queueMessage.Process()
+	result, err := queueMessage.Process()
 	assert.Nil(t, err)
-	assert.Contains(t, buffer.String(), "Successfully sent result to OpsGenie.")
+	assert.Equal(t, "action1", result.Action)
 }
 
 func TestProcessMappedActionNotFound(t *testing.T) {
@@ -77,11 +64,11 @@ func TestProcessMappedActionNotFound(t *testing.T) {
 
 	body := `{"action":"action3"}`
 	message := &sqs.Message{Body: &body}
-	queueMessage := NewMaridMessage(message, mockActionMappings, &mockApiKey, &mockBasePath)
+	queueMessage := NewMaridMessage(message, mockActionMappings)
 
-	err := queueMessage.Process()
-	expected := errors.New("There is no mapped action found for [action3]").Error()
-	assert.Equal(t, expected, err.Error())
+	_, err := queueMessage.Process()
+	expectedErr := errors.New("There is no mapped action found for [action3]")
+	assert.EqualError(t, err, expectedErr.Error())
 }
 
 func TestProcessFieldMissing(t *testing.T) {
@@ -92,40 +79,42 @@ func TestProcessFieldMissing(t *testing.T) {
 
 	body := `{"alert":{}}`
 	message := &sqs.Message{Body: &body}
-	queueMessage := NewMaridMessage(message, mockActionMappings, &mockApiKey, &mockBasePath)
+	queueMessage := NewMaridMessage(message, mockActionMappings)
 
-	err := queueMessage.Process()
-	expected := errors.New("SQS message does not contain action property").Error()
-	assert.Equal(t, expected, err.Error())
+	_, err := queueMessage.Process()
+	expectedErr := errors.New("SQS message does not contain action property")
+	assert.EqualError(t, err, expectedErr.Error())
 }
 
 // Mock Queue Message
 type MockQueueMessage struct {
 	MessageFunc func() *sqs.Message
-	ProcessFunc func() error
+	ProcessFunc func() (*runbook.ActionResultPayload ,error)
 }
 
 func (mqm *MockQueueMessage) Message() *sqs.Message {
 	if mqm.MessageFunc != nil {
 		return mqm.MessageFunc()
 	}
-	messageId := "mockMessageId"
+
 	body := "mockBody"
+	messageAttr := map[string]*sqs.MessageAttributeValue{integrationId: {StringValue: &mockIntegrationId}}
 
 	return &sqs.Message{
-		MessageId: 	&messageId,
-		Body:		&body,
+		MessageId: 			&mockMessageId,
+		Body:				&body,
+		MessageAttributes: 	messageAttr,
 	}
 }
 
-func (mqm *MockQueueMessage) Process() error {
+func (mqm *MockQueueMessage) Process() (*runbook.ActionResultPayload ,error) {
 	if mqm.ProcessFunc != nil {
 		return mqm.ProcessFunc()
 	}
 
 	multip := time.Duration(rand.Int31n(100 * 3))
 	time.Sleep(time.Millisecond * multip * 10)	// simulate a process
-	return nil
+	return &runbook.ActionResultPayload{}, nil
 }
 
 func NewMockQueueMessage() QueueMessage {

@@ -44,11 +44,11 @@ var mockPollers = map[string]Poller{
 	mockQueueUrl2 : NewMockPoller(),
 }
 
-func mockHttpGetError(retryer *retryer.Retryer, request *http.Request) (*http.Response, error) {
+func mockHttpGetError(retryer *retryer.Retryer, request *retryer.Request) (*http.Response, error) {
 	return nil, errors.New("Test http error has occurred while getting token.")
 }
 
-func mockHttpGet(retryer *retryer.Retryer, request *http.Request) (*http.Response, error) {
+func mockHttpGet(retryer *retryer.Retryer, request *retryer.Request) (*http.Response, error) {
 
 	token, _ := json.Marshal(mockToken)
 	buff := bytes.NewBuffer(token)
@@ -60,7 +60,7 @@ func mockHttpGet(retryer *retryer.Retryer, request *http.Request) (*http.Respons
 	return response, nil
 }
 
-func mockHttpGetInvalidJson(retryer *retryer.Retryer, request *http.Request) (*http.Response, error) {
+func mockHttpGetInvalidJson(retryer *retryer.Retryer, request *retryer.Request) (*http.Response, error) {
 
 	response := &http.Response{}
 	response.Body = ioutil.NopCloser( bytes.NewBufferString(`{"Invalid json": }`))
@@ -156,17 +156,17 @@ func TestReceiveToken(t *testing.T) {
 
 	var actualRequest *http.Request
 
-	processor.retryer.DoFunc = func(retryer *retryer.Retryer, request *http.Request) (*http.Response, error) {
-		actualRequest = request
+	processor.retryer.DoFunc = func(retryer *retryer.Retryer, request *retryer.Request) (*http.Response, error) {
+		actualRequest = request.Request
 		return mockHttpGet(retryer, request)
 	}
 
 	token, err := processor.receiveToken()
 
 	assert.Nil(t, err)
-	assert.Equal(t, 2, len(token.Data.MaridMetaDataList))
-	assert.Equal(t, "accessKeyId1", token.Data.MaridMetaDataList[0].AssumeRoleResult.Credentials.AccessKeyId)
-	assert.Equal(t, "accessKeyId2", token.Data.MaridMetaDataList[1].AssumeRoleResult.Credentials.AccessKeyId)
+	assert.Equal(t, 2, len(token.Data.MaridMetadataList))
+	assert.Equal(t, "accessKeyId1", token.Data.MaridMetadataList[0].AssumeRoleResult.Credentials.AccessKeyId)
+	assert.Equal(t, "accessKeyId2", token.Data.MaridMetadataList[1].AssumeRoleResult.Credentials.AccessKeyId)
 
 	for _, poller := range processor.pollers  {
 		maridMetadata := poller.QueueProvider().MaridMetadata()
@@ -203,11 +203,11 @@ func TestReceiveTokenGetError(t *testing.T) {
 func TestReceiveTokenRequestError(t *testing.T) {
 
 	defer func() {
-		httpNewRequestFunc = http.NewRequest
+		newRequestFunc = retryer.NewRequest
 	}()
 
 	processor := newQueueProcessorTest()
-	httpNewRequestFunc = func(method, url string, body io.Reader) (*http.Request, error) {
+	newRequestFunc = func(method, url string, body io.Reader) (*retryer.Request, error) {
 		return nil, errors.New("Test: Http new request error.")
 	}
 
@@ -221,13 +221,17 @@ func TestAddTwoDifferentPollersTest(t *testing.T) {
 
 	processor := newQueueProcessorTest()
 
-	poller := processor.addPoller(NewMockQueueProvider()).(*MaridPoller)
-	processor.addPoller(&MaridQueueProvider{})
+	poller := processor.addPoller(NewMockQueueProvider(), &mockIntegrationId).(*MaridPoller)
 
-	assert.Equal(t, mockMaridMetadata1.QueueUrl(), poller.QueueProvider().MaridMetadata().QueueUrl())
-	assert.Equal(t, processor.conf.PollerConf.PollingWaitIntervalInMillis, poller.pollerConf.PollingWaitIntervalInMillis)
-	assert.Equal(t, processor.conf.PollerConf.MaxNumberOfMessages, poller.pollerConf.MaxNumberOfMessages)
-	assert.Equal(t, processor.conf.PollerConf.VisibilityTimeoutInSeconds, poller.pollerConf.VisibilityTimeoutInSeconds)
+	mockQueueProvider2 := NewMockQueueProvider().(*MockQueueProvider)
+	mockQueueProvider2.MaridMetadataFunc = func() MaridMetadata {
+		return mockMaridMetadata2
+	}
+
+	processor.addPoller(mockQueueProvider2, &mockIntegrationId)
+
+	assert.Equal(t, mockMaridMetadata1, poller.QueueProvider().MaridMetadata())
+	assert.Equal(t, processor.conf.PollerConf, *poller.pollerConf)
 
 	_, contains := processor.pollers[mockMaridMetadata1.QueueUrl()]
 	assert.True(t, contains)

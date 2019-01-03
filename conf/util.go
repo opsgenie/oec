@@ -8,13 +8,14 @@ import (
 	"io/ioutil"
 	"os/user"
 	fpath "path/filepath"
+	"strings"
 )
 
 const unknownFileExtErrMessage = "Unknown configuration file extension[%s]. Only json and yml types are allowed."
 
 func checkFileExtension(filepath string) error {
 
-	extension := fpath.Ext(filepath)
+	extension := fpath.Ext(strings.ToLower(filepath))
 
 	if extension != ".json" && extension != ".yml" && extension != ".yaml" {
 		return errors.Errorf(unknownFileExtErrMessage, extension)
@@ -25,25 +26,27 @@ func checkFileExtension(filepath string) error {
 func readConfigurationContent(filepath string, content io.ReadCloser) (*Configuration, error) {
 
 	configuration := &Configuration{}
-	extension := fpath.Ext(filepath)
+	extension := fpath.Ext(strings.ToLower(filepath))
 
-	if extension == ".json" {
+	switch extension {
+	case ".json":
 		return configuration, json.NewDecoder(content).Decode(configuration)
-	} else if extension == ".yml" || extension == ".yaml" {
+	case ".yml", "yaml":
 		return configuration, yaml.NewDecoder(content).Decode(configuration)
-	} else {
+	default:
 		return nil, errors.Errorf(unknownFileExtErrMessage, extension)
 	}
 }
 
 func parseConfigurationFromFile(filepath string) (*Configuration, error) {
-	extension := fpath.Ext(filepath)
+	extension := fpath.Ext(strings.ToLower(filepath))
 
-	if extension == ".json" {
+	switch extension {
+	case ".json":
 		return parseJsonConfiguration(filepath)
-	} else if extension == ".yml" || extension == ".yaml" {
+	case ".yml", "yaml":
 		return parseYmlConfiguration(filepath)
-	} else {
+	default:
 		return nil, errors.Errorf(unknownFileExtErrMessage, extension)
 	}
 }

@@ -208,34 +208,6 @@ func TestPollMessageSubmitError(t *testing.T) {
 	assert.Equal(t, expected, releaseCount)
 }
 
-func TestPollMessageWithFalseIntegrationId(t *testing.T) {
-
-	poller := newPollerTest()
-
-	poller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() int32 {
-		return 3
-	}
-	poller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
-		integrationId := "falseIntegrationId"
-		messageAttr := map[string]*sqs.MessageAttributeValue{"integrationId": {StringValue: &integrationId} }
-		message := &sqs.Message{MessageAttributes: messageAttr}
-		return []*sqs.Message{message, message, message}, nil
-	}
-
-	deleteCount := 0
-	poller.queueProvider.(*MockQueueProvider).DeleteMessageFunc = func(message *sqs.Message) error {
-		if *message.MessageAttributes["integrationId"].StringValue == "falseIntegrationId" {
-			deleteCount++
-		}
-		return nil
-	}
-
-	shouldWait := poller.poll()
-
-	assert.False(t, shouldWait)
-	assert.Equal(t, 3, deleteCount)
-}
-
 func TestPollMessageSubmitSuccess(t *testing.T) {
 
 	poller := newPollerTest()
@@ -267,7 +239,7 @@ func NewMockPoller() Poller {
 	return &MockPoller{}
 }
 
-func NewMockPollerForQueueProcessor(workerPool WorkerPool, queueProvider QueueProvider, pollerConf *conf.PollerConf, actionMappings *conf.ActionMappings, apiKey *string, baseUrl *string) Poller {
+func NewMockPollerForQueueProcessor(workerPool WorkerPool, queueProvider QueueProvider, pollerConf *conf.PollerConf, actionMappings *conf.ActionMappings, apiKey, baseUrl, integrationId *string) Poller {
 	return NewMockPoller()
 }
 

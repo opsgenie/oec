@@ -5,8 +5,8 @@ type MaridToken struct {
 }
 
 type Data struct {
-	IntegrationId string `json:"integrationId,omitempty"`
-	MaridMetaDataList []MaridMetadata `json:"queueProperties,omitempty"`
+	IntegrationId     string          `json:"integrationId,omitempty"`
+	MaridMetadataList []MaridMetadata `json:"queueProperties,omitempty"`
 }
 
 type MaridMetadata struct {

@@ -2,6 +2,7 @@ package queue
 
 import (
 	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/opsgenie/marid2/runbook"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"sync"
@@ -9,10 +10,10 @@ import (
 )
 
 const (
-	JobInitial   = 0
-	JobExecuting = 1
-	JobFinished  = 2
-	JobError     = 3
+	JobInitial   = iota
+	JobExecuting
+	JobFinished
+	JobError
 )
 
 type Job interface {
@@ -21,57 +22,87 @@ type Job interface {
 }
 
 type SqsJob struct {
-	queueProvider QueueProvider
+	queueProvider	QueueProvider
+	queueMessage	QueueMessage
 
-	id               *string
-	queueMessage     QueueMessage
+	integrationId 	*string
+	apiKey			*string
+	baseUrl			*string
 
 	state         int32
 	executeMutex  *sync.Mutex
 }
 
-func NewSqsJob(queueMessage QueueMessage, queueProvider QueueProvider) Job {
+func NewSqsJob(queueMessage QueueMessage, queueProvider QueueProvider, apiKey, baseUrl, integrationId *string) Job {
 	return &SqsJob{
-		queueProvider:          queueProvider,
-		queueMessage:           queueMessage,
-		id:                     queueMessage.Message().MessageId,
-		executeMutex:           &sync.Mutex{},
-		state:                  JobInitial,
+		queueProvider:  queueProvider,
+		queueMessage:	queueMessage,
+		executeMutex:	&sync.Mutex{},
+		apiKey:			apiKey,
+		baseUrl:		baseUrl,
+		integrationId:	integrationId,
+		state:          JobInitial,
 	}
 }
 
 func (j *SqsJob) JobId() string {
-	return *j.id
+	return *j.queueMessage.Message().MessageId
 }
 
-func (j *SqsJob) JobMessage() *sqs.Message {
+func (j *SqsJob) SqsMessage() *sqs.Message {
 	return j.queueMessage.Message()
 }
 
-func (j *SqsJob) Execute() (err error) {
+func (j *SqsJob) Execute() error {
 
 	defer j.executeMutex.Unlock()
 	j.executeMutex.Lock()
 
 	if j.state != JobInitial {
-		return errors.New("Job[" + j.JobId() + "] is already executing.")
+		return errors.Errorf("Job[%s] is already executing or finished.", j.JobId())
 	}
 	j.state = JobExecuting
 
-	err = j.queueProvider.DeleteMessage(j.JobMessage())
+	region := j.queueProvider.MaridMetadata().Region()
+	messageId := j.JobId()
+
+	err := j.queueProvider.DeleteMessage(j.SqsMessage())
 	if err != nil {
 		j.state = JobError
-		return err
+		return errors.Errorf("Message[%s] could not be deleted from the queue[%s]: %s", messageId, region, err)
+	}
+
+	logrus.Debugf("Message[%s] is deleted from the queue[%s].", messageId, region)
+
+	messageAttr := j.SqsMessage().MessageAttributes
+
+	if  messageAttr == nil ||
+		*messageAttr[integrationId].StringValue != *j.integrationId {
+		j.state = JobError
+		return errors.Errorf("Message[%s] is invalid, will not be processed.", messageId)
 	}
 
 	start := time.Now()
-	err = j.queueMessage.Process()
+	result, err := j.queueMessage.Process()
 	if err != nil {
 		j.state = JobError
-		return err
+		return errors.Errorf("Message[%s] could not be processed: %s.", messageId, err)
 	}
 	took := time.Now().Sub(start)
-	logrus.Debugf("Process job[%s] has been done and it took %f seconds.", j.JobId(), took.Seconds())
+	logrus.Debugf("Message[%s] processing has been done and it took %f seconds.", messageId, took.Seconds())
+
+
+	go func() {
+		start = time.Now()
+
+		err = runbook.SendResultToOpsGenieFunc(result, j.apiKey, j.baseUrl)
+		if err != nil {
+			logrus.Warnf("Could not send action result[%+v] of message[%s] to Opsgenie: %s", result, messageId, err)
+		} else {
+			took := time.Now().Sub(start)
+			logrus.Debugf("Successfully sent result of message[%s] to OpsGenie and it took %f seconds.", messageId, took.Seconds())
+		}
+	}()
 
 	j.state = JobFinished
 	return nil

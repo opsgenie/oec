@@ -7,19 +7,16 @@ import (
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
-	"math/rand"
 	"strconv"
 	"sync"
 	"testing"
-	"time"
 )
 
 func newQueueProviderTest() *MaridQueueProvider {
 	return &MaridQueueProvider {
-		maridMetadata:	mockMaridMetadata1,
-		integrationId:	"mockIntegrationId",
-		rwMu:			&sync.RWMutex{},
-		client:			NewMockSqsClient(nil),
+		maridMetadata:      mockMaridMetadata1,
+		refreshClientMutex: &sync.RWMutex{},
+		client:             NewMockSqsClient(nil),
 	}
 }
 
@@ -30,34 +27,6 @@ var mockCreds = credentials.NewStaticCredentials(
 	mockAssumeRoleResult.Credentials.SessionToken)
 
 var mockReceiptHandle = "mockReceiptHandle"
-
-func mockReceiveMessageSuccessOfProvider(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
-	messages := make([]*sqs.Message, 0)
-	for i := int64(0); i < numOfMessage ; i++ {
-		sqsMessage := &sqs.Message{}
-		sqsMessage.SetMessageId(strconv.Itoa(int(i+1)))
-		messages = append(messages, sqsMessage)
-	}
-	return messages, nil
-}
-
-func mockPoll(p *MaridPoller) (shouldWait bool) {
-	for j:=0; j< 10 ; j++ {
-		for i := 0; i < 10 ; i++ {
-			if !p.workerPool.IsRunning() {
-				return
-			}
-			sqsMessage := &sqs.Message{}
-			sqsMessage.SetMessageId(strconv.Itoa(j*10+(i+1)))
-			message := NewMaridMessage(sqsMessage, mockActionMappings, &mockApiKey, &mockBasePath)
-			job := NewSqsJob(message, p.queueProvider)
-			p.workerPool.Submit(job)
-		}
-		time.Sleep(time.Millisecond * 10)
-	}
-
-	return rand.Intn(2) == 0
-}
 
 func TestChangeMessageVisibility(t *testing.T) {
 
@@ -214,8 +183,8 @@ type MockQueueProvider struct {
 	DeleteMessageFunc func(message *sqs.Message) error
 	ReceiveMessageFunc func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error)
 	MaridMetadataFunc func() MaridMetadata
-	IntegrationIdFunc func() string
 	RefreshClientFunc func(assumeRoleResult AssumeRoleResult) error
+	IsTokenExpiredFunc func() bool
 }
 
 func NewMockQueueProvider() QueueProvider {
@@ -223,11 +192,11 @@ func NewMockQueueProvider() QueueProvider {
 	}
 }
 
-func (mqp *MockQueueProvider) IntegrationId() string {
-	if mqp.IntegrationIdFunc != nil {
-		return mqp.IntegrationIdFunc()
+func (mqp *MockQueueProvider) IsTokenExpired() bool {
+	if mqp.IsTokenExpiredFunc != nil {
+		return mqp.IsTokenExpiredFunc()
 	}
-	return "mockIntegrationId"
+	return false
 }
 
 func (mqp *MockQueueProvider) ChangeMessageVisibility(message *sqs.Message, visibilityTimeout int64) error {
@@ -269,8 +238,7 @@ var mockSuccessReceiveFunc = func(numOfMessage int64, visibilityTimeout int64) (
 	messages := make([]*sqs.Message,0)
 	for i := int64(0); i < numOfMessage; i++ {
 		id := strconv.FormatInt(i, 10)
-		integrationId := "mockIntegrationId"
-		messageAttr := map[string]*sqs.MessageAttributeValue{"integrationId": {StringValue: &integrationId} }
+		messageAttr := map[string]*sqs.MessageAttributeValue{"integrationId": {StringValue: &mockIntegrationId} }
 		messages = append(messages, &sqs.Message{MessageId: &id, MessageAttributes: messageAttr })
 	}
 

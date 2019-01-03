@@ -21,6 +21,7 @@ type MaridPoller struct {
 	workerPool		WorkerPool
 	queueProvider 	QueueProvider
 
+	integrationId	*string
 	apiKey 			*string
 	baseUrl 		*string
 	pollerConf 		*conf.PollerConf
@@ -32,11 +33,7 @@ type MaridPoller struct {
 	wakeUpChan     	chan struct{}
 }
 
-func NewPoller(workerPool WorkerPool, queueProvider QueueProvider, pollerConf *conf.PollerConf, actionMappings *conf.ActionMappings, apiKey *string, baseUrl *string) Poller {
-
-	if workerPool == nil || queueProvider == nil || pollerConf == nil || actionMappings == nil || apiKey == nil || baseUrl == nil {
-		return nil
-	}
+func NewPoller(workerPool WorkerPool, queueProvider QueueProvider, pollerConf *conf.PollerConf, actionMappings *conf.ActionMappings, apiKey, baseUrl, integrationId *string) Poller {
 
 	return &MaridPoller {
 		quit:           make(chan struct{}),
@@ -47,6 +44,7 @@ func NewPoller(workerPool WorkerPool, queueProvider QueueProvider, pollerConf *c
 		actionMappings: actionMappings,
 		apiKey:			apiKey,
 		baseUrl:		baseUrl,
+		integrationId:	integrationId,
 		workerPool:     workerPool,
 		queueProvider:  queueProvider,
 	}
@@ -91,15 +89,20 @@ func (p *MaridPoller) StartPolling() error {
 	return nil
 }
 
-func (p *MaridPoller) releaseMessages(messages []*sqs.Message) {
+func (p *MaridPoller) terminateMessageVisibility(messages []*sqs.Message) {
+
+	region := p.queueProvider.MaridMetadata().Region()
+
 	for i := 0; i < len(messages); i++ {
+		messageId := *messages[i].MessageId
+
 		err := p.queueProvider.ChangeMessageVisibility(messages[i], 0)
 		if err != nil {
-			logrus.Warnf("Poller[%s] could not release message[%s]: %s.", p.queueProvider.MaridMetadata().QueueUrl() , *messages[i].MessageId, err.Error())
+			logrus.Warnf("Poller[%s] could not terminate visibility of message[%s]: %s.", region , messageId, err.Error())
 			continue
 		}
 
-		logrus.Debugf("Poller[%s] released message[%s].", p.queueProvider.MaridMetadata().QueueUrl() , *messages[i].MessageId)
+		logrus.Debugf("Poller[%s] terminated visibility of message[%s].", region , messageId)
 	}
 }
 
@@ -110,64 +113,62 @@ func (p *MaridPoller) poll() (shouldWait bool) {
 		return true
 	}
 
+	region := p.queueProvider.MaridMetadata().Region()
 	maxNumberOfMessages := Min(p.pollerConf.MaxNumberOfMessages, int64(availableWorkerCount))
+
 	messages, err := p.queueProvider.ReceiveMessage(maxNumberOfMessages, p.pollerConf.VisibilityTimeoutInSeconds)
 	if err != nil { // todo check wait time according to error / check error
-		logrus.Println(err.Error())
+		logrus.Errorf("Poller[%s] could not receive message: %s", region, err.Error())
 		return true
 	}
 
 	messageLength := len(messages)
 	if messageLength == 0 {
+		logrus.Tracef("There is no new message in the queue[%s].", region)
 		return true
 	}
 
+	logrus.Debugf("Received %d messages from the queue[%s].", messageLength, region)
+
 	for i := 0; i < messageLength; i++ {
 
-		if  messages[i].MessageAttributes == nil || *messages[i].MessageAttributes["integrationId"].StringValue != p.queueProvider.IntegrationId() {
-			logrus.Debugf("Message[%p] is invalid, will be deleted.", messages[i].MessageId)
-			p.queueProvider.DeleteMessage(messages[i])
-			continue
-		}
 		job := NewSqsJob(
 			NewMaridMessage(
 				messages[i],
 				p.actionMappings,
-				p.apiKey,
-				p.baseUrl,
 			),
 			p.queueProvider,
+			p.apiKey,
+			p.baseUrl,
+			p.integrationId,
 		)
 
 		isSubmitted, err := p.workerPool.Submit(job)
 		if err != nil {
-			logrus.Debugf("Error occurred while submitting: %s", err.Error())
-			p.releaseMessages(messages[i:])
+			logrus.Debugf("Error occurred while submitting, messages will be terminated: %s.", err.Error())
+			p.terminateMessageVisibility(messages[i:])
 			return true
 		} else if isSubmitted {
 			continue
 		} else {
-			p.releaseMessages(messages[i : i+1])
+			p.terminateMessageVisibility(messages[i : i+1])
 		}
 	}
 	return false
 }
 
-func (p *MaridPoller) wait(pollingWaitPeriod time.Duration) {
+func (p *MaridPoller) wait(pollingWaitInterval time.Duration) {
 
-	if pollingWaitPeriod == 0 {
-		return
-	}
+	queueUrl := p.queueProvider.MaridMetadata().QueueUrl()
+	logrus.Tracef("Poller[%s] will wait %s before next polling", queueUrl, pollingWaitInterval.String())
 
-	logrus.Tracef("Poller[%s] will wait %s before next polling", p.queueProvider.MaridMetadata().QueueUrl(), pollingWaitPeriod.String())
-
-	ticker := time.NewTicker(pollingWaitPeriod)
+	ticker := time.NewTicker(pollingWaitInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <- p.wakeUpChan:
-			logrus.Infof("Poller[%s] has been interrupted while waiting for next polling.", p.queueProvider.MaridMetadata().QueueUrl())
+			logrus.Infof("Poller[%s] has been interrupted while waiting for next polling.", queueUrl)
 			return
 		case <- ticker.C:
 			return
@@ -177,17 +178,23 @@ func (p *MaridPoller) wait(pollingWaitPeriod time.Duration) {
 
 func (p *MaridPoller) run() {
 
-	logrus.Infof("Poller[%s] has started to run.", p.queueProvider.MaridMetadata().QueueUrl())
+	queueUrl := p.queueProvider.MaridMetadata().QueueUrl()
+	logrus.Infof("Poller[%s] has started to run.", queueUrl)
 
 	pollingWaitInterval := p.pollerConf.PollingWaitIntervalInMillis * time.Millisecond
+	expiredTokenWaitInterval := errorRefreshPeriod
 
 	for {
 		select {
 		case <- p.quit:
-			logrus.Infof("Poller[%s] has stopped to poll.", p.queueProvider.MaridMetadata().QueueUrl())
+			logrus.Infof("Poller[%s] has stopped to poll.", queueUrl)
 			return
 		default:
-			if shouldWait := p.poll(); shouldWait {
+			if p.queueProvider.IsTokenExpired() {
+				region := p.queueProvider.MaridMetadata().Region()
+				logrus.Warnf("Security token is expired, poller[%s] skips to receive message.", region)
+				p.wait(expiredTokenWaitInterval)
+			} else if shouldWait := p.poll(); shouldWait {
 				p.wait(pollingWaitInterval)
 			}
 		}

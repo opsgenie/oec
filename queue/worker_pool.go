@@ -292,15 +292,17 @@ func NewWorker(workerPool *WorkerPoolImpl) Worker {
 }
 
 func (w *Worker) doJob(job Job) {
+	defer w.workerPool.AddNumberOfIdleWorker(1)
 	w.workerPool.AddNumberOfIdleWorker(-1)
-	logrus.Debugf("Job[%s] is submitted", job.JobId())
+
+	logrus.Debugf("Job[%s] is submitted to Worker[%s]", job.JobId(), w.id.String())
 
 	err := job.Execute() // todo panic recover, stay the pool as working
 	if err != nil {
 		logrus.Errorf(err.Error())
+		return
 	}
 
-	w.workerPool.AddNumberOfIdleWorker(1)
 	logrus.Debugf("Job[%s] has been processed by Worker[%s].", job.JobId(), w.id.String())
 }
 

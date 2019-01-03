@@ -8,7 +8,7 @@ import (
 
 var getRunbookFromGithubCalled = false
 
-func mockGetRunbookFromGithub(owner string, repo string, filepath string, token string) ([]byte, error) {
+func mockGetRunbookFromGithub(owner, repo, filepath, token string) ([]byte, error) {
 	getRunbookFromGithubCalled = true
 
 	return []byte("echo \"testContent\"\n"), nil

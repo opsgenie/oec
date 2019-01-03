@@ -4,6 +4,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -88,7 +89,7 @@ func mockReadConfigurationFromLocalWithDefaultPath(confPath string) (*Configurat
 		return nil, err
 	}
 
-	if confPath != homePath +defaultConfPath {
+	if confPath != strings.Join([]string{homePath, defaultConfPath}, string(os.PathSeparator)) {
 		return nil, errors.New("confPath was not as the same as the default path.")
 	}
 
@@ -103,7 +104,7 @@ func mockReadConfigurationFromLocalWithDefaultPathWithoutActionMappings(confPath
 		return nil, err
 	}
 
-	if confPath != homePath +defaultConfPath {
+	if confPath != strings.Join([]string{homePath, defaultConfPath}, string(os.PathSeparator)) {
 		return nil, errors.New("confPath was not as the same as the default path.")
 	}
 
@@ -123,11 +124,11 @@ func mockReadConfigurationFromLocalWithCustomPath(confPath string) (*Configurati
 }
 
 func TestReadConfFileFromGitHub(t *testing.T) {
-	os.Setenv("MARIDCONFSOURCE", "github")
-	os.Setenv("MARIDCONFGITHUBOWNER", "metehanozturk")
-	os.Setenv("MARIDCONFGITHUBREPO", "test-repo")
-	os.Setenv("MARIDCONFGITHUBFILEPATH", "marid/testConf.json")
-	os.Setenv("MARIDCONFGITHUBTOKEN", "token")
+	os.Setenv("MARID_CONF_SOURCE", "github")
+	os.Setenv("MARID_CONF_GITHUB_OWNER", "metehanozturk")
+	os.Setenv("MARID_CONF_GITHUB_REPO", "test-repo")
+	os.Setenv("MARID_CONF_GITHUB_FILEPATH", "marid/testConf.json")
+	os.Setenv("MARID_CONF_GITHUB_TOKEN", "token")
 
 	oldReadFromGitHubFunction := readConfigurationFromGitHubFunc
 	defer func() { readConfigurationFromGitHubFunc = oldReadFromGitHubFunction }()
@@ -149,7 +150,7 @@ func TestReadConfFileFromGitHub(t *testing.T) {
 }
 
 func TestReadConfFileFromLocalWithDefaultPath(t *testing.T) {
-	os.Setenv("MARIDCONFSOURCE", "local")
+	os.Setenv("MARID_CONF_SOURCE", "local")
 
 	oldReadFromLocalFunction := readConfigurationFromLocalFunc
 	defer func() { readConfigurationFromLocalFunc = oldReadFromLocalFunction }()
@@ -169,7 +170,7 @@ func TestReadConfFileFromLocalWithDefaultPath(t *testing.T) {
 }
 
 func TestReturnErrorIfActionMappingsNotFoundInTheConfFile(t *testing.T) {
-	os.Setenv("MARIDCONFSOURCE", "local")
+	os.Setenv("MARID_CONF_SOURCE", "local")
 
 	oldReadFromLocalFunction := readConfigurationFromLocalFunc
 	defer func() { readConfigurationFromLocalFunc = oldReadFromLocalFunction }()
@@ -188,8 +189,8 @@ func TestReturnErrorIfActionMappingsNotFoundInTheConfFile(t *testing.T) {
 }
 
 func TestReadConfFileFromLocalWithCustomPath(t *testing.T) {
-	os.Setenv("MARIDCONFSOURCE", "local")
-	os.Setenv("MARIDCONFLOCALFILEPATH", testLocalConfFilePath)
+	os.Setenv("MARID_CONF_SOURCE", "local")
+	os.Setenv("MARID_CONF_LOCAL_FILEPATH", testLocalConfFilePath)
 
 	oldReadFromLocalFunction := readConfigurationFromLocalFunc
 	defer func() { readConfigurationFromLocalFunc = oldReadFromLocalFunction}()
@@ -208,7 +209,7 @@ func TestReadConfFileFromLocalWithCustomPath(t *testing.T) {
 }
 
 func TestReadConfFileWithUnknownSource(t *testing.T) {
-	os.Setenv("MARIDCONFSOURCE", "dummy")
+	os.Setenv("MARID_CONF_SOURCE", "dummy")
 
 	_, err := ReadConfFile()
 	assert.Error(t, err, "Error should be thrown.")

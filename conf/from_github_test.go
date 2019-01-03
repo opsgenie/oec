@@ -2,6 +2,7 @@ package conf
 
 import (
 	"bytes"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"io"
 	"io/ioutil"
@@ -31,5 +32,6 @@ func TestReadConfigurationFromGithubWithInvalidFileExtension(t *testing.T) {
 
 	_, err := readConfigurationFromGitHub("owner", "repo", "dummy.x", "token")
 
-	assert.Errorf(t, err, unknownFileExtErrMessage, ".x")
+	expectedErr := errors.Errorf(unknownFileExtErrMessage, ".x")
+	assert.EqualError(t, err, expectedErr.Error())
 }

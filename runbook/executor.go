@@ -22,11 +22,12 @@ func execute(executablePath string, args []string, environmentVariables []string
 
 	var cmd *exec.Cmd
 
-	if executable == "cmd" {
+	switch executable {
+	case "cmd":
 		cmd = exec.Command(executable, append([]string{"/C", executablePath}, args...)...)
-	} else if executable == "sh" || executable == "powershell" {
+	case "sh", "powershell":
 		cmd = exec.Command(executable, append([]string{executablePath}, args...)...)
-	} else {
+	default:
 		cmd = exec.Command(executablePath, args...)
 	}
 

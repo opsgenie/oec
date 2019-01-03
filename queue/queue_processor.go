@@ -9,10 +9,11 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
+
+var MaridVersion string
 
 const (
 	maxNumberOfWorker = 12
@@ -32,7 +33,7 @@ const (
 const tokenPath = "/v2/integrations/maridv2/credentials"
 
 var newPollerFunc = NewPoller
-var httpNewRequestFunc = http.NewRequest
+var newRequestFunc = retryer.NewRequest
 
 type QueueProcessor interface {
 
@@ -46,7 +47,8 @@ type MaridQueueProcessor struct {
 	successRefreshPeriod 	time.Duration
 	errorRefreshPeriod 		time.Duration
 
-	conf *conf.Configuration
+	conf 			*conf.Configuration
+	maridVersion 	string
 
 	workerPool  WorkerPool
 	pollers 	map[string]Poller
@@ -112,10 +114,6 @@ func (qp *MaridQueueProcessor) StartProcessing() error {
 		return err
 	}
 
-	props := strings.SplitAfter(token.Data.MaridMetaDataList[0].QueueUrl(), "marid-")[1]
-	ids := strings.Split(props, "-")
-	logrus.Infof("Initial token is received. CustomerId: %s, IntegrationId: %s", ids[0], ids[1])
-
 	qp.workerPool.Start()
 	qp.refreshPollers(token)
 	go qp.run()
@@ -148,13 +146,15 @@ func (qp *MaridQueueProcessor) receiveToken() (*MaridToken, error) {
 
 	tokenUrl := qp.conf.BaseUrl + tokenPath
 
-	request, err := httpNewRequestFunc("GET", tokenUrl, nil)
+	request, err := newRequestFunc("GET", tokenUrl, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	request.Header.Add("Authorization", "GenieKey " + qp.conf.ApiKey)
+	request.Header.Add("X-Marid-Client-Info", "Version :" + qp.maridVersion)
 	// todo add user agent (version etc.)
+
 
 	query := request.URL.Query()
 	for _, poller := range qp.pollers {
@@ -186,7 +186,7 @@ func (qp *MaridQueueProcessor) receiveToken() (*MaridToken, error) {
 	return token, nil
 }
 
-func (qp *MaridQueueProcessor) addPoller(queueProvider QueueProvider) Poller {
+func (qp *MaridQueueProcessor) addPoller(queueProvider QueueProvider, integrationId *string) Poller {
 	poller := newPollerFunc(
 		qp.workerPool,
 		queueProvider,
@@ -194,6 +194,7 @@ func (qp *MaridQueueProcessor) addPoller(queueProvider QueueProvider) Poller {
 		&qp.conf.ActionMappings,
 		&qp.conf.ApiKey,
 		&qp.conf.BaseUrl,
+		integrationId,
 	)
 	qp.pollers[queueProvider.MaridMetadata().QueueUrl()] = poller
 	return poller
@@ -211,32 +212,37 @@ func (qp *MaridQueueProcessor) refreshPollers(token *MaridToken) {
 		pollerKeys[key] = struct{}{}
 	}
 
-	for _, maridMetadata := range token.Data.MaridMetaDataList {
+	for _, maridMetadata := range token.Data.MaridMetadataList {
 		queueUrl := maridMetadata.QueueUrl()
-		if poller, contains := qp.pollers[queueUrl]; contains {
+		if poller, contains := qp.pollers[queueUrl]; contains {	// refresh existing pollers if there comes new assumeRoleResult
 			isTokenRefreshed := maridMetadata.AssumeRoleResult != AssumeRoleResult{}
 			if isTokenRefreshed {
-				poller.RefreshClient(maridMetadata.AssumeRoleResult)
+				err := poller.RefreshClient(maridMetadata.AssumeRoleResult)
+				if err != nil {
+					logrus.Errorf("Client of queue provider[%s] could not be refreshed.", queueUrl)
+				}
+				logrus.Infof("Client of queue provider[%s] has refreshed.", queueUrl)
 			}
 			delete(pollerKeys, queueUrl)
-		} else {
-			queueProvider, err := NewQueueProvider(maridMetadata, token.Data.IntegrationId)
+		} else {	// add new pollers
+			queueProvider, err := NewQueueProvider(maridMetadata)
 			if err != nil {
 				logrus.Errorf("Poller[%s] could not be added: %s.", queueUrl, err)
 				continue
 			}
-			qp.addPoller(queueProvider).StartPolling()
+			qp.addPoller(queueProvider, &token.Data.IntegrationId).StartPolling()
 			logrus.Debugf("Poller[%s] is added.", queueUrl)
 		}
 	}
-	for queueUrl := range pollerKeys {
+
+	for queueUrl := range pollerKeys {	// remove unnecessary pollers
 		qp.removePoller(queueUrl).StopPolling()
 		logrus.Debugf("Poller[%s] is removed.", queueUrl)
 	}
 
-	if len(token.Data.MaridMetaDataList) != 0 {
-		qp.successRefreshPeriod = time.Second * time.Duration(token.Data.MaridMetaDataList[0].QueueConfiguration.SuccessRefreshPeriodInSeconds)
-		qp.errorRefreshPeriod = time.Second * time.Duration(token.Data.MaridMetaDataList[0].QueueConfiguration.ErrorRefreshPeriodInSeconds)
+	if len(token.Data.MaridMetadataList) != 0 { // pick first maridMetadata to refresh waitPeriods, can be change for further usage
+		qp.successRefreshPeriod = time.Second * time.Duration(token.Data.MaridMetadataList[0].QueueConfiguration.SuccessRefreshPeriodInSeconds)
+		qp.errorRefreshPeriod = time.Second * time.Duration(token.Data.MaridMetadataList[0].QueueConfiguration.ErrorRefreshPeriodInSeconds)
 	}
 }
 
