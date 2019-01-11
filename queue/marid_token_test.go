@@ -56,7 +56,7 @@ var mockMaridMetadataWithEmptyAssumeRoleResult2 = MaridMetadata{
 	QueueConfiguration: mockQueueConf2,
 }
 
-var mockData1 = Data {
+var mockToken = MaridToken {
 	"12345",
 	[]MaridMetadata{
 		mockMaridMetadata1,
@@ -64,20 +64,12 @@ var mockData1 = Data {
 	},
 }
 
-var mockData2 = Data {
+var mockTokenWithEmptyAssumeRoleResult = MaridToken {
 	"54321",
 	[]MaridMetadata{
 		mockMaridMetadataWithEmptyAssumeRoleResult1,
 		mockMaridMetadataWithEmptyAssumeRoleResult2,
 	},
-}
-
-var mockToken = MaridToken {
-	mockData1,
-}
-
-var mockTokenWithEmptyAssumeRoleResult = MaridToken {
-	mockData2,
 }
 
 var mockEmptyToken = MaridToken{}

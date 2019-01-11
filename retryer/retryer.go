@@ -88,7 +88,7 @@ func DoWithExponentialBackoff(retryer *Retryer, request *Request) (*http.Respons
 		break
 	}
 
-	return nil, errors.Errorf("Couldn't get a proper response, maximum retry count[%d] is exceeded.", maxRetryCount)
+	return nil, errors.Errorf("Couldn't get a success response, maximum retry count[%d] is exceeded.", maxRetryCount)
 }
 
 /******************************************************************************************/

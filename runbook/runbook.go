@@ -4,39 +4,51 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/opsgenie/marid2/conf"
+	"github.com/opsgenie/marid2/git"
 	"github.com/opsgenie/marid2/retryer"
 	"github.com/pkg/errors"
 	"io/ioutil"
 	"net/http"
+	fpath "path/filepath"
 	"strconv"
 )
 
-var ResultPath = "/v2/integrations/maridv2/actionExecutionResult"
+var resultPath = "/v2/integrations/maridv2/actionExecutionResult"
 
-var executeRunbookFromGithubFunc = executeRunbookFromGithub
-var executeRunbookFromLocalFunc = executeRunbookFromLocal
 var ExecuteRunbookFunc = ExecuteRunbook
 var SendResultToOpsGenieFunc = SendResultToOpsGenie
 
 var client = &retryer.Retryer{}
 
-func ExecuteRunbook(mappedAction *conf.MappedAction, arg string) (string, string, error) {
+func ExecuteRunbook(mappedAction *conf.MappedAction, repositories *git.Repositories, args []string) (string, string, error) {
 
-	source := mappedAction.Source
+	source := mappedAction.SourceType
 	environmentVariables := mappedAction.EnvironmentVariables
+	filepath := mappedAction.Filepath
 
 	switch source {
-	case "github":
-		repoOwner := mappedAction.RepoOwner
-		repoName := mappedAction.RepoName
-		repoFilePath := mappedAction.RepoFilePath
-		repoToken := mappedAction.RepoToken
+	case conf.LocalSourceType:
+		return executeFunc(filepath, args, environmentVariables)
 
-		return executeRunbookFromGithubFunc(repoOwner, repoName, repoFilePath, repoToken, []string{arg}, environmentVariables)
-	case "local":
-		filePath := mappedAction.FilePath
+	case conf.GitSourceType:
+		if repositories == nil {
+			return "", "", errors.New("Repositories should be provided.")
+		}
 
-		return executeRunbookFromLocalFunc(filePath, []string{arg}, environmentVariables)
+		url := mappedAction.GitOptions.Url
+
+		repository, err := repositories.Get(url)
+		if err != nil {
+			return "", "", err
+		}
+
+		repository.RLock()
+		defer repository.RUnlock()
+
+		filepath = fpath.Join(repository.Path, filepath)
+
+		return executeFunc(filepath, args, environmentVariables)
+
 	default:
 		return "", "", errors.Errorf("Unknown runbook source [%s].", source)
 	}
@@ -49,7 +61,7 @@ func SendResultToOpsGenie(resultPayload *ActionResultPayload, apiKey, baseUrl *s
 		return  errors.Errorf("Cannot marshall payload: %s", err)
 	}
 
-	resultUrl := *baseUrl + ResultPath
+	resultUrl := *baseUrl + resultPath
 
 	request, err := retryer.NewRequest("POST", resultUrl, bytes.NewReader(body))
 	if err != nil {

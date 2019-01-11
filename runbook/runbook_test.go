@@ -3,6 +3,7 @@ package runbook
 import (
 	"encoding/json"
 	"github.com/opsgenie/marid2/conf"
+	"github.com/opsgenie/marid2/git"
 	"github.com/opsgenie/marid2/retryer"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -14,95 +15,62 @@ import (
 
 var mockActionMappings = (map[conf.ActionName]conf.MappedAction)(conf.ActionMappings{
 	"Create" : conf.MappedAction{
-		Source:               "local",
-		FilePath:             "/path/to/runbook.bin",
+		SourceType:           "local",
+		Filepath:             "/path/to/runbook.bin",
 		EnvironmentVariables: []string{"e1=v1", "e2=v2"},
 	},
 	"Close" : conf.MappedAction{
-		Source:               "github",
-		RepoName:             "testRepo",
-		RepoOwner:            "testAccount",
-		RepoToken:            "testToken",
-		RepoFilePath:         "marid/testConfig.json",
+		SourceType: "git",
+		GitOptions: git.GitOptions{
+			Url:				"testUrl",
+			PrivateKeyFilepath:	"testKeyPath",
+			Passphrase:			"testPass",
+		},
+		Filepath:             "marid/testConfig.json",
 		EnvironmentVariables: []string{"e1=v1", "e2=v2"},
 	},
 })
 
-var executeRunbookFromGithubCalled = false
-var executeRunbookFromLocalCalled = false
-
-func mockExecuteRunbookFromGithub(owner, repo, filepath, token string, args, environmentVariables []string) (string, string, error) {
-	executeRunbookFromGithubCalled = true
-
-	if len(owner) <= 0 {
-		return "", "", errors.New("owner was empty.")
-	}
-
-	if len(repo) <= 0 {
-		return "", "", errors.New("repo was empty.")
-	}
-
-	if len(filepath) <= 0 {
-		return "", "", errors.New("filepath was empty.")
-	}
-
-	if len(token) <= 0 {
-		return "", "", errors.New("token was empty.")
-	}
-
-	if len(environmentVariables) <= 0 {
-		return "", "", errors.New("environmentVariables was empty.")
-	}
-
-	return "", "", nil
-}
-
-func mockExecuteRunbookFromLocal(executablePath string, args, environmentVariables []string) (string, string, error) {
-	executeRunbookFromLocalCalled = true
-
-	if len(executablePath) <= 0 {
-		return "", "", errors.New("executablePath was empty.")
-	}
-
-	if len(environmentVariables) <= 0 {
-		return "", "", errors.New("environmentVariables was empty.")
-	}
-
-	return "", "", nil
-}
-
-func TestExecuteRunbookGithub(t *testing.T) {
-
-	oldExecuteRunbookFromGithubFunction := executeRunbookFromGithubFunc
-	defer func() { executeRunbookFromGithubFunc = oldExecuteRunbookFromGithubFunction }()
-	executeRunbookFromGithubFunc = mockExecuteRunbookFromGithub
+func TestExecuteRunbookGitNilRepositories(t *testing.T) {
 
 	closeAction := mockActionMappings["Close"]
-	cmdOut, cmdErr, err := ExecuteRunbook(&closeAction, "")
+	_, _, err := ExecuteRunbook(&closeAction, nil, nil)
 
-	assert.NoError(t, err)
-	assert.Equal(t, "", cmdOut)
-	assert.Equal(t, "", cmdErr)
-	assert.True(t, executeRunbookFromGithubCalled)
-	executeRunbookFromGithubCalled = false
-	assert.False(t, executeRunbookFromLocalCalled)
+	assert.NotNil(t, err)
+	assert.EqualError(t, err, "Repositories should be provided.")
 }
 
-func TestExecuteRunbookLocal(t *testing.T) {
+func TestExecuteRunbookGitNonExistingRepository(t *testing.T) {
 
-	oldExecuteRunbookFromLocalFunction := executeRunbookFromLocalFunc
-	defer func() { executeRunbookFromLocalFunc = oldExecuteRunbookFromLocalFunction }()
-	executeRunbookFromLocalFunc = mockExecuteRunbookFromLocal
+	repositories := &git.Repositories{}
+
+	closeAction := mockActionMappings["Close"]
+	_, _, err := ExecuteRunbook(&closeAction, repositories, nil)
+
+	assert.NotNil(t, err)
+	assert.EqualError(t, err, "Git repository[testUrl] could not be found.")
+}
+
+func testExecuteRunbookLocal(t *testing.T) {
 
 	createAction := mockActionMappings["Create"]
-	cmdOut, cmdErr, err := ExecuteRunbook(&createAction, "")
+	cmdOut, cmdErr, err := ExecuteRunbook(&createAction, nil, nil)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "", cmdOut)
 	assert.Equal(t, "", cmdErr)
-	assert.True(t, executeRunbookFromLocalCalled)
-	executeRunbookFromLocalCalled = false
-	assert.False(t, executeRunbookFromGithubCalled)
+
+}
+
+func TestExecuteRunbook(t *testing.T) {
+
+	executeFunc = func(executablePath string, args []string, environmentVariables []string) (s string, s2 string, e error) {
+		return "","",nil
+	}
+
+	t.Run("TestExecuteRunbookLocal", testExecuteRunbookLocal)
+
+	executeFunc = execute
 }
 
 func TestSendResultToOpsGenie(t *testing.T) {

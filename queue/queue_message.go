@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/opsgenie/marid2/conf"
+	"github.com/opsgenie/marid2/git"
 	"github.com/opsgenie/marid2/runbook"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -17,6 +18,7 @@ type QueueMessage interface {
 type MaridQueueMessage struct {
 	message 		*sqs.Message
 	actionMappings 	*conf.ActionMappings
+	repositories	*git.Repositories
 }
 
 func (mqm *MaridQueueMessage) Message() *sqs.Message {
@@ -30,17 +32,19 @@ func (mqm *MaridQueueMessage) Process() (*runbook.ActionResultPayload ,error) {
 		return nil, err
 	}
 
+	//logrus.Warnf(*mqm.message.Body)
+
 	action := queuePayload.Action
 	if action == "" {
 		return nil, errors.New("SQS message does not contain action property")
 	}
 
-	mappedAction, ok := (map[conf.ActionName]conf.MappedAction)(*mqm.actionMappings)[conf.ActionName(action)]
+	mappedAction, ok := (*mqm.actionMappings)[conf.ActionName(action)]
 	if !ok {
 		return nil, errors.Errorf("There is no mapped action found for [%s]", action)
 	}
 
-	_, errorOutput, err := runbook.ExecuteRunbookFunc(&mappedAction, *mqm.message.Body)
+	_, errorOutput, err := runbook.ExecuteRunbookFunc(&mappedAction, mqm.repositories, []string{*mqm.message.Body})
 	if err != nil {
 		return nil, errors.Errorf("Action[%s] execution of message[%s] failed: %s", action, *mqm.message.MessageId, err)
 	}
@@ -63,10 +67,11 @@ func (mqm *MaridQueueMessage) Process() (*runbook.ActionResultPayload ,error) {
 	return result, nil
 }
 
-func NewMaridMessage(message *sqs.Message, actionMappings *conf.ActionMappings) QueueMessage {
+func NewMaridMessage(message *sqs.Message, actionMappings *conf.ActionMappings, repositories *git.Repositories) QueueMessage {
 
 	return &MaridQueueMessage{
 		message: 		message,
 		actionMappings:	actionMappings,
+		repositories:	repositories,
 	}
 }

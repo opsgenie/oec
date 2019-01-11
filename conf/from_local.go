@@ -1,5 +1,11 @@
 package conf
 
-func readConfigurationFromLocal(confPath string) (*Configuration, error) {
-	return parseConfigurationFromFile(confPath)
+func readConfigurationFromLocal(confFilepath string) (*Configuration, error) {
+
+	err := checkFileExtension(confFilepath)
+	if err != nil {
+		return nil, err
+	}
+
+	return readConfigurationFromFile(confFilepath)
 }

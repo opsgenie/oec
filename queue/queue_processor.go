@@ -3,6 +3,7 @@ package queue
 import (
 	"encoding/json"
 	"github.com/opsgenie/marid2/conf"
+	"github.com/opsgenie/marid2/git"
 	"github.com/opsgenie/marid2/retryer"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -28,6 +29,8 @@ const (
 
 	successRefreshPeriod = time.Minute
 	errorRefreshPeriod = time.Minute
+
+	repositoryRefreshPeriod = time.Minute
 )
 
 const tokenPath = "/v2/integrations/maridv2/credentials"
@@ -48,6 +51,7 @@ type MaridQueueProcessor struct {
 	errorRefreshPeriod 		time.Duration
 
 	conf 			*conf.Configuration
+	repositories	*git.Repositories
 	maridVersion 	string
 
 	workerPool  WorkerPool
@@ -78,11 +82,12 @@ func NewQueueProcessor(conf *conf.Configuration) QueueProcessor {
 		conf.PollerConf.VisibilityTimeoutInSeconds = visibilityTimeoutInSec
 	}
 
-	return &MaridQueueProcessor{
+	return &MaridQueueProcessor {
 		successRefreshPeriod:       successRefreshPeriod,
 		errorRefreshPeriod:         errorRefreshPeriod,
 		workerPool:					NewWorkerPool(&conf.PoolConf),
 		conf:						conf,
+		repositories:				git.NewRepositories(),
 		pollers:                    make(map[string]Poller),
 		quit:                       make(chan struct{}),
 		isRunning:					false,
@@ -114,12 +119,20 @@ func (qp *MaridQueueProcessor) StartProcessing() error {
 		return err
 	}
 
+	err = qp.repositories.DownloadAll(qp.conf.ActionMappings.GitActions())
+	if err != nil {
+		logrus.Errorf("Queue processor could not clone a git repository and will terminate.")
+		return err
+	}
+
+	go qp.startPullingRepositories(repositoryRefreshPeriod)
 	qp.workerPool.Start()
 	qp.refreshPollers(token)
 	go qp.run()
 
 	qp.isRunning = true
-	qp.isRunningWaitGroup.Add(1)
+	qp.isRunningWaitGroup.Add(1) // one for pulling repositories
+	qp.isRunningWaitGroup.Add(1) // one for receiving token
 	return nil
 }
 
@@ -135,6 +148,7 @@ func (qp *MaridQueueProcessor) StopProcessing() error {
 
 	close(qp.quit)
 	qp.workerPool.Stop()
+	qp.repositories.RemoveAll()
 
 	qp.isRunning = false
 	qp.isRunningWaitGroup.Wait()
@@ -194,6 +208,7 @@ func (qp *MaridQueueProcessor) addPoller(queueProvider QueueProvider, integratio
 		&qp.conf.ApiKey,
 		&qp.conf.BaseUrl,
 		integrationId,
+		qp.repositories,
 	)
 	qp.pollers[queueProvider.MaridMetadata().QueueUrl()] = poller
 	return poller
@@ -211,9 +226,11 @@ func (qp *MaridQueueProcessor) refreshPollers(token *MaridToken) {
 		pollerKeys[key] = struct{}{}
 	}
 
-	for _, maridMetadata := range token.Data.MaridMetadataList {
+	for _, maridMetadata := range token.MaridMetadataList {
 		queueUrl := maridMetadata.QueueUrl()
-		if poller, contains := qp.pollers[queueUrl]; contains {	// refresh existing pollers if there comes new assumeRoleResult
+
+			// refresh existing pollers if there comes new assumeRoleResult
+		if poller, contains := qp.pollers[queueUrl]; contains {
 			isTokenRefreshed := maridMetadata.AssumeRoleResult != AssumeRoleResult{}
 			if isTokenRefreshed {
 				err := poller.RefreshClient(maridMetadata.AssumeRoleResult)
@@ -223,25 +240,28 @@ func (qp *MaridQueueProcessor) refreshPollers(token *MaridToken) {
 				logrus.Infof("Client of queue provider[%s] has refreshed.", queueUrl)
 			}
 			delete(pollerKeys, queueUrl)
-		} else {	// add new pollers
+
+			// add new pollers
+		} else {
 			queueProvider, err := NewQueueProvider(maridMetadata)
 			if err != nil {
 				logrus.Errorf("Poller[%s] could not be added: %s.", queueUrl, err)
 				continue
 			}
-			qp.addPoller(queueProvider, &token.Data.IntegrationId).StartPolling()
+			qp.addPoller(queueProvider, &token.IntegrationId).StartPolling()
 			logrus.Debugf("Poller[%s] is added.", queueUrl)
 		}
 	}
 
-	for queueUrl := range pollerKeys {	// remove unnecessary pollers
+		// remove unnecessary pollers
+	for queueUrl := range pollerKeys {
 		qp.removePoller(queueUrl).StopPolling()
 		logrus.Debugf("Poller[%s] is removed.", queueUrl)
 	}
 
-	if len(token.Data.MaridMetadataList) != 0 { // pick first maridMetadata to refresh waitPeriods, can be change for further usage
-		qp.successRefreshPeriod = time.Second * time.Duration(token.Data.MaridMetadataList[0].QueueConfiguration.SuccessRefreshPeriodInSeconds)
-		qp.errorRefreshPeriod = time.Second * time.Duration(token.Data.MaridMetadataList[0].QueueConfiguration.ErrorRefreshPeriodInSeconds)
+	if len(token.MaridMetadataList) != 0 { // pick first maridMetadata to refresh waitPeriods, can be change for further usage
+		qp.successRefreshPeriod = time.Second * time.Duration(token.MaridMetadataList[0].QueueConfiguration.SuccessRefreshPeriodInSeconds)
+		qp.errorRefreshPeriod = time.Second * time.Duration(token.MaridMetadataList[0].QueueConfiguration.ErrorRefreshPeriodInSeconds)
 	}
 }
 
@@ -272,6 +292,26 @@ func (qp *MaridQueueProcessor) run() {
 			qp.refreshPollers(token)
 
 			ticker = time.NewTicker(qp.successRefreshPeriod)
+		}
+	}
+}
+
+func (qp *MaridQueueProcessor) startPullingRepositories(pullPeriod time.Duration) {
+
+	logrus.Infof("Repositories will be updated in every %s.", pullPeriod.String())
+
+	ticker := time.NewTicker(pullPeriod)
+
+	for {
+		select {
+		case <- qp.quit:
+			ticker.Stop()
+			qp.isRunningWaitGroup.Done()
+			return
+		case <- ticker.C:
+			ticker.Stop()
+			qp.repositories.PullAll()
+			ticker = time.NewTicker(pullPeriod)
 		}
 	}
 }

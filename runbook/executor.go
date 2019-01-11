@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+var executeFunc = execute
+
 var executables = map[string]string{
 	".bat" 	: "cmd",
 	".cmd" 	: "cmd",
@@ -15,10 +17,16 @@ var executables = map[string]string{
 	".sh"	: "sh",
 }
 
-func execute(executablePath string, args []string, environmentVariables []string) (string, string, error) {
+func execute(executablePath string, args []string, environmentVars []string) (string, string, error) {
 
 	fileExt := filepath.Ext(strings.ToLower(executablePath))
 	executable, _ := executables[fileExt]
+
+	if args == nil {
+		args = []string{}
+	} else if environmentVars == nil {
+		environmentVars = []string{}
+	}
 
 	var cmd *exec.Cmd
 
@@ -35,7 +43,7 @@ func execute(executablePath string, args []string, environmentVariables []string
 
 	cmd.Stdout = &cmdOutput
 	cmd.Stderr = &cmdErr
-	cmd.Env = append(os.Environ(), environmentVariables...)
+	cmd.Env = append(os.Environ(), environmentVars...)
 
 	err := cmd.Run()
 	if err != nil {

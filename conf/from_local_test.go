@@ -1,36 +1,21 @@
 package conf
 
 import (
+	"github.com/opsgenie/marid2/util"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
 )
 
 func TestReadConfigurationFromLocal(t *testing.T) {
-	homePath, err := getHomePath()
-	confPath := homePath + string(os.PathSeparator) + ".opsgenie" +
-		string(os.PathSeparator) + "maridTestConf.json"
 
-	if err != nil {
-		t.Error("Error occurred during obtaining user's home path. Error: " + err.Error())
-	}
+	confPath, err := util.CreateTempTestFile(mockJsonConfFileContent, ".json")
+	assert.Nil(t, err)
 
-	if _, err := os.Stat(homePath + string(os.PathSeparator) + ".opsgenie"); os.IsNotExist(err) {
-		os.Mkdir(homePath + string(os.PathSeparator) + ".opsgenie", 0755)
-	}
-
-	testConfFile, err := os.OpenFile(confPath, os.O_CREATE|os.O_WRONLY, 0755)
-
-	if err != nil {
-		t.Error("Error occurred during writing test Marid configuration file. Error: " + err.Error())
-	}
-
-	testConfFile.Write(mockConfFileContent)
-	testConfFile.Close()
-	configurationFromLocal, _ := readConfigurationFromLocal(confPath)
+	actualConf, _ := readConfigurationFromLocal(confPath)
 
 	defer os.Remove(confPath)
 
-	assert.Equal(t, mockConf, configurationFromLocal,
-		"Actual config and expected config are not the same.")
+	assert.Equal(t, mockConf, actualConf,
+		"Actual configuration was not equal to expected configuration.")
 }

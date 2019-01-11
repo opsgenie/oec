@@ -3,6 +3,7 @@ package queue
 import (
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/opsgenie/marid2/conf"
+	"github.com/opsgenie/marid2/git"
 	"github.com/opsgenie/marid2/runbook"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -12,8 +13,8 @@ import (
 )
 
 var mockActionMappings = &conf.ActionMappings{
-	"action1": conf.MappedAction{Source: "local"},
-	"action2": conf.MappedAction{Source: "github"},
+	"action1": conf.MappedAction{SourceType: "local"},
+	"action2": conf.MappedAction{SourceType: "github"},
 }
 
 var(
@@ -24,7 +25,7 @@ var(
 	mockIntegrationId = "mockIntegrationId"
 	)
 
-func mockExecuteRunbook(mappedAction *conf.MappedAction, arg string) (string, string, error) {
+func mockExecuteRunbook(mappedAction *conf.MappedAction, repositories *git.Repositories, arg []string) (string, string, error) {
 	return "Operation executed successfully!", "", nil
 }
 
@@ -34,7 +35,7 @@ func TestGetMessage(t *testing.T) {
 	expectedMessage.SetMessageId("messageId")
 	expectedMessage.SetBody("messageBody")
 
-	queueMessage := NewMaridMessage(expectedMessage, mockActionMappings)
+	queueMessage := NewMaridMessage(expectedMessage, mockActionMappings, nil)
 	actualMessage := queueMessage.Message()
 
 	assert.Equal(t, expectedMessage, actualMessage)
@@ -49,7 +50,7 @@ func TestProcessSuccessfully(t *testing.T) {
 	body := `{"action":"action1"}`
 	id := "MessageId"
 	message := &sqs.Message{Body: &body, MessageId: &id}
-	queueMessage := NewMaridMessage(message, mockActionMappings)
+	queueMessage := NewMaridMessage(message, mockActionMappings, nil)
 
 	result, err := queueMessage.Process()
 	assert.Nil(t, err)
@@ -64,7 +65,7 @@ func TestProcessMappedActionNotFound(t *testing.T) {
 
 	body := `{"action":"action3"}`
 	message := &sqs.Message{Body: &body}
-	queueMessage := NewMaridMessage(message, mockActionMappings)
+	queueMessage := NewMaridMessage(message, mockActionMappings, nil)
 
 	_, err := queueMessage.Process()
 	expectedErr := errors.New("There is no mapped action found for [action3]")
@@ -79,7 +80,7 @@ func TestProcessFieldMissing(t *testing.T) {
 
 	body := `{"alert":{}}`
 	message := &sqs.Message{Body: &body}
-	queueMessage := NewMaridMessage(message, mockActionMappings)
+	queueMessage := NewMaridMessage(message, mockActionMappings, nil)
 
 	_, err := queueMessage.Process()
 	expectedErr := errors.New("SQS message does not contain action property")
