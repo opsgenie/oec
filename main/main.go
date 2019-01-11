@@ -13,26 +13,19 @@ import (
 	"os"
 	"os/signal"
 	"os/user"
+	"path/filepath"
 	"runtime"
-	"strings"
 	"syscall"
 	"time"
 )
 
-var addr = flag.String("marid-metrics", "8081", "The address to listen on for HTTP requests.")
-var logPath = strings.Join([]string{"opsgenie", "logs", "marid.log"}, string(os.PathSeparator))
+var addr = flag.String("marid-metrics", "8082", "The address to listen on for HTTP requests.")
+var defaultLogFilepath = filepath.Join("opsgenie", "logs", "marid.log")
 
 var MaridVersion string
 var MaridCommitVersion string
 
 func main() {
-
-	flag.Parse()
-	go func() {
-		http.Handle("/metrics", promhttp.Handler())
-		logrus.Infof("Marid-metrics serves in http://localhost:%s/metrics.", *addr)
-		logrus.Error("Marid-metrics error: ", http.ListenAndServe(":" + *addr, nil))
-	}()
 
 	logrus.SetFormatter(
 		&logrus.TextFormatter {
@@ -42,16 +35,13 @@ func main() {
 		},
 	)
 
-	logrus.Infof("Marid version is %s", MaridVersion)
-	logrus.Infof("Marid commit version is %s", MaridCommitVersion)
-
 	usr, err := user.Current()
 	if err != nil {
 		logrus.Fatalln(err)
 	}
 
 	logger := &lumberjack.Logger {
-		Filename:  strings.Join([]string{usr.HomeDir, logPath}, string(os.PathSeparator)),
+		Filename:  filepath.Join(usr.HomeDir, defaultLogFilepath),
 		MaxSize:   3, 	// MB
 		MaxAge:    10, 	// Days
 		LocalTime: true,
@@ -59,12 +49,22 @@ func main() {
 
 	logrus.SetOutput(io.MultiWriter(os.Stdout, logger))
 
+	logrus.Infof("Marid version is %s", MaridVersion)
+	logrus.Infof("Marid commit version is %s", MaridCommitVersion)
+
 	configuration, err := conf.ReadConfFile()
 	if err != nil {
 		logrus.Fatalln("Could not read configuration: ", err)
 	}
 
 	logrus.SetLevel(configuration.LogLevel)
+
+	flag.Parse()
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		logrus.Infof("Marid-metrics serves in http://localhost:%s/metrics.", *addr)
+		logrus.Error("Marid-metrics error: ", http.ListenAndServe(":" + *addr, nil))
+	}()
 
 	queueProcessor := queue.NewQueueProcessor(configuration)
 	queue.UserAgentHeader = fmt.Sprintf("%s/%s %s (%s/%s)",  MaridVersion, MaridCommitVersion, runtime.Version(), runtime.GOOS, runtime.GOARCH)
@@ -90,3 +90,5 @@ func main() {
 
 	os.Exit(0)
 }
+
+

@@ -3,6 +3,8 @@ package queue
 import (
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/opsgenie/marid2/conf"
+	"github.com/opsgenie/marid2/git"
+	"github.com/opsgenie/marid2/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"sync"
@@ -26,6 +28,7 @@ type MaridPoller struct {
 	baseUrl 		*string
 	pollerConf 		*conf.PollerConf
 	actionMappings 	*conf.ActionMappings
+	repositories	*git.Repositories
 
 	isRunning		bool
 	startStopMutex 	*sync.Mutex
@@ -33,7 +36,10 @@ type MaridPoller struct {
 	wakeUpChan     	chan struct{}
 }
 
-func NewPoller(workerPool WorkerPool, queueProvider QueueProvider, pollerConf *conf.PollerConf, actionMappings *conf.ActionMappings, apiKey, baseUrl, integrationId *string) Poller {
+func NewPoller(workerPool WorkerPool, queueProvider QueueProvider,
+	pollerConf *conf.PollerConf, actionMappings *conf.ActionMappings,
+	apiKey, baseUrl, integrationId *string,
+	repositories *git.Repositories) Poller {
 
 	return &MaridPoller {
 		quit:           make(chan struct{}),
@@ -42,6 +48,7 @@ func NewPoller(workerPool WorkerPool, queueProvider QueueProvider, pollerConf *c
 		startStopMutex: &sync.Mutex{},
 		pollerConf:     pollerConf,
 		actionMappings: actionMappings,
+		repositories:	repositories,
 		apiKey:			apiKey,
 		baseUrl:		baseUrl,
 		integrationId:	integrationId,
@@ -114,7 +121,7 @@ func (p *MaridPoller) poll() (shouldWait bool) {
 	}
 
 	region := p.queueProvider.MaridMetadata().Region()
-	maxNumberOfMessages := Min(p.pollerConf.MaxNumberOfMessages, int64(availableWorkerCount))
+	maxNumberOfMessages := util.Min(p.pollerConf.MaxNumberOfMessages, int64(availableWorkerCount))
 
 	messages, err := p.queueProvider.ReceiveMessage(maxNumberOfMessages, p.pollerConf.VisibilityTimeoutInSeconds)
 	if err != nil { // todo check wait time according to error / check error
@@ -136,6 +143,7 @@ func (p *MaridPoller) poll() (shouldWait bool) {
 			NewMaridMessage(
 				messages[i],
 				p.actionMappings,
+				p.repositories,
 			),
 			p.queueProvider,
 			p.apiKey,

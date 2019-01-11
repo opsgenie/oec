@@ -1,10 +1,6 @@
 package queue
 
 type MaridToken struct {
-	Data Data `json:"data,omitempty"`
-}
-
-type Data struct {
 	IntegrationId     string          `json:"integrationId,omitempty"`
 	MaridMetadataList []MaridMetadata `json:"queueProperties,omitempty"`
 }

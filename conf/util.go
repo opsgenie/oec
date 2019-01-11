@@ -3,86 +3,99 @@ package conf
 import (
 	"encoding/json"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
-	"io"
 	"io/ioutil"
+	"os"
 	"os/user"
 	fpath "path/filepath"
 	"strings"
 )
 
-const unknownFileExtErrMessage = "Unknown configuration file extension[%s]. Only json and yml types are allowed."
+const unknownFileExtErrMessage = "Unknown configuration file extension[%s]. Only \".json\" and \".yml(.yaml)\" types are allowed."
 
 func checkFileExtension(filepath string) error {
 
 	extension := fpath.Ext(strings.ToLower(filepath))
 
-	if extension != ".json" && extension != ".yml" && extension != ".yaml" {
+	switch extension {
+	case ".json", ".yml", ".yaml":
+		return nil
+	default:
 		return errors.Errorf(unknownFileExtErrMessage, extension)
 	}
-	return nil
 }
 
-func readConfigurationContent(filepath string, content io.ReadCloser) (*Configuration, error) {
+func readConfigurationFromFile(filepath string) (*Configuration, error) {
+
+	file, err := ioutil.ReadFile(filepath)
+	if err != nil {
+		return nil, err
+	}
 
 	configuration := &Configuration{}
 	extension := fpath.Ext(strings.ToLower(filepath))
 
 	switch extension {
 	case ".json":
-		return configuration, json.NewDecoder(content).Decode(configuration)
-	case ".yml", "yaml":
-		return configuration, yaml.NewDecoder(content).Decode(configuration)
+		return configuration, json.Unmarshal(file, configuration)
+	case ".yml", ".yaml":
+		return configuration, yaml.Unmarshal(file, configuration)
 	default:
 		return nil, errors.Errorf(unknownFileExtErrMessage, extension)
 	}
 }
 
-func parseConfigurationFromFile(filepath string) (*Configuration, error) {
-	extension := fpath.Ext(strings.ToLower(filepath))
+func addHomeDirPrefix(filepath string) string {
 
-	switch extension {
-	case ".json":
-		return parseJsonConfiguration(filepath)
-	case ".yml", "yaml":
-		return parseYmlConfiguration(filepath)
-	default:
-		return nil, errors.Errorf(unknownFileExtErrMessage, extension)
+	if strings.HasPrefix(filepath, "~/") {
+		usr, err := user.Current()
+		if err == nil {
+			return fpath.Join(usr.HomeDir, strings.TrimPrefix(filepath, "~/"))
+		}
+	}
+
+	return fpath.Clean(filepath)
+}
+
+func addHomeDirPrefixToLocalActionFilepaths(mappings *ActionMappings) {
+	for index, action := range *mappings {
+		if action.SourceType == LocalSourceType {
+			action.Filepath = addHomeDirPrefix(action.Filepath)
+			(*mappings)[index] = action
+		}
 	}
 }
 
-func parseJsonConfiguration(path string) (*Configuration, error) {
-
-	file, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil, err
+func chmodLocalActions(mappings *ActionMappings, mode os.FileMode) {
+	for _, action := range *mappings {
+		if action.SourceType == LocalSourceType {
+			err := os.Chmod(action.Filepath, mode)
+			if err != nil {
+				logrus.Warn(err)
+			}
+		}
 	}
-
-	result := &Configuration{}
-	err = json.Unmarshal(file, result)
-
-	return result, err
 }
 
-func parseYmlConfiguration(path string) (*Configuration, error) {
+func addHomeDirPrefixToPrivateKeyFilepaths(mappings *ActionMappings) {
+	for index, action := range *mappings {
+		if action.SourceType == GitSourceType {
+			if action.GitOptions.PrivateKeyFilepath == "" {
+				continue
+			}
+			action.GitOptions.PrivateKeyFilepath = addHomeDirPrefix(action.GitOptions.PrivateKeyFilepath)
+			(*mappings)[index] = action
 
-	file, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil, err
+		}
 	}
-
-	result := &Configuration{}
-	err = yaml.Unmarshal(file, &result)
-
-	return result, err
 }
 
-func getHomePath() (string, error) {
+func copyActionMappings(mappings ActionMappings) ActionMappings {
 
-	currentUser, err := user.Current()
-	if err != nil {
-		return "", err
+	copyActionMappings := make(map[ActionName]MappedAction, len(mappings))
+	for k, v := range mappings {
+		copyActionMappings[k] = v
 	}
-
-	return currentUser.HomeDir, nil
+	return copyActionMappings
 }

@@ -3,6 +3,7 @@ package queue
 import (
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/opsgenie/marid2/conf"
+	"github.com/opsgenie/marid2/git"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -239,7 +240,10 @@ func NewMockPoller() Poller {
 	return &MockPoller{}
 }
 
-func NewMockPollerForQueueProcessor(workerPool WorkerPool, queueProvider QueueProvider, pollerConf *conf.PollerConf, actionMappings *conf.ActionMappings, apiKey, baseUrl, integrationId *string) Poller {
+func NewMockPollerForQueueProcessor(workerPool WorkerPool, queueProvider QueueProvider,
+	pollerConf *conf.PollerConf, actionMappings *conf.ActionMappings,
+	apiKey, baseUrl, integrationId *string,
+	repositories *git.Repositories) Poller {
 	return NewMockPoller()
 }
 

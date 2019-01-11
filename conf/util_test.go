@@ -1,65 +1,71 @@
 package conf
 
 import (
+	"fmt"
+	"github.com/opsgenie/marid2/util"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
 )
 
-func TestParseConfigurationJson(t *testing.T) {
-	var directoryName = "testRepo"
-	var tmpDir = os.TempDir() + string(os.PathSeparator) + directoryName
-	var testConfPath = tmpDir + string(os.PathSeparator) + "maridTestConf.json"
+func TestReadConfigurationFromJsonFile(t *testing.T) {
 
-	os.MkdirAll(tmpDir, 0755)
-	defer os.RemoveAll(tmpDir)
+	confPath, err := util.CreateTempTestFile(mockJsonConfFileContent, ".json")
+	assert.Nil(t, err)
 
-	testFile, err := os.OpenFile(testConfPath, os.O_CREATE | os.O_WRONLY, 0755)
+	actualConf, _ := readConfigurationFromFile(confPath)
 
-	if err != nil {
-		t.Error("Error occurred while creating test config file. Error: " + err.Error())
-	}
+	defer os.Remove(confPath)
 
-	testFile.WriteString("{\"apiKey\": \"apiKey\"}")
-	testFile.Close()
-
-	config, err := parseConfigurationFromFile(testConfPath)
-
-	if err != nil {
-		t.Error("Error occurred while parsing the conf file. Error: " + err.Error())
-	}
-
-	expectedConfig := &Configuration{ ApiKey: "apiKey" }
-
-	assert.Equal(t, expectedConfig, config,
+	assert.Nil(t, err)
+	assert.Equal(t, mockConf, actualConf,
 		"Actual configuration was not equal to expected configuration.")
 }
 
-func TestParseConfigurationYaml(t *testing.T) {
-	var directoryName = "testRepo"
-	var tmpDir = os.TempDir() + string(os.PathSeparator) + directoryName
-	var testConfPath = tmpDir + string(os.PathSeparator) + "maridTestConf.yml"
+func TestReadConfigurationFromYamlFile(t *testing.T) {
 
-	os.MkdirAll(tmpDir, 0755)
-	defer os.RemoveAll(tmpDir)
+	confPath, err := util.CreateTempTestFile(mockYamlConfFileContent, ".yaml")
+	assert.Nil(t, err)
 
-	testFile, err := os.OpenFile(testConfPath, os.O_CREATE|os.O_WRONLY, 0755)
+	actualConf, err := readConfigurationFromFile(confPath)
 
-	if err != nil {
-		t.Error("Error occurred while creating test config file. Error: " + err.Error())
-	}
+	defer os.Remove(confPath)
 
-	testFile.WriteString("apiKey: apiKey\n")
-	testFile.Close()
-
-	config, err := parseConfigurationFromFile(testConfPath)
-
-	if err != nil {
-		t.Error("Error occurred while parsing the conf file. Error: " + err.Error())
-	}
-
-	expectedConfig := &Configuration{ ApiKey: "apiKey" }
-
-	assert.Equal(t, expectedConfig, config,
+	assert.Nil(t, err)
+	assert.Equal(t, mockConf, actualConf,
 		"Actual configuration was not equal to expected configuration.")
+}
+
+func TestReadConfigurationFromInvalidFile(t *testing.T) {
+
+	confPath, err := util.CreateTempTestFile(mockYamlConfFileContent, ".invalid")
+	assert.Nil(t, err)
+
+	_, err = readConfigurationFromFile(confPath)
+
+	defer os.Remove(confPath)
+
+	assert.NotNil(t, err)
+	expectedErrMsg := fmt.Sprintf(unknownFileExtErrMessage, ".invalid")
+	assert.EqualError(t, err, expectedErrMsg)
+}
+
+func TestCheckFileExtensionInvalidExt(t *testing.T) {
+
+	err := checkFileExtension("/dummy.invalid")
+
+	expectedErrMsg := fmt.Sprintf(unknownFileExtErrMessage, ".invalid")
+	assert.EqualError(t, err, expectedErrMsg)
+}
+
+func TestCheckFileExtension(t *testing.T) {
+
+	err := checkFileExtension("/dummy.json")
+	assert.Nil(t, err)
+
+	err = checkFileExtension("/dummy.yml")
+	assert.Nil(t, err)
+
+	err = checkFileExtension("/dummy.yaml")
+	assert.Nil(t, err)
 }

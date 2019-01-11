@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/opsgenie/marid2/conf"
+	"github.com/opsgenie/marid2/git"
 	"github.com/opsgenie/marid2/retryer"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -30,6 +31,7 @@ func newQueueProcessorTest() *MaridQueueProcessor {
 		errorRefreshPeriod:   	errorRefreshPeriod,
 		workerPool:           	NewMockWorkerPool(),
 		conf:           		mockConf,
+		repositories:			git.NewRepositories(),
 		pollers:              	make(map[string]Poller),
 		quit:                 	make(chan struct{}),
 		isRunning:            	false,
@@ -164,9 +166,9 @@ func TestReceiveToken(t *testing.T) {
 	token, err := processor.receiveToken()
 
 	assert.Nil(t, err)
-	assert.Equal(t, 2, len(token.Data.MaridMetadataList))
-	assert.Equal(t, "accessKeyId1", token.Data.MaridMetadataList[0].AssumeRoleResult.Credentials.AccessKeyId)
-	assert.Equal(t, "accessKeyId2", token.Data.MaridMetadataList[1].AssumeRoleResult.Credentials.AccessKeyId)
+	assert.Equal(t, 2, len(token.MaridMetadataList))
+	assert.Equal(t, "accessKeyId1", token.MaridMetadataList[0].AssumeRoleResult.Credentials.AccessKeyId)
+	assert.Equal(t, "accessKeyId2", token.MaridMetadataList[1].AssumeRoleResult.Credentials.AccessKeyId)
 
 	for _, poller := range processor.pollers  {
 		maridMetadata := poller.QueueProvider().MaridMetadata()

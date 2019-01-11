@@ -6,7 +6,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/aws/aws-sdk-go/service/sts"
+	"strings"
 	"sync"
 )
 
@@ -168,7 +168,7 @@ func (mqp *MaridQueueProvider) newConfig(assumeRoleResult AssumeRoleResult) *aws
 
 func (mqp *MaridQueueProvider) checkExpiration(err error) {
 	if err, ok := err.(awserr.Error); ok {
-		if err.Code() == sts.ErrCodeExpiredTokenException {
+		if strings.Contains(err.Code(), "ExpiredToken") {
 			mqp.refreshClientMutex.Lock()
 			mqp.isTokenExpired = true
 			mqp.refreshClientMutex.Unlock()
