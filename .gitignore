@@ -13,3 +13,5 @@
 
 vendor/*
 .idea/*
+
+Gopkg.lock

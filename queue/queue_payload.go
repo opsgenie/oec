@@ -1,11 +1,17 @@
 package queue
 
 type QueuePayload struct {
-	Source          Source `json:"source,omitempty"`
-	Alert           Alert  `json:"alert,omitempty"`
-	Action          string `json:"action,omitempty"`
-	IntegrationId   string `json:"integrationName,omitempty"`
-	IntegrationName string `json:"integrationId,omitempty"`
+	Source           Source           `json:"source,omitempty"`
+	Alert            Alert            `json:"alert,omitempty"`
+	Action           string           `json:"action,omitempty"`
+	MappedAction     MappedAction     `json:"mappedAction,omitempty"`
+	IntegrationId    string           `json:"integrationName,omitempty"`
+	IntegrationName  string           `json:"integrationId,omitempty"`
+	EscalationId     string           `json:"escalationId,omitempty"`
+	EscalationName   string           `json:"escalationName,omitempty"`
+	EscalationNotify EscalationNotify `json:"escalationNotify,omitempty"`
+	EscalationTime   int64            `json:"escalationTime,omitempty"`
+	RepeatCount      int              `json:"repeatCount,omitempty"`
 }
 
 type Source struct {
@@ -14,17 +20,39 @@ type Source struct {
 }
 
 type Alert struct {
-	UpdatedAt  int64    `json:"updatedAt,omitempty"`
-	Tags       []string `json:"tags,omitempty"`
-	Teams      []string `json:"teams,omitempty"`
-	Recipients []string `json:"recipients,omitempty"`
-	Message    string   `json:"message,omitempty"`
-	Username   string   `json:"username,omitempty"`
-	AlertId    string   `json:"alertId,omitempty"`
-	Source     string   `json:"source,omitempty"`
-	Alias      string   `json:"alias,omitempty"`
-	TinyId     string   `json:"tinyId,omitempty"`
-	CreatedAt  int64    `json:"createdAt,omitempty"`
-	UserId     string   `json:"userId,omitempty"`
-	Entity     string   `json:"entity,omitempty"`
+	AlertId       string   `json:"alertId,omitempty"`
+	Message       string   `json:"message,omitempty"`
+	Tags          []string `json:"tags,omitempty"`
+	TinyId        string   `json:"tinyId,omitempty"`
+	Entity        string   `json:"entity,omitempty"`
+	Alias         string   `json:"alias,omitempty"`
+	CreatedAt     int64    `json:"createdAt,omitempty"`
+	UpdatedAt     int64    `json:"updatedAt,omitempty"`
+	Username      string   `json:"username,omitempty"`
+	UserId        string   `json:"userId,omitempty"`
+	Recipient     string   `json:"recipient,omitempty"`
+	Team          string   `json:"team,omitempty"`
+	Owner         string   `json:"owner,omitempty"`
+	Recipients    []string `json:"recipients,omitempty"`
+	Teams         []string `json:"teams,omitempty"`
+	Actions       []string `json:"actions,omitempty"`
+	SnoozeEndDate string   `json:"snoozeEndDate,omitempty"`
+	SnoozedUntil  int64    `json:"snoozedUntil,omitempty"`
+	AddedTags     string   `json:"addedTags,omitempty"`
+	RemovedTags   string   `json:"removedTags,omitempty"`
+	Priority      string   `json:"priority,omitempty"`
+	OldPriority   string   `json:"oldPriority,omitempty"`
+	Source        string   `json:"source,omitempty"`
+}
+
+type MappedAction struct {
+	MappedAction string `json:"mappedAction,omitempty"`
+	ExtraField   string `json:"extraField,omitempty"`
+}
+
+type EscalationNotify struct {
+	Entity string `json:"entity,omitempty"`
+	Id     string `json:"id,omitempty"`
+	Type   string `json:"type,omitempty"`
+	Name   string `json:"name,omitempty"`
 }
