@@ -65,7 +65,7 @@ func DoWithExponentialBackoff(retryer *Retryer, request *Request) (*http.Respons
 		response, err := client.Do(request.Request)
 
 		if err, ok := err.(net.Error); ok {
-			logrus.Println(err)
+			logrus.Warn(err)
 			// On error, any Response can be ignored.
 			if !err.Timeout() {
 				return nil, err

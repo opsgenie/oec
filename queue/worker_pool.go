@@ -38,14 +38,13 @@ type WorkerPoolImpl struct {
 
 func NewWorkerPool(poolConf *conf.PoolConf) WorkerPool {
 
-
 	if poolConf.MaxNumberOfWorker <= 0 {
 		logrus.Infof("Max number of workers should be greater than zero, default value[%d] is set.", maxNumberOfWorker)
 		poolConf.MaxNumberOfWorker = maxNumberOfWorker
 	}
 
-	if poolConf.MinNumberOfWorker <= 0 {
-		logrus.Infof("Min number of workers cannot be lesser than zero, default value[%d] is set.", keepAliveTimeInMillis)
+	if poolConf.MinNumberOfWorker < 0 {
+		logrus.Infof("Min number of workers cannot be lesser than zero, default value[%d] is set.", minNumberOfWorker)
 		poolConf.MinNumberOfWorker = minNumberOfWorker
 	}
 
@@ -65,7 +64,7 @@ func NewWorkerPool(poolConf *conf.PoolConf) WorkerPool {
 	}
 
 	if poolConf.MonitoringPeriodInMillis <= 0 {
-		logrus.Infof("Queue size of the pool cannot be lesser than zero, default value[%d ms.] is set.", monitoringPeriodInMillis)
+		logrus.Infof("Monitoring period of the pool should be greater than zero, default value[%d ms.] is set.", monitoringPeriodInMillis)
 		poolConf.MonitoringPeriodInMillis = monitoringPeriodInMillis
 	}
 

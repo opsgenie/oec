@@ -65,6 +65,7 @@ var readConfigurationFromGitFunc = readConfigurationFromGit
 var readConfigurationFromLocalFunc = readConfigurationFromLocal
 
 var defaultConfFilepath = filepath.Join("~","opsgenie", "maridConfig.json")
+const defaultBaseUrl = "https://api.opsgenie.com"
 
 func ReadConfFile() (*Configuration, error) {
 
@@ -98,7 +99,8 @@ func validateConfiguration(conf *Configuration) error {
 		return errors.New("ApiKey is not found in the configuration file.")
 	}
 	if conf.BaseUrl == "" {
-		return errors.New("BaseUrl is not found in the configuration file.")
+		conf.BaseUrl = defaultBaseUrl
+		logrus.Infof("BaseUrl is not found in the configuration file, default url[%s] is set.", defaultBaseUrl)
 	}
 	return nil
 }

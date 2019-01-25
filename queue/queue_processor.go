@@ -73,12 +73,12 @@ func NewQueueProcessor(conf *conf.Configuration) QueueProcessor {
 	}
 
 	if conf.PollerConf.PollingWaitIntervalInMillis <= 0 {
-		logrus.Infof("Max number of messages should be greater than 0, default value[%d] is set.", maxNumberOfMessages)
+		logrus.Infof("Polling wait interval should be greater than 0, default value[%d ms.] is set.", pollingWaitIntervalInMillis)
 		conf.PollerConf.PollingWaitIntervalInMillis = pollingWaitIntervalInMillis
 	}
 
 	if conf.PollerConf.VisibilityTimeoutInSeconds < 15 {
-		logrus.Infof("Visibility timeout cannot be lesser than 15 seconds or greater than 12 hours, default value[%d ms.] is set.", pollingWaitIntervalInMillis)
+		logrus.Infof("Visibility timeout cannot be lesser than 15 seconds or greater than 12 hours, default value[%d s.] is set.", visibilityTimeoutInSec)
 		conf.PollerConf.VisibilityTimeoutInSeconds = visibilityTimeoutInSec
 	}
 
