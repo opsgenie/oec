@@ -2,10 +2,11 @@ package git
 
 import (
 	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 )
 
-func Pull(repositoryPath, privateKeyFilePath, passPhrase string) error {
+func PullMaster(repositoryPath, privateKeyFilePath, passPhrase string) error {
 	r, err := git.PlainOpen(repositoryPath)
 	if err != nil {
 		return err
@@ -16,35 +17,31 @@ func Pull(repositoryPath, privateKeyFilePath, passPhrase string) error {
 		return err
 	}
 
-	opts, err := getPullOptions(privateKeyFilePath, passPhrase)
-	if err != nil {
-		return err
-	}
-
-	return w.Pull(opts)
+	return gitPullMaster(w, privateKeyFilePath, passPhrase)
 }
 
-func getPullOptions(privateKeyFilePath, passPhrase string) (*git.PullOptions, error) {
+func gitPullMaster(w *git.Worktree, privateKeyFilePath, passPhrase string) error {
 
-	opts := &git.PullOptions {
-		RemoteName: "origin",
-		RecurseSubmodules: git.DefaultSubmoduleRecursionDepth,
+	options := &git.PullOptions {
+		RecurseSubmodules: 	git.DefaultSubmoduleRecursionDepth,
+		ReferenceName: 		plumbing.Master,
+		SingleBranch:  		true,
 	}
 
 	if privateKeyFilePath != "" {
 
 		auth, err := ssh.NewPublicKeysFromFile(ssh.DefaultUsername, privateKeyFilePath, passPhrase)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		opts.Auth = auth
+		options.Auth = auth
 	}
 
-	err := opts.Validate()
+	err := options.Validate()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return opts, nil
+	return w.Pull(options)
 }

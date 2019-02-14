@@ -24,6 +24,10 @@ func NewRepositories() *Repositories {
 	return repositories
 }
 
+func (r *Repositories) NotEmpty() bool {
+	return len(*r) != 0
+}
+
 func (r *Repositories) Get(gitUrl string) (*Repository, error) {
 	if repository, contains := (*r)[GitUrl(gitUrl)]; contains {
 		return repository, nil
@@ -46,7 +50,7 @@ func (r *Repositories) DownloadAll(gitOptionsList []GitOptions) (err error) {
 func (r *Repositories) Download(options *GitOptions) (err error) {
 
 	if _, contains := (*r)[GitUrl(options.Url)]; !contains {
-		repositoryPath, err := CloneRepository(options.Url, options.PrivateKeyFilepath, options.Passphrase)
+		repositoryPath, err := CloneMaster(options.Url, options.PrivateKeyFilepath, options.Passphrase)
 		if err != nil {
 			return errors.Errorf("Git repository[%s] could not be downloaded: %s", options.Url, err.Error())
 		}
@@ -103,7 +107,7 @@ func NewRepository(path string, options GitOptions) *Repository {
 func (r *Repository) Pull() error {
 	r.rw.Lock()
 	defer r.rw.Unlock()
-	return Pull(r.Path, r.Options.PrivateKeyFilepath, r.Options.Passphrase)
+	return PullMaster(r.Path, r.Options.PrivateKeyFilepath, r.Options.Passphrase)
 }
 
 func (r *Repository) Remove() error {

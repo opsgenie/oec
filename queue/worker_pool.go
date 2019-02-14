@@ -80,6 +80,149 @@ func NewWorkerPool(poolConf *conf.PoolConf) WorkerPool {
 	}
 }
 
+func (wp *WorkerPoolImpl) Start() error {
+	defer wp.startStopMutex.Unlock()
+	wp.startStopMutex.Lock()
+
+	if wp.isRunning {
+		return errors.New("Worker pool is already running.")
+	}
+
+	go wp.run()
+	go wp.monitorMetrics(wp.poolConf.MonitoringPeriodInMillis)
+
+	wp.isRunning = true
+	wp.addInitialWorkers(wp.poolConf.MinNumberOfWorker)
+	return nil
+}
+
+func (wp *WorkerPoolImpl) Stop() error {
+	defer wp.startStopMutex.Unlock()
+	wp.startStopMutex.Lock()
+
+	if !wp.isRunning {
+		return errors.New("Worker pool is not running.")
+	}
+	wp.isRunning = false
+
+	logrus.Infof("Worker pool is stopping.")
+	close(wp.quit)
+	wp.workersWaitGroup.Wait()
+	logrus.Infof("Worker pool has stopped.")
+
+	return nil
+}
+
+func (wp *WorkerPoolImpl) StopNow() error {
+	defer wp.startStopMutex.Unlock()
+	wp.startStopMutex.Lock()
+
+	if !wp.isRunning {
+		return errors.New("Worker pool is not running.")
+	}
+
+	logrus.Infof("Worker pool is stopping immediately.")
+	close(wp.quitNow)
+
+	wp.isRunning = false
+	return nil
+}
+
+func (wp *WorkerPoolImpl) IsRunning() bool {
+	defer wp.startStopMutex.RUnlock()
+	wp.startStopMutex.RLock()
+
+	return wp.isRunning
+}
+
+func (wp *WorkerPoolImpl) SubmitChannel() chan<- Job {
+	return wp.jobQueue
+}
+
+func (wp *WorkerPoolImpl) Submit(job Job) (isSubmitted bool, err error) {
+
+	defer wp.startStopMutex.RUnlock()
+	wp.startStopMutex.RLock()
+
+	if !wp.isRunning {
+		return false, errors.New("Worker pool is not working")
+	}
+
+	logrus.Debugf("Job[%s] is being submmitted", job.JobId())
+
+	select {
+	case wp.jobQueue <- job:
+		return true, nil
+	default:
+		if wp.poolConf.MaxNumberOfWorker == wp.poolConf.MinNumberOfWorker {
+			return false, nil
+		}
+
+		if wp.CompareAndIncrementCurrentWorker() {
+			wp.workersWaitGroup.Add(1)
+			go func() {
+				worker := NewWorker(wp)
+				worker.work(job)
+			}()
+			return true, nil
+		}
+
+		logrus.Debugf("Job[%s] could not be submitted", job.JobId())
+		return false, nil
+	}
+}
+
+func (wp *WorkerPoolImpl) monitorMetrics(monitoringPeriodInMillis time.Duration) {
+	if monitoringPeriodInMillis == 0 {
+		return
+	}
+
+	logrus.Infof("Worker pool is running with; Min Worker: %d, Max Worker: %d, Queue Size: %d", wp.poolConf.MinNumberOfWorker, wp.poolConf.MaxNumberOfWorker, cap(wp.jobQueue))
+
+	ticker := time.NewTicker(monitoringPeriodInMillis * time.Millisecond)
+
+	for {
+		select {
+		case <- ticker.C:
+			logrus.Debugf("Current Worker: %d, Idle Worker: %d, Queue Size: %d, Queue load: %d", wp.NumberOfCurrentWorker(), wp.numberOfIdleWorker, cap(wp.jobQueue), len(wp.jobQueue))
+		case <- wp.quit:
+			ticker.Stop()
+			logrus.Infof("Monitor metrics has stopped.")
+			return
+		}
+	}
+}
+
+func (wp *WorkerPoolImpl) addInitialWorkers(num int32) {
+
+	wp.AddNumberOfCurrentAndIdleWorker(num)
+	wp.workersWaitGroup.Add(int(num))
+
+	for i := int32(0); i < num; i++ {
+		worker := NewWorker(wp)
+		go worker.work(nil)
+	}
+}
+
+
+func (wp *WorkerPoolImpl) run() {
+
+	logrus.Infof("Worker pool has started to run.")
+
+	for {
+		select {
+		case <- wp.quit:
+			logrus.Infof("Worker pool is waiting to quit.")
+			close(wp.jobQueue)
+			wp.workersWaitGroup.Wait()
+			return
+		case <- wp.quitNow:
+			logrus.Infof("Worker pool has stopped immediately.")
+			return
+		}
+	}
+}
+
 func (wp *WorkerPoolImpl) NumberOfAvailableWorker() int32 {
 	wp.numberOfWorkerMutex.Lock()
 	defer wp.numberOfWorkerMutex.Unlock()
@@ -131,149 +274,6 @@ func (wp *WorkerPoolImpl) CompareAndDecrementCurrentWorker() bool {
 		return true
 	}
 	return false
-}
-
-func (wp *WorkerPoolImpl) Stop() error {
-	defer wp.startStopMutex.Unlock()
-	wp.startStopMutex.Lock()
-
-	if !wp.isRunning {
-		return errors.New("Worker pool is not running.")
-	}
-	wp.isRunning = false
-
-	logrus.Infof("Worker pool is stopping.")
-	close(wp.quit)
-	wp.workersWaitGroup.Wait()
-	logrus.Infof("Worker pool has stopped.")
-
-	return nil
-}
-
-func (wp *WorkerPoolImpl) StopNow() error {
-	defer wp.startStopMutex.Unlock()
-	wp.startStopMutex.Lock()
-
-	if !wp.isRunning {
-		return errors.New("Worker pool is not running.")
-	}
-
-	logrus.Infof("Worker pool is stopping immediately.")
-	close(wp.quitNow)
-
-	wp.isRunning = false
-	return nil
-}
-
-func (wp *WorkerPoolImpl) Start() error {
-	defer wp.startStopMutex.Unlock()
-	wp.startStopMutex.Lock()
-
-	if wp.isRunning {
-		return errors.New("Worker pool is already running.")
-	}
-
-	go wp.run()
-	go wp.monitorMetrics(wp.poolConf.MonitoringPeriodInMillis)
-
-	wp.isRunning = true
-	wp.addInitialWorkers(wp.poolConf.MinNumberOfWorker)
-	return nil
-}
-
-func (wp *WorkerPoolImpl) IsRunning() bool {
-	defer wp.startStopMutex.RUnlock()
-	wp.startStopMutex.RLock()
-
-	return wp.isRunning
-}
-
-func (wp *WorkerPoolImpl) monitorMetrics(monitoringPeriodInMillis time.Duration) {
-	if monitoringPeriodInMillis == 0 {
-		return
-	}
-
-	logrus.Infof("Worker pool is running with; Min Worker: %d, Max Worker: %d, Queue Size: %d", wp.poolConf.MinNumberOfWorker, wp.poolConf.MaxNumberOfWorker, cap(wp.jobQueue))
-
-	ticker := time.NewTicker(monitoringPeriodInMillis * time.Millisecond)
-
-	for {
-		select {
-		case <- ticker.C:
-			logrus.Debugf("Current Worker: %d, Idle Worker: %d, Queue Size: %d, Queue load: %d", wp.NumberOfCurrentWorker(), wp.numberOfIdleWorker, cap(wp.jobQueue), len(wp.jobQueue))
-		case <- wp.quit:
-			ticker.Stop()
-			logrus.Infof("Monitor metrics has stopped.")
-			return
-		}
-	}
-}
-
-func (wp *WorkerPoolImpl) addInitialWorkers(num int32) {
-
-	wp.AddNumberOfCurrentAndIdleWorker(num)
-	wp.workersWaitGroup.Add(int(num))
-
-	for i := int32(0); i < num; i++ {
-		worker := NewWorker(wp)
-		go worker.work(nil)
-	}
-}
-
-func (wp *WorkerPoolImpl) SubmitChannel() chan<- Job {
-	return wp.jobQueue
-}
-
-
-func (wp *WorkerPoolImpl) Submit(job Job) (isSubmitted bool, err error) {
-
-	defer wp.startStopMutex.RUnlock()
-	wp.startStopMutex.RLock()
-
-	if !wp.isRunning {
-		return false, errors.New("Worker pool is not working")
-	}
-
-	logrus.Debugf("Job[%s] is being submmitted", job.JobId())
-
-	select {
-	case wp.jobQueue <- job:
-		return true, nil
-	default:
-		if wp.poolConf.MaxNumberOfWorker == wp.poolConf.MinNumberOfWorker {
-			return false, nil
-		}
-
-		if wp.CompareAndIncrementCurrentWorker() {
-			wp.workersWaitGroup.Add(1)
-			go func() {
-				worker := NewWorker(wp)
-				worker.work(job)
-			}()
-			return true, nil
-		}
-
-		logrus.Debugf("Job[%s] could not be submitted", job.JobId())
-		return false, nil
-	}
-}
-
-func (wp *WorkerPoolImpl) run() {
-
-	logrus.Infof("Worker pool has started to run.")
-
-	for {
-		select {
-		case <- wp.quit:
-			logrus.Infof("Worker pool is waiting to quit.")
-			close(wp.jobQueue)
-			wp.workersWaitGroup.Wait()
-			return
-		case <- wp.quitNow:
-			logrus.Infof("Worker pool has stopped immediately.")
-			return
-		}
-	}
 }
 
 /******************************************************************************************/

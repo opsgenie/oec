@@ -65,6 +65,21 @@ func (p *MaridPoller) RefreshClient(assumeRoleResult AssumeRoleResult) error {
 	return p.queueProvider.RefreshClient(assumeRoleResult)
 }
 
+func (p *MaridPoller) StartPolling() error {
+	defer p.startStopMutex.Unlock()
+	p.startStopMutex.Lock()
+
+	if p.isRunning {
+		return errors.New("Poller is already running.")
+	}
+
+	go p.run()
+
+	p.isRunning = true
+
+	return nil
+}
+
 func (p *MaridPoller) StopPolling() error {
 	defer p.startStopMutex.Unlock()
 	p.startStopMutex.Lock()
@@ -77,21 +92,6 @@ func (p *MaridPoller) StopPolling() error {
 	close(p.wakeUpChan)
 
 	p.isRunning = false
-
-	return nil
-}
-
-func (p *MaridPoller) StartPolling() error {
-	defer p.startStopMutex.Unlock()
-	p.startStopMutex.Lock()
-
-	if p.isRunning {
-		return errors.New("Poller is already running.")
-	}
-
-	go p.run()
-
-	p.isRunning = true
 
 	return nil
 }

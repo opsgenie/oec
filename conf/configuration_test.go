@@ -3,6 +3,7 @@ package conf
 import (
 	"github.com/opsgenie/marid2/git"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
@@ -38,6 +39,10 @@ func expectedConf() *Configuration {
 	expectedConf.ActionMappings = copyActionMappings(mockConf.ActionMappings)
 	addHomeDirPrefixToLocalActionFilepaths(&expectedConf.ActionMappings)
 	addHomeDirPrefixToPrivateKeyFilepaths(&expectedConf.ActionMappings)
+
+	if expectedConf.LogrusLevel == 0 {
+		expectedConf.LogrusLevel = logrus.InfoLevel
+	}
 	return &expectedConf
 }
 

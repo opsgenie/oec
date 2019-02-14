@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-var cloneRepositoryFunc = git.CloneRepository
+var cloneMasterFunc = git.CloneMaster
 
 func readConfigurationFromGit(url, privateKeyFilepath, passPhrase, confFilepath string) (*Configuration, error) {
 
@@ -15,7 +15,7 @@ func readConfigurationFromGit(url, privateKeyFilepath, passPhrase, confFilepath 
 		return nil, err
 	}
 
-	repoFilepath, err := cloneRepositoryFunc(url, privateKeyFilepath, passPhrase)
+	repoFilepath, err := cloneMasterFunc(url, privateKeyFilepath, passPhrase)
 	if err != nil {
 		return nil, err
 	}

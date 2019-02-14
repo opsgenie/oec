@@ -125,14 +125,16 @@ func (qp *MaridQueueProcessor) StartProcessing() error {
 		return err
 	}
 
-	go qp.startPullingRepositories(repositoryRefreshPeriod)
+	if qp.repositories.NotEmpty() {
+		qp.isRunningWaitGroup.Add(1) // one for pulling repositories
+		go qp.startPullingRepositories(repositoryRefreshPeriod)
+	}
 	qp.workerPool.Start()
 	qp.refreshPollers(token)
+	qp.isRunningWaitGroup.Add(1) // one for receiving token
 	go qp.run()
 
 	qp.isRunning = true
-	qp.isRunningWaitGroup.Add(1) // one for pulling repositories
-	qp.isRunningWaitGroup.Add(1) // one for receiving token
 	return nil
 }
 

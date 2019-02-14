@@ -2,23 +2,24 @@ package git
 
 import (
 	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 	"io/ioutil"
 	"os"
 )
 
-var gitCloneFunc = gitClone
+var gitCloneMasterFunc = gitCloneMaster
 
 const repositoryDirPrefix = "marid"
 
-func CloneRepository(url, privateKeyFilepath, passPhrase string) (repositoryPath string, err error) {
+func CloneMaster(url, privateKeyFilepath, passPhrase string) (repositoryPath string, err error) {
 
 	tmpDir, err := ioutil.TempDir("", repositoryDirPrefix)
 	if err != nil {
 		return "", err
 	}
 
-	err = gitCloneFunc(tmpDir, url, privateKeyFilepath, passPhrase)
+	err = gitCloneMasterFunc(tmpDir, url, privateKeyFilepath, passPhrase)
 	if err != nil {
 		os.RemoveAll(tmpDir)
 		return "", err
@@ -27,11 +28,13 @@ func CloneRepository(url, privateKeyFilepath, passPhrase string) (repositoryPath
 	return tmpDir, nil
 }
 
-func gitClone(tmpDir, gitUrl, privateKeyFilepath, passPhrase string) error {
+func gitCloneMaster(tmpDir, gitUrl, privateKeyFilepath, passPhrase string) error {
 
-	cloneOptions := &git.CloneOptions {
-		URL:               gitUrl,
-		RecurseSubmodules: git.DefaultSubmoduleRecursionDepth, 	// todo max depth and master
+	options := &git.CloneOptions {
+		URL:               	gitUrl,
+		RecurseSubmodules: 	git.DefaultSubmoduleRecursionDepth, 	// todo max depth and master
+		ReferenceName: 		plumbing.Master,
+		SingleBranch:  		true,
 	}
 
 	if privateKeyFilepath != "" {
@@ -41,15 +44,15 @@ func gitClone(tmpDir, gitUrl, privateKeyFilepath, passPhrase string) error {
 			return err
 		}
 
-		cloneOptions.Auth = auth
+		options.Auth = auth
 	}
 
-	err := cloneOptions.Validate()
+	err := options.Validate()
 	if err != nil {
 		return err
 	}
 
-	_, err = git.PlainClone(tmpDir, false, cloneOptions)
+	_, err = git.PlainClone(tmpDir, false, options)
 
 	return err
 }

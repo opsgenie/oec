@@ -21,7 +21,8 @@ type Configuration struct {
 	ActionMappings 	ActionMappings 	`json:"actionMappings" yaml:"actionMappings"`
 	PollerConf 		PollerConf 		`json:"pollerConf" yaml:"pollerConf"`
 	PoolConf 		PoolConf 		`json:"poolConf" yaml:"poolConf"`
-	LogLevel		logrus.Level	`json:"logLevel" yaml:"logLevel"`
+	LogLevel		string			`json:"logLevel" yaml:"logLevel"`
+	LogrusLevel		logrus.Level
 }
 
 type ActionName string
@@ -64,7 +65,7 @@ type PoolConf struct {
 var readConfigurationFromGitFunc = readConfigurationFromGit
 var readConfigurationFromLocalFunc = readConfigurationFromLocal
 
-var defaultConfFilepath = filepath.Join("~","opsgenie", "maridConfig.json")
+var defaultConfFilepath = filepath.Join("~","marid", "config.json")
 const defaultBaseUrl = "https://api.opsgenie.com"
 
 func ReadConfFile() (*Configuration, error) {
@@ -102,6 +103,13 @@ func validateConfiguration(conf *Configuration) error {
 		conf.BaseUrl = defaultBaseUrl
 		logrus.Infof("BaseUrl is not found in the configuration file, default url[%s] is set.", defaultBaseUrl)
 	}
+	level, err := logrus.ParseLevel(conf.LogLevel)
+	if err != nil {
+		conf.LogrusLevel = logrus.InfoLevel
+	} else {
+		conf.LogrusLevel = level
+	}
+
 	return nil
 }
 
@@ -127,7 +135,7 @@ func readConfFileFromSource(confSource string) (*Configuration, error) {
 		confFilepath := os.Getenv("MARID_CONF_LOCAL_FILEPATH")
 
 		if len(confFilepath) <= 0 {
-			confFilepath = addHomeDirPrefix(defaultConfFilepath) // todo when packaging, decide default confPath. homeDir can exist or not according to whether user.Current() exist or not. If there is only root user, homeDir will be "/".
+			confFilepath = addHomeDirPrefix(defaultConfFilepath)
 		} else {
 			confFilepath = addHomeDirPrefix(confFilepath)
 		}

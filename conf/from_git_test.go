@@ -9,10 +9,10 @@ import (
 
 func TestReadConfigurationFromGit(t *testing.T) {
 
-	defer func() { cloneRepositoryFunc = git.CloneRepository }()
+	defer func() { cloneMasterFunc = git.CloneMaster }()
 
 	confPath, err := util.CreateTempTestFile(mockJsonConfFileContent, ".json")
-	cloneRepositoryFunc = func(url, privateKeyFilepath, passPhrase string) (repositoryPath string, err error) {
+	cloneMasterFunc = func(url, privateKeyFilepath, passPhrase string) (repositoryPath string, err error) {
 		return "", nil
 	}
 

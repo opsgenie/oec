@@ -32,8 +32,6 @@ func (mqm *MaridQueueMessage) Process() (*runbook.ActionResultPayload ,error) {
 		return nil, err
 	}
 
-	//logrus.Warnf(*mqm.message.Body)
-
 	action := queuePayload.Action
 	if action == "" {
 		return nil, errors.New("SQS message does not contain action property")

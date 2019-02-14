@@ -7,8 +7,8 @@ import (
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"os"
-	"os/user"
 	fpath "path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -49,10 +49,12 @@ func readConfigurationFromFile(filepath string) (*Configuration, error) {
 func addHomeDirPrefix(filepath string) string {
 
 	if strings.HasPrefix(filepath, "~/") {
-		usr, err := user.Current()
-		if err == nil {
-			return fpath.Join(usr.HomeDir, strings.TrimPrefix(filepath, "~/"))
+		home := "HOME"
+		if runtime.GOOS == "windows" {
+			home = "USERPROFILE"
 		}
+
+		return fpath.Join(os.Getenv(home), strings.TrimPrefix(filepath, "~/"))
 	}
 
 	return fpath.Clean(filepath)

@@ -12,15 +12,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"syscall"
 	"time"
 )
 
-var addr = flag.String("marid-metrics", "8082", "The address to listen on for HTTP requests.")
-var defaultLogFilepath = filepath.Join("opsgenie", "logs", "marid.log")
+var metricAddr = flag.String("marid-metrics", "8082", "The address to listen on for HTTP requests.")
+var defaultLogFilepath = filepath.Join("/var", "log", "opsgenie", "marid.log")
 
 var MaridVersion string
 var MaridCommitVersion string
@@ -35,13 +34,8 @@ func main() {
 		},
 	)
 
-	usr, err := user.Current()
-	if err != nil {
-		logrus.Fatalln(err)
-	}
-
 	logger := &lumberjack.Logger {
-		Filename:  filepath.Join(usr.HomeDir, defaultLogFilepath),
+		Filename:  defaultLogFilepath,
 		MaxSize:   3, 	// MB
 		MaxAge:    10, 	// Days
 		LocalTime: true,
@@ -57,13 +51,13 @@ func main() {
 		logrus.Fatalln("Could not read configuration: ", err)
 	}
 
-	logrus.SetLevel(configuration.LogLevel)
+	logrus.SetLevel(configuration.LogrusLevel)
 
 	flag.Parse()
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		logrus.Infof("Marid-metrics serves in http://localhost:%s/metrics.", *addr)
-		logrus.Error("Marid-metrics error: ", http.ListenAndServe(":" + *addr, nil))
+		logrus.Infof("Marid-metrics serves in http://localhost:%s/metrics.", *metricAddr)
+		logrus.Error("Marid-metrics error: ", http.ListenAndServe(":" + *metricAddr, nil))
 	}()
 
 	queueProcessor := queue.NewQueueProcessor(configuration)
