@@ -1,18 +1,18 @@
 package queue
 
-type MaridToken struct {
-	IntegrationId     string          `json:"integrationId,omitempty"`
-	MaridMetadataList []MaridMetadata `json:"queueProperties,omitempty"`
+type OISToken struct {
+	IntegrationId   string        `json:"integrationId,omitempty"`
+	OISMetadataList []OISMetadata `json:"queueProperties,omitempty"`
 }
 
-type MaridMetadata struct {
+type OISMetadata struct {
 	AssumeRoleResult   AssumeRoleResult   `json:"assumeRoleResult,omitempty"`
 	QueueConfiguration QueueConfiguration `json:"queueConfiguration,omitempty"`
 }
 
 type AssumeRoleResult struct {
-	Credentials		Credentials	`json:"credentials,omitempty"`
-	AssumeRole		AssumeRole	`json:"assumeRole,omitempty"`
+	Credentials Credentials `json:"credentials,omitempty"`
+	AssumeRole  AssumeRole  `json:"assumeRole,omitempty"`
 }
 
 type Credentials struct {
@@ -34,14 +34,14 @@ type QueueConfiguration struct {
 	QueueUrl                      string `json:"queueUrl,omitempty"`
 }
 
-func (mmt MaridMetadata) ExpireTimeMillis() int64 {
+func (mmt OISMetadata) ExpireTimeMillis() int64 {
 	return mmt.AssumeRoleResult.Credentials.ExpireTimeMillis
 }
 
-func (mmt MaridMetadata) Region() string {
+func (mmt OISMetadata) Region() string {
 	return mmt.QueueConfiguration.Region
 }
 
-func (mmt MaridMetadata) QueueUrl() string {
+func (mmt OISMetadata) QueueUrl() string {
 	return mmt.QueueConfiguration.QueueUrl
 }

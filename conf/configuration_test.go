@@ -13,22 +13,22 @@ var readConfigurationFromGitCalled = false
 var readConfigurationFromLocalCalled = false
 
 var mockConf = &Configuration{
-	ApiKey: 		"ApiKey",
-	BaseUrl:		"https://api.opsgenie.com",
+	ApiKey:         "ApiKey",
+	BaseUrl:        "https://api.opsgenie.com",
 	ActionMappings: mockActionMappings,
 }
 
 var mockActionMappings = (map[ActionName]MappedAction)(ActionMappings{
-	"Create" : MappedAction{
+	"Create": MappedAction{
 		SourceType:           "local",
 		Filepath:             "/path/to/runbook.bin",
 		EnvironmentVariables: []string{"e1=v1", "e2=v2"},
 	},
-	"Close" : MappedAction{
-		SourceType:           "git",
+	"Close": MappedAction{
+		SourceType: "git",
 		GitOptions: git.GitOptions{
-			Url : "testUrl",
-			PrivateKeyFilepath : "testKeyPath",
+			Url:                "testUrl",
+			PrivateKeyFilepath: "testKeyPath",
 		},
 		EnvironmentVariables: []string{"e1=v1", "e2=v2"},
 	},
@@ -166,11 +166,11 @@ func TestReadConfFile(t *testing.T) {
 }
 
 func testReadConfFileFromGit(t *testing.T) {
-	os.Setenv("MARID_CONF_SOURCE", "git")
-	os.Setenv("MARID_CONF_GIT_URL", "utl")
-	os.Setenv("MARID_CONF_GIT_PRIVATE_KEY_FILEPATH", "/test_id_rsa")
-	os.Setenv("MARID_CONF_GIT_FILEPATH", "marid/testConf.json")
-	os.Setenv("MARID_CONF_GIT_PASSPHRASE", "pass")
+	os.Setenv("OIS_CONF_SOURCE", "git")
+	os.Setenv("OIS_CONF_GIT_URL", "utl")
+	os.Setenv("OIS_CONF_GIT_PRIVATE_KEY_FILEPATH", "/test_id_rsa")
+	os.Setenv("OIS_CONF_GIT_FILEPATH", "ois/testConf.json")
+	os.Setenv("OIS_CONF_GIT_PASSPHRASE", "pass")
 
 	readConfigurationFromGitFunc = mockReadConfigurationFromGit
 	configuration, err := ReadConfFile()
@@ -189,7 +189,7 @@ func testReadConfFileFromGit(t *testing.T) {
 }
 
 func testReadConfFileFromLocalWithDefaultPath(t *testing.T) {
-	os.Setenv("MARID_CONF_SOURCE", "local")
+	os.Setenv("OIS_CONF_SOURCE", "local")
 
 	readConfigurationFromLocalFunc = mockReadConfigurationFromLocalWithDefaultPath
 	configuration, err := ReadConfFile()
@@ -206,7 +206,7 @@ func testReadConfFileFromLocalWithDefaultPath(t *testing.T) {
 }
 
 func testReadConfFileWithoutActionMappings(t *testing.T) {
-	os.Setenv("MARID_CONF_SOURCE", "local")
+	os.Setenv("OIS_CONF_SOURCE", "local")
 
 	readConfigurationFromLocalFunc = mockReadConfigurationFromLocalWithDefaultPathWithoutActionMappings
 	_, err := ReadConfFile()
@@ -223,8 +223,8 @@ func testReadConfFileWithoutActionMappings(t *testing.T) {
 }
 
 func testReadConfFileFromLocalWithCustomPath(t *testing.T) {
-	os.Setenv("MARID_CONF_SOURCE", "local")
-	os.Setenv("MARID_CONF_LOCAL_FILEPATH", testLocalConfFilePath)
+	os.Setenv("OIS_CONF_SOURCE", "local")
+	os.Setenv("OIS_CONF_LOCAL_FILEPATH", testLocalConfFilePath)
 
 	readConfigurationFromLocalFunc = mockReadConfigurationFromLocalWithCustomPath
 	configuration, err := ReadConfFile()
@@ -241,7 +241,7 @@ func testReadConfFileFromLocalWithCustomPath(t *testing.T) {
 }
 
 func TestReadConfFileWithUnknownSource(t *testing.T) {
-	os.Setenv("MARID_CONF_SOURCE", "dummy")
+	os.Setenv("OIS_CONF_SOURCE", "dummy")
 
 	_, err := ReadConfFile()
 	assert.Error(t, err, "Error should be thrown.")

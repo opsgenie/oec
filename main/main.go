@@ -18,33 +18,33 @@ import (
 	"time"
 )
 
-var metricAddr = flag.String("marid-metrics", "8082", "The address to listen on for HTTP requests.")
-var defaultLogFilepath = filepath.Join("/var", "log", "opsgenie", "marid.log")
+var metricAddr = flag.String("ois-metrics", "8082", "The address to listen on for HTTP requests.")
+var defaultLogFilepath = filepath.Join("/var", "log", "opsgenie", "ois.log")
 
-var MaridVersion string
-var MaridCommitVersion string
+var OISVersion string
+var OISCommitVersion string
 
 func main() {
 
 	logrus.SetFormatter(
-		&logrus.TextFormatter {
-			ForceColors: true,
-			FullTimestamp: true,
+		&logrus.TextFormatter{
+			ForceColors:     true,
+			FullTimestamp:   true,
 			TimestampFormat: time.RFC3339Nano,
 		},
 	)
 
-	logger := &lumberjack.Logger {
+	logger := &lumberjack.Logger{
 		Filename:  defaultLogFilepath,
-		MaxSize:   3, 	// MB
-		MaxAge:    10, 	// Days
+		MaxSize:   3,  // MB
+		MaxAge:    10, // Days
 		LocalTime: true,
 	}
 
 	logrus.SetOutput(io.MultiWriter(os.Stdout, logger))
 
-	logrus.Infof("Marid version is %s", MaridVersion)
-	logrus.Infof("Marid commit version is %s", MaridCommitVersion)
+	logrus.Infof("OIS version is %s", OISVersion)
+	logrus.Infof("OIS commit version is %s", OISCommitVersion)
 
 	configuration, err := conf.ReadConfFile()
 	if err != nil {
@@ -56,12 +56,12 @@ func main() {
 	flag.Parse()
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		logrus.Infof("Marid-metrics serves in http://localhost:%s/metrics.", *metricAddr)
-		logrus.Error("Marid-metrics error: ", http.ListenAndServe(":" + *metricAddr, nil))
+		logrus.Infof("OIS-metrics serves in http://localhost:%s/metrics.", *metricAddr)
+		logrus.Error("OIS-metrics error: ", http.ListenAndServe(":"+*metricAddr, nil))
 	}()
 
 	queueProcessor := queue.NewQueueProcessor(configuration)
-	queue.UserAgentHeader = fmt.Sprintf("%s/%s %s (%s/%s)",  MaridVersion, MaridCommitVersion, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	queue.UserAgentHeader = fmt.Sprintf("%s/%s %s (%s/%s)", OISVersion, OISCommitVersion, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 
 	go func() {
 		err = queueProcessor.StartProcessing()
@@ -74,8 +74,8 @@ func main() {
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
 	select {
-	case <- signals:
-		logrus.Infof("Marid will be stopped gracefully.")
+	case <-signals:
+		logrus.Infof("OIS will be stopped gracefully.")
 		err := queueProcessor.StopProcessing()
 		if err != nil {
 			logrus.Fatalln(err)
@@ -84,5 +84,3 @@ func main() {
 
 	os.Exit(0)
 }
-
-

@@ -19,31 +19,31 @@ import (
 )
 
 var mockConf = &conf.Configuration{
-	ApiKey:		"ApiKey",
+	ApiKey:     "ApiKey",
 	PollerConf: *mockPollerConf,
-	PoolConf: 	*mockPoolConf,
+	PoolConf:   *mockPoolConf,
 }
 
-func newQueueProcessorTest() *MaridQueueProcessor {
+func newQueueProcessorTest() *OISQueueProcessor {
 
-	return &MaridQueueProcessor{
-		successRefreshPeriod: 	successRefreshPeriod,
-		errorRefreshPeriod:   	errorRefreshPeriod,
-		workerPool:           	NewMockWorkerPool(),
-		conf:           		mockConf,
-		repositories:			git.NewRepositories(),
-		pollers:              	make(map[string]Poller),
-		quit:                 	make(chan struct{}),
-		isRunning:            	false,
-		isRunningWaitGroup:   	&sync.WaitGroup{},
-		startStopMutex:       	&sync.Mutex{},
-		retryer:              	&retryer.Retryer{},
+	return &OISQueueProcessor{
+		successRefreshPeriod: successRefreshPeriod,
+		errorRefreshPeriod:   errorRefreshPeriod,
+		workerPool:           NewMockWorkerPool(),
+		conf:                 mockConf,
+		repositories:         git.NewRepositories(),
+		pollers:              make(map[string]Poller),
+		quit:                 make(chan struct{}),
+		isRunning:            false,
+		isRunningWaitGroup:   &sync.WaitGroup{},
+		startStopMutex:       &sync.Mutex{},
+		retryer:              &retryer.Retryer{},
 	}
 }
 
 var mockPollers = map[string]Poller{
-	mockQueueUrl1 : NewMockPoller(),
-	mockQueueUrl2 : NewMockPoller(),
+	mockQueueUrl1: NewMockPoller(),
+	mockQueueUrl2: NewMockPoller(),
 }
 
 func mockHttpGetError(retryer *retryer.Retryer, request *retryer.Request) (*http.Response, error) {
@@ -65,14 +65,14 @@ func mockHttpGet(retryer *retryer.Retryer, request *retryer.Request) (*http.Resp
 func mockHttpGetInvalidJson(retryer *retryer.Retryer, request *retryer.Request) (*http.Response, error) {
 
 	response := &http.Response{}
-	response.Body = ioutil.NopCloser( bytes.NewBufferString(`{"Invalid json": }`))
+	response.Body = ioutil.NopCloser(bytes.NewBufferString(`{"Invalid json": }`))
 
 	return response, nil
 }
 
 func TestValidateNewQueueProcessor(t *testing.T) {
 	configuration := &conf.Configuration{}
-	processor := NewQueueProcessor(configuration).(*MaridQueueProcessor)
+	processor := NewQueueProcessor(configuration).(*OISQueueProcessor)
 
 	assert.Equal(t, int64(maxNumberOfMessages), processor.conf.PollerConf.MaxNumberOfMessages)
 	assert.Equal(t, int64(visibilityTimeoutInSec), processor.conf.PollerConf.VisibilityTimeoutInSeconds)
@@ -137,7 +137,7 @@ func TestStartQueueProcessorInitialError(t *testing.T) {
 	err := processor.StartProcessing()
 
 	assert.NotNil(t, err)
-	assert.Equal(t,"Test http error has occurred while getting token." , err.Error())
+	assert.Equal(t, "Test http error has occurred while getting token.", err.Error())
 }
 
 func TestStopQueueProcessorWhileNotRunning(t *testing.T) {
@@ -147,7 +147,7 @@ func TestStopQueueProcessorWhileNotRunning(t *testing.T) {
 	err := processor.StopProcessing()
 
 	assert.NotNil(t, err)
-	assert.Equal(t,"Queue processor is not running." , err.Error())
+	assert.Equal(t, "Queue processor is not running.", err.Error())
 }
 
 func TestReceiveToken(t *testing.T) {
@@ -166,19 +166,19 @@ func TestReceiveToken(t *testing.T) {
 	token, err := processor.receiveToken()
 
 	assert.Nil(t, err)
-	assert.Equal(t, 2, len(token.MaridMetadataList))
-	assert.Equal(t, "accessKeyId1", token.MaridMetadataList[0].AssumeRoleResult.Credentials.AccessKeyId)
-	assert.Equal(t, "accessKeyId2", token.MaridMetadataList[1].AssumeRoleResult.Credentials.AccessKeyId)
+	assert.Equal(t, 2, len(token.OISMetadataList))
+	assert.Equal(t, "accessKeyId1", token.OISMetadataList[0].AssumeRoleResult.Credentials.AccessKeyId)
+	assert.Equal(t, "accessKeyId2", token.OISMetadataList[1].AssumeRoleResult.Credentials.AccessKeyId)
 
-	for _, poller := range processor.pollers  {
-		maridMetadata := poller.QueueProvider().MaridMetadata()
-		expectedQuery := maridMetadata.Region() + "=" + strconv.FormatInt(maridMetadata.ExpireTimeMillis(), 10)
+	for _, poller := range processor.pollers {
+		oisMetadata := poller.QueueProvider().OISMetadata()
+		expectedQuery := oisMetadata.Region() + "=" + strconv.FormatInt(oisMetadata.ExpireTimeMillis(), 10)
 
 		assert.True(t, strings.Contains(actualRequest.URL.RawQuery, expectedQuery))
 	}
 
 	//assert.Equal(t, "api.opsgenie.com", actualRequest.URL.Host)
-	assert.Equal(t, "/v2/integrations/maridv2/credentials", actualRequest.URL.Path)
+	assert.Equal(t, "/v2/integrations/ois/credentials", actualRequest.URL.Path)
 }
 
 func TestReceiveTokenInvalidJson(t *testing.T) {
@@ -223,19 +223,19 @@ func TestAddTwoDifferentPollersTest(t *testing.T) {
 
 	processor := newQueueProcessorTest()
 
-	poller := processor.addPoller(NewMockQueueProvider(), &mockIntegrationId).(*MaridPoller)
+	poller := processor.addPoller(NewMockQueueProvider(), &mockIntegrationId).(*OISPoller)
 
 	mockQueueProvider2 := NewMockQueueProvider().(*MockQueueProvider)
-	mockQueueProvider2.MaridMetadataFunc = func() MaridMetadata {
-		return mockMaridMetadata2
+	mockQueueProvider2.OISMetadataFunc = func() OISMetadata {
+		return mockOISMetadata2
 	}
 
 	processor.addPoller(mockQueueProvider2, &mockIntegrationId)
 
-	assert.Equal(t, mockMaridMetadata1, poller.QueueProvider().MaridMetadata())
+	assert.Equal(t, mockOISMetadata1, poller.QueueProvider().OISMetadata())
 	assert.Equal(t, processor.conf.PollerConf, *poller.pollerConf)
 
-	_, contains := processor.pollers[mockMaridMetadata1.QueueUrl()]
+	_, contains := processor.pollers[mockOISMetadata1.QueueUrl()]
 	assert.True(t, contains)
 
 	assert.Equal(t, 2, len(processor.pollers))
@@ -250,7 +250,7 @@ func TestRemovePollerTest(t *testing.T) {
 	poller := processor.removePoller(mockQueueUrl1)
 	processor.removePoller(mockQueueUrl2)
 
-	assert.Equal(t, mockMaridMetadata1.QueueUrl(), poller.QueueProvider().MaridMetadata().QueueUrl())
+	assert.Equal(t, mockOISMetadata1.QueueUrl(), poller.QueueProvider().OISMetadata().QueueUrl())
 
 	assert.Equal(t, 0, len(processor.pollers))
 }
@@ -365,11 +365,10 @@ func TestRefreshPollerWithEmptyToken(t *testing.T) {
 // Mock QueueProcessor
 
 type MockQueueProcessor struct {
-
 	StartProcessingFunc func() error
-	StopProcessingFunc func() error
-	IsRunningFunc func() bool
-	WaitFunc func()
+	StopProcessingFunc  func() error
+	IsRunningFunc       func() bool
+	WaitFunc            func()
 }
 
 func NewMockQueueProcessor() *MockQueueProcessor {
@@ -390,18 +389,15 @@ func (m *MockQueueProcessor) StopProcessing() error {
 	return nil
 }
 
-func (m *MockQueueProcessor)  IsRunning() bool {
+func (m *MockQueueProcessor) IsRunning() bool {
 	if m.IsRunningFunc != nil {
 		return m.IsRunningFunc()
 	}
 	return false
 }
 
-func (m *MockQueueProcessor)  Wait() {
+func (m *MockQueueProcessor) Wait() {
 	if m.WaitFunc != nil {
 		m.WaitFunc()
 	}
 }
-
-
-

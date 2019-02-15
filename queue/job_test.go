@@ -21,14 +21,14 @@ func newJobTest() *SqsJob {
 		return mockActionResultPayload, nil
 	}
 
-	return &SqsJob {
-		queueProvider: 	NewMockQueueProvider(),
-		queueMessage:  	mockQueueMessage,
-		executeMutex:  	&sync.Mutex{},
-		apiKey:			&mockApiKey,
-		baseUrl:		&mockBaseUrl,
-		integrationId: 	&mockIntegrationId,
-		state:         	JobInitial,
+	return &SqsJob{
+		queueProvider: NewMockQueueProvider(),
+		queueMessage:  mockQueueMessage,
+		executeMutex:  &sync.Mutex{},
+		apiKey:        &mockApiKey,
+		baseUrl:       &mockBaseUrl,
+		integrationId: &mockIntegrationId,
+		state:         JobInitial,
 	}
 }
 
@@ -52,7 +52,7 @@ func TestExecute(t *testing.T) {
 		json.Unmarshal(body, actionResult)
 
 		assert.Equal(t, mockActionResultPayload, actionResult)
-		assert.Equal(t, "GenieKey " + mockApiKey, req.Header.Get("Authorization"))
+		assert.Equal(t, "GenieKey "+mockApiKey, req.Header.Get("Authorization"))
 		wg.Done()
 	}))
 	defer testServer.Close()
@@ -87,7 +87,7 @@ func TestMultipleExecute(t *testing.T) {
 	errorResults := make(chan error, 25)
 
 	wg.Add(26) // 25 execute try + 1 successful execute send result to testServer
-	for i := 0; i < 25 ; i++ {
+	for i := 0; i < 25; i++ {
 		go func() {
 			defer wg.Done()
 			err := sqsJob.Execute()
@@ -101,8 +101,8 @@ func TestMultipleExecute(t *testing.T) {
 	expectedState := int32(JobFinished)
 	actualState := sqsJob.state
 
-	assert.Equal(t, expectedState, actualState) 	// only one execute finished
-	assert.Equal(t, 24, len(errorResults))	// other executes will fail
+	assert.Equal(t, expectedState, actualState) // only one execute finished
+	assert.Equal(t, 24, len(errorResults))      // other executes will fail
 }
 
 func TestExecuteInNotInitialState(t *testing.T) {
@@ -148,7 +148,7 @@ func TestExecuteWithDeleteError(t *testing.T) {
 	err := sqsJob.Execute()
 	assert.NotNil(t, err)
 
-	expectedErr := errors.Errorf("Message[%s] could not be deleted from the queue[%s]: %s", sqsJob.JobId(), sqsJob.queueProvider.MaridMetadata().Region(), "Delete Error")
+	expectedErr := errors.Errorf("Message[%s] could not be deleted from the queue[%s]: %s", sqsJob.JobId(), sqsJob.queueProvider.OISMetadata().Region(), "Delete Error")
 	assert.EqualError(t, err, expectedErr.Error())
 
 	expectedState := int32(JobError)
@@ -163,7 +163,7 @@ func TestExecuteWithInvalidQueueMessage(t *testing.T) {
 
 	sqsJob.queueMessage.(*MockQueueMessage).MessageFunc = func() *sqs.Message {
 		falseIntegrationId := "falseIntegrationId"
-		messageAttr := map[string]*sqs.MessageAttributeValue{integrationId: {StringValue: &falseIntegrationId} }
+		messageAttr := map[string]*sqs.MessageAttributeValue{integrationId: {StringValue: &falseIntegrationId}}
 		return &sqs.Message{MessageAttributes: messageAttr, MessageId: &mockMessageId}
 	}
 
@@ -181,8 +181,7 @@ func TestExecuteWithInvalidQueueMessage(t *testing.T) {
 
 // Mock Job
 type MockJob struct {
-
-	JobIdFunc func() string
+	JobIdFunc   func() string
 	ExecuteFunc func() error
 }
 

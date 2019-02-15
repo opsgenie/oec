@@ -17,13 +17,13 @@ var mockActionMappings = &conf.ActionMappings{
 	"action2": conf.MappedAction{SourceType: "github"},
 }
 
-var(
-	mockMessageId = "mockMessageId"
-	mockApiKey = "mockApiKey"
-	mockBasePath = "mockBasePath"
-	mockBaseUrl = "mockBaseUrl"
+var (
+	mockMessageId     = "mockMessageId"
+	mockApiKey        = "mockApiKey"
+	mockBasePath      = "mockBasePath"
+	mockBaseUrl       = "mockBaseUrl"
 	mockIntegrationId = "mockIntegrationId"
-	)
+)
 
 func mockExecuteRunbook(mappedAction *conf.MappedAction, repositories *git.Repositories, arg []string) (string, string, error) {
 	return "Operation executed successfully!", "", nil
@@ -35,7 +35,7 @@ func TestGetMessage(t *testing.T) {
 	expectedMessage.SetMessageId("messageId")
 	expectedMessage.SetBody("messageBody")
 
-	queueMessage := NewMaridMessage(expectedMessage, mockActionMappings, nil)
+	queueMessage := NewOISMessage(expectedMessage, mockActionMappings, nil)
 	actualMessage := queueMessage.Message()
 
 	assert.Equal(t, expectedMessage, actualMessage)
@@ -50,7 +50,7 @@ func TestProcessSuccessfully(t *testing.T) {
 	body := `{"action":"action1"}`
 	id := "MessageId"
 	message := &sqs.Message{Body: &body, MessageId: &id}
-	queueMessage := NewMaridMessage(message, mockActionMappings, nil)
+	queueMessage := NewOISMessage(message, mockActionMappings, nil)
 
 	result, err := queueMessage.Process()
 	assert.Nil(t, err)
@@ -65,7 +65,7 @@ func TestProcessMappedActionNotFound(t *testing.T) {
 
 	body := `{"action":"action3"}`
 	message := &sqs.Message{Body: &body}
-	queueMessage := NewMaridMessage(message, mockActionMappings, nil)
+	queueMessage := NewOISMessage(message, mockActionMappings, nil)
 
 	_, err := queueMessage.Process()
 	expectedErr := errors.New("There is no mapped action found for [action3]")
@@ -80,7 +80,7 @@ func TestProcessFieldMissing(t *testing.T) {
 
 	body := `{"alert":{}}`
 	message := &sqs.Message{Body: &body}
-	queueMessage := NewMaridMessage(message, mockActionMappings, nil)
+	queueMessage := NewOISMessage(message, mockActionMappings, nil)
 
 	_, err := queueMessage.Process()
 	expectedErr := errors.New("SQS message does not contain action property")
@@ -90,7 +90,7 @@ func TestProcessFieldMissing(t *testing.T) {
 // Mock Queue Message
 type MockQueueMessage struct {
 	MessageFunc func() *sqs.Message
-	ProcessFunc func() (*runbook.ActionResultPayload ,error)
+	ProcessFunc func() (*runbook.ActionResultPayload, error)
 }
 
 func (mqm *MockQueueMessage) Message() *sqs.Message {
@@ -102,19 +102,19 @@ func (mqm *MockQueueMessage) Message() *sqs.Message {
 	messageAttr := map[string]*sqs.MessageAttributeValue{integrationId: {StringValue: &mockIntegrationId}}
 
 	return &sqs.Message{
-		MessageId: 			&mockMessageId,
-		Body:				&body,
-		MessageAttributes: 	messageAttr,
+		MessageId:         &mockMessageId,
+		Body:              &body,
+		MessageAttributes: messageAttr,
 	}
 }
 
-func (mqm *MockQueueMessage) Process() (*runbook.ActionResultPayload ,error) {
+func (mqm *MockQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 	if mqm.ProcessFunc != nil {
 		return mqm.ProcessFunc()
 	}
 
 	multip := time.Duration(rand.Int31n(100 * 3))
-	time.Sleep(time.Millisecond * multip * 10)	// simulate a process
+	time.Sleep(time.Millisecond * multip * 10) // simulate a process
 	return &runbook.ActionResultPayload{}, nil
 }
 

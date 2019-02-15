@@ -16,13 +16,13 @@ const (
 )
 
 type Configuration struct {
-	ApiKey 			string 			`json:"apiKey" yaml:"apiKey"`
-	BaseUrl 		string			`json:"baseUrl" yaml:"baseUrl"`
-	ActionMappings 	ActionMappings 	`json:"actionMappings" yaml:"actionMappings"`
-	PollerConf 		PollerConf 		`json:"pollerConf" yaml:"pollerConf"`
-	PoolConf 		PoolConf 		`json:"poolConf" yaml:"poolConf"`
-	LogLevel		string			`json:"logLevel" yaml:"logLevel"`
-	LogrusLevel		logrus.Level
+	ApiKey         string         `json:"apiKey" yaml:"apiKey"`
+	BaseUrl        string         `json:"baseUrl" yaml:"baseUrl"`
+	ActionMappings ActionMappings `json:"actionMappings" yaml:"actionMappings"`
+	PollerConf     PollerConf     `json:"pollerConf" yaml:"pollerConf"`
+	PoolConf       PoolConf       `json:"poolConf" yaml:"poolConf"`
+	LogLevel       string         `json:"logLevel" yaml:"logLevel"`
+	LogrusLevel    logrus.Level
 }
 
 type ActionName string
@@ -55,22 +55,23 @@ type PollerConf struct {
 }
 
 type PoolConf struct {
-	MaxNumberOfWorker        int32			`json:"maxNumberOfWorker" yaml:"maxNumberOfWorker"`
-	MinNumberOfWorker        int32			`json:"minNumberOfWorker" yaml:"minNumberOfWorker"`
-	QueueSize                int32			`json:"queueSize" yaml:"queueSize"`
-	KeepAliveTimeInMillis    time.Duration	`json:"keepAliveTimeInMillis" yaml:"keepAliveTimeInMillis"`
-	MonitoringPeriodInMillis time.Duration	`json:"monitoringPeriodInMillis" yaml:"monitoringPeriodInMillis"`
+	MaxNumberOfWorker        int32         `json:"maxNumberOfWorker" yaml:"maxNumberOfWorker"`
+	MinNumberOfWorker        int32         `json:"minNumberOfWorker" yaml:"minNumberOfWorker"`
+	QueueSize                int32         `json:"queueSize" yaml:"queueSize"`
+	KeepAliveTimeInMillis    time.Duration `json:"keepAliveTimeInMillis" yaml:"keepAliveTimeInMillis"`
+	MonitoringPeriodInMillis time.Duration `json:"monitoringPeriodInMillis" yaml:"monitoringPeriodInMillis"`
 }
 
 var readConfigurationFromGitFunc = readConfigurationFromGit
 var readConfigurationFromLocalFunc = readConfigurationFromLocal
 
-var defaultConfFilepath = filepath.Join("~","marid", "config.json")
+var defaultConfFilepath = filepath.Join("~", "ois", "config.json")
+
 const defaultBaseUrl = "https://api.opsgenie.com"
 
 func ReadConfFile() (*Configuration, error) {
 
-	confSource := os.Getenv("MARID_CONF_SOURCE")
+	confSource := os.Getenv("OIS_CONF_SOURCE")
 	conf, err := readConfFileFromSource(strings.ToLower(confSource))
 	if err != nil {
 		return nil, err
@@ -117,10 +118,10 @@ func readConfFileFromSource(confSource string) (*Configuration, error) {
 
 	switch confSource {
 	case GitSourceType:
-		url := os.Getenv("MARID_CONF_GIT_URL")
-		privateKeyFilepath := os.Getenv("MARID_CONF_GIT_PRIVATE_KEY_FILEPATH")
-		passphrase := os.Getenv("MARID_CONF_GIT_PASSPHRASE")
-		confFilepath := os.Getenv("MARID_CONF_GIT_FILEPATH")
+		url := os.Getenv("OIS_CONF_GIT_URL")
+		privateKeyFilepath := os.Getenv("OIS_CONF_GIT_PRIVATE_KEY_FILEPATH")
+		passphrase := os.Getenv("OIS_CONF_GIT_PASSPHRASE")
+		confFilepath := os.Getenv("OIS_CONF_GIT_FILEPATH")
 
 		if privateKeyFilepath != "" {
 			privateKeyFilepath = addHomeDirPrefix(privateKeyFilepath)
@@ -132,7 +133,7 @@ func readConfFileFromSource(confSource string) (*Configuration, error) {
 
 		return readConfigurationFromGitFunc(url, privateKeyFilepath, passphrase, confFilepath)
 	case LocalSourceType:
-		confFilepath := os.Getenv("MARID_CONF_LOCAL_FILEPATH")
+		confFilepath := os.Getenv("OIS_CONF_LOCAL_FILEPATH")
 
 		if len(confFilepath) <= 0 {
 			confFilepath = addHomeDirPrefix(defaultConfFilepath)

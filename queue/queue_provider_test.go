@@ -12,9 +12,9 @@ import (
 	"testing"
 )
 
-func newQueueProviderTest() *MaridQueueProvider {
-	return &MaridQueueProvider {
-		maridMetadata:      mockMaridMetadata1,
+func newQueueProviderTest() *OISQueueProvider {
+	return &OISQueueProvider{
+		oisMetadata:        mockOISMetadata1,
 		refreshClientMutex: &sync.RWMutex{},
 		client:             NewMockSqsClient(nil),
 	}
@@ -98,7 +98,7 @@ func TestReceiveMessage(t *testing.T) {
 	var capturedInput *sqs.ReceiveMessageInput
 	provider.client.(*mockSqsClient).ReceiveMessageFunc = func(input *sqs.ReceiveMessageInput) (*sqs.ReceiveMessageOutput, error) {
 		capturedInput = input
-		return &sqs.ReceiveMessageOutput{Messages: []*sqs.Message{{},{}}}, nil
+		return &sqs.ReceiveMessageOutput{Messages: []*sqs.Message{{}, {}}}, nil
 	}
 
 	messages, err := provider.ReceiveMessage(10, 30)
@@ -107,7 +107,7 @@ func TestReceiveMessage(t *testing.T) {
 	assert.Equal(t, 2, len(messages))
 	assert.Equal(t, int64(30), *capturedInput.VisibilityTimeout)
 	assert.Equal(t, mockQueueUrl1, *capturedInput.QueueUrl)
-	assert.Equal(t, int64(0), *capturedInput.WaitTimeSeconds)	// because of short polling
+	assert.Equal(t, int64(0), *capturedInput.WaitTimeSeconds) // because of short polling
 	assert.Equal(t, int64(10), *capturedInput.MaxNumberOfMessages)
 	assert.Equal(t, 1, len(capturedInput.MessageAttributeNames))
 	assert.Equal(t, "integrationId", *capturedInput.MessageAttributeNames[0])
@@ -121,7 +121,7 @@ func TestReceiveMessageWithError(t *testing.T) {
 		return nil, errors.New("Test receive message visibility error")
 	}
 
-	_, err := provider.ReceiveMessage(10,30)
+	_, err := provider.ReceiveMessage(10, 30)
 
 	assert.NotNil(t, err)
 	assert.Equal(t, "Test receive message visibility error", err.Error())
@@ -136,19 +136,19 @@ func TestRefreshClient(t *testing.T) {
 	assert.Nil(t, err)
 
 	expectedConfig := aws.NewConfig().
-		WithRegion(provider.MaridMetadata().Region()).
+		WithRegion(provider.OISMetadata().Region()).
 		WithCredentials(mockCreds)
 
 	assert.Equal(t, expectedConfig.Credentials, provider.client.(*sqs.SQS).Config.Credentials)
 	assert.Equal(t, expectedConfig.Region, provider.client.(*sqs.SQS).Config.Region)
-	assert.Equal(t, mockAssumeRoleResult2, provider.maridMetadata.AssumeRoleResult)
+	assert.Equal(t, mockAssumeRoleResult2, provider.oisMetadata.AssumeRoleResult)
 }
 
 // Mock SqsClient
 type mockSqsClient struct {
-	DeleteMessageFunc func(input *sqs.DeleteMessageInput) (*sqs.DeleteMessageOutput, error)
+	DeleteMessageFunc           func(input *sqs.DeleteMessageInput) (*sqs.DeleteMessageOutput, error)
 	ChangeMessageVisibilityFunc func(input *sqs.ChangeMessageVisibilityInput) (*sqs.ChangeMessageVisibilityOutput, error)
-	ReceiveMessageFunc func(input *sqs.ReceiveMessageInput) (*sqs.ReceiveMessageOutput, error)
+	ReceiveMessageFunc          func(input *sqs.ReceiveMessageInput) (*sqs.ReceiveMessageOutput, error)
 }
 
 func (c *mockSqsClient) DeleteMessage(input *sqs.DeleteMessageInput) (*sqs.DeleteMessageOutput, error) {
@@ -178,18 +178,16 @@ func NewMockSqsClient(p client.ConfigProvider, cfgs ...*aws.Config) SQS {
 
 // Mock QueueProvider
 type MockQueueProvider struct {
-
 	ChangeMessageVisibilityFunc func(message *sqs.Message, visibilityTimeout int64) error
-	DeleteMessageFunc func(message *sqs.Message) error
-	ReceiveMessageFunc func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error)
-	MaridMetadataFunc func() MaridMetadata
-	RefreshClientFunc func(assumeRoleResult AssumeRoleResult) error
-	IsTokenExpiredFunc func() bool
+	DeleteMessageFunc           func(message *sqs.Message) error
+	ReceiveMessageFunc          func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error)
+	OISMetadataFunc             func() OISMetadata
+	RefreshClientFunc           func(assumeRoleResult AssumeRoleResult) error
+	IsTokenExpiredFunc          func() bool
 }
 
 func NewMockQueueProvider() QueueProvider {
-	return &MockQueueProvider{
-	}
+	return &MockQueueProvider{}
 }
 
 func (mqp *MockQueueProvider) IsTokenExpired() bool {
@@ -220,11 +218,11 @@ func (mqp *MockQueueProvider) ReceiveMessage(numOfMessage int64, visibilityTimeo
 	return []*sqs.Message{}, nil
 }
 
-func (mqp *MockQueueProvider) MaridMetadata() MaridMetadata {
-	if mqp.MaridMetadataFunc != nil {
-		return mqp.MaridMetadataFunc()
+func (mqp *MockQueueProvider) OISMetadata() OISMetadata {
+	if mqp.OISMetadataFunc != nil {
+		return mqp.OISMetadataFunc()
 	}
-	return mockMaridMetadata1
+	return mockOISMetadata1
 }
 
 func (mqp *MockQueueProvider) RefreshClient(assumeRoleResult AssumeRoleResult) error {
@@ -235,11 +233,11 @@ func (mqp *MockQueueProvider) RefreshClient(assumeRoleResult AssumeRoleResult) e
 }
 
 var mockSuccessReceiveFunc = func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
-	messages := make([]*sqs.Message,0)
+	messages := make([]*sqs.Message, 0)
 	for i := int64(0); i < numOfMessage; i++ {
 		id := strconv.FormatInt(i, 10)
-		messageAttr := map[string]*sqs.MessageAttributeValue{"integrationId": {StringValue: &mockIntegrationId} }
-		messages = append(messages, &sqs.Message{MessageId: &id, MessageAttributes: messageAttr })
+		messageAttr := map[string]*sqs.MessageAttributeValue{"integrationId": {StringValue: &mockIntegrationId}}
+		messages = append(messages, &sqs.Message{MessageId: &id, MessageAttributes: messageAttr})
 	}
 
 	return messages, nil

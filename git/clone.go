@@ -10,7 +10,7 @@ import (
 
 var gitCloneMasterFunc = gitCloneMaster
 
-const repositoryDirPrefix = "marid"
+const repositoryDirPrefix = "ois"
 
 func CloneMaster(url, privateKeyFilepath, passPhrase string) (repositoryPath string, err error) {
 
@@ -30,11 +30,11 @@ func CloneMaster(url, privateKeyFilepath, passPhrase string) (repositoryPath str
 
 func gitCloneMaster(tmpDir, gitUrl, privateKeyFilepath, passPhrase string) error {
 
-	options := &git.CloneOptions {
-		URL:               	gitUrl,
-		RecurseSubmodules: 	git.DefaultSubmoduleRecursionDepth, 	// todo max depth and master
-		ReferenceName: 		plumbing.Master,
-		SingleBranch:  		true,
+	options := &git.CloneOptions{
+		URL:               gitUrl,
+		RecurseSubmodules: git.DefaultSubmoduleRecursionDepth, // todo max depth and master
+		ReferenceName:     plumbing.Master,
+		SingleBranch:      true,
 	}
 
 	if privateKeyFilepath != "" {
