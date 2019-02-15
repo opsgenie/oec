@@ -1,7 +1,7 @@
 package runbook
 
 import (
-	"github.com/opsgenie/marid2/util"
+	"github.com/opsgenie/ois/util"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"runtime"

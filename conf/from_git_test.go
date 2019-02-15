@@ -1,8 +1,8 @@
 package conf
 
 import (
-	"github.com/opsgenie/marid2/git"
-	"github.com/opsgenie/marid2/util"
+	"github.com/opsgenie/ois/git"
+	"github.com/opsgenie/ois/util"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )

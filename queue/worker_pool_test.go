@@ -1,7 +1,7 @@
 package queue
 
 import (
-	"github.com/opsgenie/marid2/conf"
+	"github.com/opsgenie/ois/conf"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"
@@ -14,16 +14,16 @@ import (
 )
 
 var mockPoolConf = &conf.PoolConf{
-	MaxNumberOfWorker:			16,
-	MinNumberOfWorker:			2,
-	QueueSize:                	queueSize,
-	KeepAliveTimeInMillis:    	keepAliveTimeInMillis,
-	MonitoringPeriodInMillis: 	monitoringPeriodInMillis,
+	MaxNumberOfWorker:        16,
+	MinNumberOfWorker:        2,
+	QueueSize:                queueSize,
+	KeepAliveTimeInMillis:    keepAliveTimeInMillis,
+	MonitoringPeriodInMillis: monitoringPeriodInMillis,
 }
 
 var dummyJob = func() {
 	var dummy complex128 = 17
-	for j := 0; j < 100000 ; j++ {
+	for j := 0; j < 100000; j++ {
 		dummy = cmplx.Sin(dummy) + cmplx.Sinh(dummy)
 		dummy = cmplx.Acos(dummy) + cmplx.Atanh(dummy)
 		dummy = cmplx.Atanh(dummy) + cmplx.Sin(dummy)
@@ -72,7 +72,7 @@ func TestValidateWorkerNumbersNewWorkerPool(t *testing.T) {
 	assert.Equal(t, time.Duration(monitoringPeriodInMillis), pool.poolConf.MonitoringPeriodInMillis)
 }
 
-func TestStartPool(t *testing.T)  {
+func TestStartPool(t *testing.T) {
 
 	pool := NewWorkerPool(mockPoolConf).(*WorkerPoolImpl)
 
@@ -83,7 +83,7 @@ func TestStartPool(t *testing.T)  {
 
 	var executeJobCallCount int32 = 0
 
-	for i := 0 ; i < 1000 ; i++ {
+	for i := 0; i < 1000; i++ {
 		job := NewMockJob()
 		id := strconv.Itoa(i)
 		job.JobIdFunc = func() string {
@@ -95,7 +95,8 @@ func TestStartPool(t *testing.T)  {
 			return nil
 		}
 
-		for isSubmitted, _ := pool.Submit(job); !isSubmitted; isSubmitted, _ = pool.Submit(job) {}
+		for isSubmitted, _ := pool.Submit(job); !isSubmitted; isSubmitted, _ = pool.Submit(job) {
+		}
 	}
 
 	err = pool.Stop()
@@ -111,7 +112,7 @@ func BenchmarkWorkerPool(b *testing.B) {
 
 	sizes := []struct {
 		workerSize int
-		jobSize int
+		jobSize    int
 	}{
 		{2, jobSize1},
 		{2, jobSize2},
@@ -139,8 +140,7 @@ func BenchmarkWorkerPool(b *testing.B) {
 			},
 		)
 
-		b.Run(strconv.Itoa(size.workerSize) + "MaxWorkers" + strconv.Itoa(size.jobSize) + "Jobs", func(b *testing.B) {
-
+		b.Run(strconv.Itoa(size.workerSize)+"MaxWorkers"+strconv.Itoa(size.jobSize)+"Jobs", func(b *testing.B) {
 
 			err := pool.Start()
 
@@ -148,7 +148,7 @@ func BenchmarkWorkerPool(b *testing.B) {
 
 			var executeJobCallCount int32 = 0
 
-			for i := 0 ; i < size.jobSize ; i++ {
+			for i := 0; i < size.jobSize; i++ {
 				job := NewMockJob()
 				job.ExecuteFunc = func() error {
 					atomic.AddInt32(&executeJobCallCount, 1)
@@ -209,8 +209,7 @@ func BenchmarkWorkerPoolWithComparableFixedWorkerSize(b *testing.B) {
 			},
 		)
 
-		b.Run(strconv.Itoa(testCase.maxNumberOfWorker) + maxWorkers + strconv.Itoa(jobSize) + "Jobs", func(b *testing.B) {
-
+		b.Run(strconv.Itoa(testCase.maxNumberOfWorker)+maxWorkers+strconv.Itoa(jobSize)+"Jobs", func(b *testing.B) {
 
 			err := pool.Start()
 
@@ -218,7 +217,7 @@ func BenchmarkWorkerPoolWithComparableFixedWorkerSize(b *testing.B) {
 
 			var executeJobCallCount int32 = 0
 
-			for i := 0 ; i < jobSize ; i++ {
+			for i := 0; i < jobSize; i++ {
 				job := NewMockJob()
 				job.ExecuteFunc = func() error {
 					atomic.AddInt32(&executeJobCallCount, 1)
@@ -226,7 +225,8 @@ func BenchmarkWorkerPoolWithComparableFixedWorkerSize(b *testing.B) {
 					return nil
 				}
 
-				for isSubmitted, _ := pool.Submit(job); !isSubmitted; isSubmitted, _ = pool.Submit(job) {}
+				for isSubmitted, _ := pool.Submit(job); !isSubmitted; isSubmitted, _ = pool.Submit(job) {
+				}
 			}
 
 			err = pool.Stop()
@@ -239,14 +239,13 @@ func BenchmarkWorkerPoolWithComparableFixedWorkerSize(b *testing.B) {
 
 // Mock
 type MockWorkerPool struct {
-
-	IsRunningFunc func() bool
+	IsRunningFunc               func() bool
 	NumberOfAvailableWorkerFunc func() int32
-	StartFunc func() error
-	StopFunc func() error
-	StopNowFunc func() error
-	SubmitFunc func(Job) (bool, error)
-	SubmitChannelFunc func() chan<- Job
+	StartFunc                   func() error
+	StopFunc                    func() error
+	StopNowFunc                 func() error
+	SubmitFunc                  func(Job) (bool, error)
+	SubmitChannelFunc           func() chan<- Job
 }
 
 func NewMockWorkerPool() *MockWorkerPool {
@@ -295,7 +294,7 @@ func (m *MockWorkerPool) Submit(job Job) (bool, error) {
 	return false, nil
 }
 
-func (m *MockWorkerPool) SubmitChannel() chan<- Job{
+func (m *MockWorkerPool) SubmitChannel() chan<- Job {
 	if m.SubmitChannelFunc != nil {
 		return m.SubmitChannelFunc()
 	}

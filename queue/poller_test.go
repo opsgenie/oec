@@ -2,8 +2,8 @@ package queue
 
 import (
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/opsgenie/marid2/conf"
-	"github.com/opsgenie/marid2/git"
+	"github.com/opsgenie/ois/conf"
+	"github.com/opsgenie/ois/git"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -17,18 +17,18 @@ var mockPollerConf = &conf.PollerConf{
 	maxNumberOfMessages,
 }
 
-func newPollerTest() *MaridPoller {
-	return &MaridPoller {
+func newPollerTest() *OISPoller {
+	return &OISPoller{
 		quit:           make(chan struct{}),
 		wakeUpChan:     make(chan struct{}),
-		isRunning:		false,
+		isRunning:      false,
 		startStopMutex: &sync.Mutex{},
 		pollerConf:     mockPollerConf,
 		workerPool:     NewMockWorkerPool(),
 		queueProvider:  NewMockQueueProvider(),
 		actionMappings: mockActionMappings,
-		apiKey:			&mockApiKey,
-		baseUrl:		&mockBaseUrl,
+		apiKey:         &mockApiKey,
+		baseUrl:        &mockBaseUrl,
 	}
 }
 
@@ -49,7 +49,6 @@ func TestStartAndStopPolling(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, false, poller.isRunning)
 }
-
 
 func TestStopPollingNonPollingState(t *testing.T) {
 
@@ -230,7 +229,7 @@ func TestPollMessageSubmitSuccess(t *testing.T) {
 // Mock Poller
 type MockPoller struct {
 	StartPollingFunc func() error
-	StopPollingFunc func() error
+	StopPollingFunc  func() error
 
 	RefreshClientFunc func(assumeRoleResult AssumeRoleResult) error
 	QueueProviderFunc func() QueueProvider
@@ -274,4 +273,3 @@ func (p *MockPoller) QueueProvider() QueueProvider {
 	}
 	return NewMockQueueProvider()
 }
-

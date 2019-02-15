@@ -3,9 +3,9 @@ package runbook
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/opsgenie/marid2/conf"
-	"github.com/opsgenie/marid2/git"
-	"github.com/opsgenie/marid2/retryer"
+	"github.com/opsgenie/ois/conf"
+	"github.com/opsgenie/ois/git"
+	"github.com/opsgenie/ois/retryer"
 	"github.com/pkg/errors"
 	"io/ioutil"
 	"net/http"
@@ -13,7 +13,7 @@ import (
 	"strconv"
 )
 
-var resultPath = "/v2/integrations/maridv2/actionExecutionResult"
+var resultPath = "/v2/integrations/ois/actionExecutionResult"
 
 var ExecuteRunbookFunc = ExecuteRunbook
 var SendResultToOpsGenieFunc = SendResultToOpsGenie
@@ -58,7 +58,7 @@ func SendResultToOpsGenie(resultPayload *ActionResultPayload, apiKey, baseUrl *s
 
 	body, err := json.Marshal(resultPayload)
 	if err != nil {
-		return  errors.Errorf("Cannot marshall payload: %s", err)
+		return errors.Errorf("Cannot marshall payload: %s", err)
 	}
 
 	resultUrl := *baseUrl + resultPath
@@ -67,7 +67,7 @@ func SendResultToOpsGenie(resultPayload *ActionResultPayload, apiKey, baseUrl *s
 	if err != nil {
 		return err
 	}
-	request.Header.Add("Authorization", "GenieKey " + *apiKey)
+	request.Header.Add("Authorization", "GenieKey "+*apiKey)
 	request.Header.Add("Content-Type", "application/json; charset=UTF-8")
 
 	response, err := client.Do(request)
@@ -83,9 +83,9 @@ func SendResultToOpsGenie(resultPayload *ActionResultPayload, apiKey, baseUrl *s
 
 		body, err := ioutil.ReadAll(response.Body)
 		if err == nil {
-			return errors.Errorf(errorMessage + ", error message: %s", string(body))
+			return errors.Errorf(errorMessage+", error message: %s", string(body))
 		} else {
-			return errors.Errorf(errorMessage + ", also could not read response body: %s", err)
+			return errors.Errorf(errorMessage+", also could not read response body: %s", err)
 		}
 	}
 

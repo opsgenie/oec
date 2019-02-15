@@ -26,46 +26,45 @@ type QueueProvider interface {
 	ReceiveMessage(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error)
 
 	RefreshClient(assumeRoleResult AssumeRoleResult) error
-	MaridMetadata() MaridMetadata
+	OISMetadata() OISMetadata
 	IsTokenExpired() bool
 }
 
-type MaridQueueProvider struct {
-
-	maridMetadata 		MaridMetadata
-	client             	SQS
-	isTokenExpired     	bool
-	refreshClientMutex 	*sync.RWMutex
+type OISQueueProvider struct {
+	oisMetadata        OISMetadata
+	client             SQS
+	isTokenExpired     bool
+	refreshClientMutex *sync.RWMutex
 }
 
-func NewQueueProvider(maridMetadata MaridMetadata) (QueueProvider, error) {
-	provider := &MaridQueueProvider {
-		maridMetadata:      maridMetadata,
+func NewQueueProvider(oisMetadata OISMetadata) (QueueProvider, error) {
+	provider := &OISQueueProvider{
+		oisMetadata:        oisMetadata,
 		refreshClientMutex: &sync.RWMutex{},
 	}
 
-	err := provider.RefreshClient(maridMetadata.AssumeRoleResult)
+	err := provider.RefreshClient(oisMetadata.AssumeRoleResult)
 	if err != nil {
 		return nil, err
 	}
 	return provider, nil
 }
 
-func (mqp *MaridQueueProvider) MaridMetadata() MaridMetadata {
-	mqp.refreshClientMutex.RLock()
-	defer mqp.refreshClientMutex.RUnlock()
-	return mqp.maridMetadata
+func (qp *OISQueueProvider) OISMetadata() OISMetadata {
+	qp.refreshClientMutex.RLock()
+	defer qp.refreshClientMutex.RUnlock()
+	return qp.oisMetadata
 }
 
-func (mqp *MaridQueueProvider) IsTokenExpired() bool {
-	mqp.refreshClientMutex.RLock()
-	defer mqp.refreshClientMutex.RUnlock()
-	return mqp.isTokenExpired
+func (qp *OISQueueProvider) IsTokenExpired() bool {
+	qp.refreshClientMutex.RLock()
+	defer qp.refreshClientMutex.RUnlock()
+	return qp.isTokenExpired
 }
 
-func (mqp *MaridQueueProvider) ChangeMessageVisibility(message *sqs.Message, visibilityTimeout int64) error {
+func (qp *OISQueueProvider) ChangeMessageVisibility(message *sqs.Message, visibilityTimeout int64) error {
 
-	queueUrl := mqp.maridMetadata.QueueUrl()
+	queueUrl := qp.oisMetadata.QueueUrl()
 
 	request := &sqs.ChangeMessageVisibilityInput{
 		ReceiptHandle:     message.ReceiptHandle,
@@ -73,11 +72,11 @@ func (mqp *MaridQueueProvider) ChangeMessageVisibility(message *sqs.Message, vis
 		VisibilityTimeout: &visibilityTimeout,
 	}
 
-	mqp.refreshClientMutex.RLock()
-	_, err := mqp.client.ChangeMessageVisibility(request)
-	mqp.refreshClientMutex.RUnlock()
+	qp.refreshClientMutex.RLock()
+	_, err := qp.client.ChangeMessageVisibility(request)
+	qp.refreshClientMutex.RUnlock()
 
-	mqp.checkExpiration(err)
+	qp.checkExpiration(err)
 
 	if err != nil {
 		return err
@@ -85,20 +84,20 @@ func (mqp *MaridQueueProvider) ChangeMessageVisibility(message *sqs.Message, vis
 	return nil
 }
 
-func (mqp *MaridQueueProvider) DeleteMessage(message *sqs.Message) error {
+func (qp *OISQueueProvider) DeleteMessage(message *sqs.Message) error {
 
-	queueUrl := mqp.maridMetadata.QueueUrl()
+	queueUrl := qp.oisMetadata.QueueUrl()
 
 	request := &sqs.DeleteMessageInput{
 		QueueUrl:      &queueUrl,
 		ReceiptHandle: message.ReceiptHandle,
 	}
 
-	mqp.refreshClientMutex.RLock()
-	_, err := mqp.client.DeleteMessage(request)
-	mqp.refreshClientMutex.RUnlock()
+	qp.refreshClientMutex.RLock()
+	_, err := qp.client.DeleteMessage(request)
+	qp.refreshClientMutex.RUnlock()
 
-	mqp.checkExpiration(err)
+	qp.checkExpiration(err)
 
 	if err != nil {
 		return err
@@ -106,9 +105,9 @@ func (mqp *MaridQueueProvider) DeleteMessage(message *sqs.Message) error {
 	return nil
 }
 
-func (mqp *MaridQueueProvider) ReceiveMessage(maxNumOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
+func (qp *OISQueueProvider) ReceiveMessage(maxNumOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
 
-	queueUrl := mqp.maridMetadata.QueueUrl()
+	queueUrl := qp.oisMetadata.QueueUrl()
 
 	request := &sqs.ReceiveMessageInput{
 		MessageAttributeNames: []*string{
@@ -120,11 +119,11 @@ func (mqp *MaridQueueProvider) ReceiveMessage(maxNumOfMessage int64, visibilityT
 		WaitTimeSeconds:     aws.Int64(0),
 	}
 
-	mqp.refreshClientMutex.RLock()
-	result, err := mqp.client.ReceiveMessage(request)
-	mqp.refreshClientMutex.RUnlock()
+	qp.refreshClientMutex.RLock()
+	result, err := qp.client.ReceiveMessage(request)
+	qp.refreshClientMutex.RUnlock()
 
-	mqp.checkExpiration(err)
+	qp.checkExpiration(err)
 
 	if err != nil {
 		return nil, err
@@ -132,25 +131,24 @@ func (mqp *MaridQueueProvider) ReceiveMessage(maxNumOfMessage int64, visibilityT
 	return result.Messages, nil
 }
 
-func (mqp *MaridQueueProvider) RefreshClient(assumeRoleResult AssumeRoleResult) error {
+func (qp *OISQueueProvider) RefreshClient(assumeRoleResult AssumeRoleResult) error {
 
-	config := mqp.newConfig(assumeRoleResult)
+	config := qp.newConfig(assumeRoleResult)
 	sess, err := session.NewSession(config)
 	if err != nil {
 		return err
 	}
 
-	mqp.refreshClientMutex.Lock()
-	mqp.client = sqs.New(sess)
-	mqp.maridMetadata.AssumeRoleResult = assumeRoleResult
-	mqp.isTokenExpired = false
-	mqp.refreshClientMutex.Unlock()
+	qp.refreshClientMutex.Lock()
+	qp.client = sqs.New(sess)
+	qp.oisMetadata.AssumeRoleResult = assumeRoleResult
+	qp.isTokenExpired = false
+	qp.refreshClientMutex.Unlock()
 
 	return nil
 }
 
-
-func (mqp *MaridQueueProvider) newConfig(assumeRoleResult AssumeRoleResult) *aws.Config {
+func (qp *OISQueueProvider) newConfig(assumeRoleResult AssumeRoleResult) *aws.Config {
 
 	assumeRoleResultCredentials := assumeRoleResult.Credentials
 	creds := credentials.NewStaticCredentials(
@@ -160,18 +158,18 @@ func (mqp *MaridQueueProvider) newConfig(assumeRoleResult AssumeRoleResult) *aws
 	)
 
 	awsConfig := aws.NewConfig().
-		WithRegion(mqp.maridMetadata.Region()).
+		WithRegion(qp.oisMetadata.Region()).
 		WithCredentials(creds)
 
 	return awsConfig
 }
 
-func (mqp *MaridQueueProvider) checkExpiration(err error) {
+func (qp *OISQueueProvider) checkExpiration(err error) {
 	if err, ok := err.(awserr.Error); ok {
 		if strings.Contains(err.Code(), "ExpiredToken") {
-			mqp.refreshClientMutex.Lock()
-			mqp.isTokenExpired = true
-			mqp.refreshClientMutex.Unlock()
+			qp.refreshClientMutex.Lock()
+			qp.isTokenExpired = true
+			qp.refreshClientMutex.Unlock()
 		}
 	}
 }

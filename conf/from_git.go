@@ -1,7 +1,7 @@
 package conf
 
 import (
-	"github.com/opsgenie/marid2/git"
+	"github.com/opsgenie/ois/git"
 	"os"
 	"path/filepath"
 )

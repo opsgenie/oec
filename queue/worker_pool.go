@@ -2,7 +2,7 @@ package queue
 
 import (
 	"github.com/google/uuid"
-	"github.com/opsgenie/marid2/conf"
+	"github.com/opsgenie/ois/conf"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"sync"
@@ -24,15 +24,15 @@ type WorkerPoolImpl struct {
 	poolConf *conf.PoolConf
 
 	numberOfCurrentWorker int32
-	numberOfIdleWorker int32
+	numberOfIdleWorker    int32
 
 	jobQueue  chan Job
 	quit      chan struct{}
 	quitNow   chan struct{}
 	isRunning bool
 
-	workersWaitGroup 	*sync.WaitGroup
-	startStopMutex   	*sync.RWMutex
+	workersWaitGroup    *sync.WaitGroup
+	startStopMutex      *sync.RWMutex
 	numberOfWorkerMutex *sync.RWMutex
 }
 
@@ -69,14 +69,14 @@ func NewWorkerPool(poolConf *conf.PoolConf) WorkerPool {
 	}
 
 	return &WorkerPoolImpl{
-		jobQueue:         		make(chan Job, poolConf.QueueSize),
-		quit:             		make(chan struct{}),
-		quitNow:          		make(chan struct{}),
-		poolConf:         		poolConf,
-		workersWaitGroup: 		&sync.WaitGroup{},
-		startStopMutex:   		&sync.RWMutex{},
-		numberOfWorkerMutex: 	&sync.RWMutex{},
-		isRunning:        		false,
+		jobQueue:            make(chan Job, poolConf.QueueSize),
+		quit:                make(chan struct{}),
+		quitNow:             make(chan struct{}),
+		poolConf:            poolConf,
+		workersWaitGroup:    &sync.WaitGroup{},
+		startStopMutex:      &sync.RWMutex{},
+		numberOfWorkerMutex: &sync.RWMutex{},
+		isRunning:           false,
 	}
 }
 
@@ -183,9 +183,9 @@ func (wp *WorkerPoolImpl) monitorMetrics(monitoringPeriodInMillis time.Duration)
 
 	for {
 		select {
-		case <- ticker.C:
+		case <-ticker.C:
 			logrus.Debugf("Current Worker: %d, Idle Worker: %d, Queue Size: %d, Queue load: %d", wp.NumberOfCurrentWorker(), wp.numberOfIdleWorker, cap(wp.jobQueue), len(wp.jobQueue))
-		case <- wp.quit:
+		case <-wp.quit:
 			ticker.Stop()
 			logrus.Infof("Monitor metrics has stopped.")
 			return
@@ -204,19 +204,18 @@ func (wp *WorkerPoolImpl) addInitialWorkers(num int32) {
 	}
 }
 
-
 func (wp *WorkerPoolImpl) run() {
 
 	logrus.Infof("Worker pool has started to run.")
 
 	for {
 		select {
-		case <- wp.quit:
+		case <-wp.quit:
 			logrus.Infof("Worker pool is waiting to quit.")
 			close(wp.jobQueue)
 			wp.workersWaitGroup.Wait()
 			return
-		case <- wp.quitNow:
+		case <-wp.quitNow:
 			logrus.Infof("Worker pool has stopped immediately.")
 			return
 		}
@@ -328,12 +327,12 @@ func (w *Worker) runWithDynamicNumberOfWorker() {
 
 	for {
 		select {
-		case <- w.workerPool.quitNow:
+		case <-w.workerPool.quitNow:
 			ticker.Stop()
 			logrus.Debugf("Worker [%s] has stopped working.", w.id.String())
 			w.workerPool.AddNumberOfCurrentAndIdleWorker(-1)
 			return
-		case job, isOpen := <- w.workerPool.jobQueue:
+		case job, isOpen := <-w.workerPool.jobQueue:
 			ticker.Stop()
 
 			if !isOpen {
@@ -345,7 +344,7 @@ func (w *Worker) runWithDynamicNumberOfWorker() {
 			w.doJob(job)
 
 			ticker = time.NewTicker(keepAliveTime)
-		case <- ticker.C:
+		case <-ticker.C:
 			ticker.Stop()
 
 			if w.workerPool.CompareAndDecrementCurrentWorker() {
@@ -363,11 +362,11 @@ func (w *Worker) runWithFixedNumberOfWorker() {
 
 	for {
 		select {
-		case <- w.workerPool.quitNow:
+		case <-w.workerPool.quitNow:
 			logrus.Debugf("Worker [%s] has stopped working.", w.id.String())
 			w.workerPool.AddNumberOfCurrentAndIdleWorker(-1)
 			return
-		case job, isOpen := <- w.workerPool.jobQueue:
+		case job, isOpen := <-w.workerPool.jobQueue:
 			if !isOpen {
 				w.workerPool.AddNumberOfCurrentAndIdleWorker(-1)
 				logrus.Debugf("Worker[%s] has done its job.", w.id.String())

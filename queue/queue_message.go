@@ -3,31 +3,31 @@ package queue
 import (
 	"encoding/json"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/opsgenie/marid2/conf"
-	"github.com/opsgenie/marid2/git"
-	"github.com/opsgenie/marid2/runbook"
+	"github.com/opsgenie/ois/conf"
+	"github.com/opsgenie/ois/git"
+	"github.com/opsgenie/ois/runbook"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 type QueueMessage interface {
 	Message() *sqs.Message
-	Process() (*runbook.ActionResultPayload ,error)
+	Process() (*runbook.ActionResultPayload, error)
 }
 
-type MaridQueueMessage struct {
-	message 		*sqs.Message
-	actionMappings 	*conf.ActionMappings
-	repositories	*git.Repositories
+type OISQueueMessage struct {
+	message        *sqs.Message
+	actionMappings *conf.ActionMappings
+	repositories   *git.Repositories
 }
 
-func (mqm *MaridQueueMessage) Message() *sqs.Message {
-	return mqm.message
+func (qm *OISQueueMessage) Message() *sqs.Message {
+	return qm.message
 }
 
-func (mqm *MaridQueueMessage) Process() (*runbook.ActionResultPayload ,error) {
+func (qm *OISQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 	queuePayload := QueuePayload{}
-	err := json.Unmarshal([]byte(*mqm.message.Body), &queuePayload)
+	err := json.Unmarshal([]byte(*qm.message.Body), &queuePayload)
 	if err != nil {
 		return nil, err
 	}
@@ -37,25 +37,25 @@ func (mqm *MaridQueueMessage) Process() (*runbook.ActionResultPayload ,error) {
 		return nil, errors.New("SQS message does not contain action property")
 	}
 
-	mappedAction, ok := (*mqm.actionMappings)[conf.ActionName(action)]
+	mappedAction, ok := (*qm.actionMappings)[conf.ActionName(action)]
 	if !ok {
 		return nil, errors.Errorf("There is no mapped action found for [%s]", action)
 	}
 
-	_, errorOutput, err := runbook.ExecuteRunbookFunc(&mappedAction, mqm.repositories, []string{*mqm.message.Body})
+	_, errorOutput, err := runbook.ExecuteRunbookFunc(&mappedAction, qm.repositories, []string{*qm.message.Body})
 	if err != nil {
-		return nil, errors.Errorf("Action[%s] execution of message[%s] failed: %s", action, *mqm.message.MessageId, err)
+		return nil, errors.Errorf("Action[%s] execution of message[%s] failed: %s", action, *qm.message.MessageId, err)
 	}
 
 	var success bool
 	if errorOutput != "" {
-		logrus.Debugf("Action[%s] execution of message[%s] produced error output: %s", action, *mqm.message.MessageId, errorOutput)
+		logrus.Debugf("Action[%s] execution of message[%s] produced error output: %s", action, *qm.message.MessageId, errorOutput)
 	} else {
 		success = true
-		logrus.Debugf("Action[%s] execution of message[%s] has been completed.", action, *mqm.message.MessageId)
+		logrus.Debugf("Action[%s] execution of message[%s] has been completed.", action, *qm.message.MessageId)
 	}
 
-	result := &runbook.ActionResultPayload {
+	result := &runbook.ActionResultPayload{
 		IsSuccessful:   success,
 		AlertId:        queuePayload.Alert.AlertId,
 		Action:         queuePayload.Action,
@@ -65,11 +65,11 @@ func (mqm *MaridQueueMessage) Process() (*runbook.ActionResultPayload ,error) {
 	return result, nil
 }
 
-func NewMaridMessage(message *sqs.Message, actionMappings *conf.ActionMappings, repositories *git.Repositories) QueueMessage {
+func NewOISMessage(message *sqs.Message, actionMappings *conf.ActionMappings, repositories *git.Repositories) QueueMessage {
 
-	return &MaridQueueMessage{
-		message: 		message,
-		actionMappings:	actionMappings,
-		repositories:	repositories,
+	return &OISQueueMessage{
+		message:        message,
+		actionMappings: actionMappings,
+		repositories:   repositories,
 	}
 }

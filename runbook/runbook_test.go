@@ -2,9 +2,9 @@ package runbook
 
 import (
 	"encoding/json"
-	"github.com/opsgenie/marid2/conf"
-	"github.com/opsgenie/marid2/git"
-	"github.com/opsgenie/marid2/retryer"
+	"github.com/opsgenie/ois/conf"
+	"github.com/opsgenie/ois/git"
+	"github.com/opsgenie/ois/retryer"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"
@@ -14,19 +14,19 @@ import (
 )
 
 var mockActionMappings = (map[conf.ActionName]conf.MappedAction)(conf.ActionMappings{
-	"Create" : conf.MappedAction{
+	"Create": conf.MappedAction{
 		SourceType:           "local",
 		Filepath:             "/path/to/runbook.bin",
 		EnvironmentVariables: []string{"e1=v1", "e2=v2"},
 	},
-	"Close" : conf.MappedAction{
+	"Close": conf.MappedAction{
 		SourceType: "git",
 		GitOptions: git.GitOptions{
-			Url:				"testUrl",
-			PrivateKeyFilepath:	"testKeyPath",
-			Passphrase:			"testPass",
+			Url:                "testUrl",
+			PrivateKeyFilepath: "testKeyPath",
+			Passphrase:         "testPass",
 		},
-		Filepath:             "marid/testConfig.json",
+		Filepath:             "ois/testConfig.json",
 		EnvironmentVariables: []string{"e1=v1", "e2=v2"},
 	},
 })
@@ -65,7 +65,7 @@ func testExecuteRunbookLocal(t *testing.T) {
 func TestExecuteRunbook(t *testing.T) {
 
 	executeFunc = func(executablePath string, args []string, environmentVariables []string) (s string, s2 string, e error) {
-		return "","",nil
+		return "", "", nil
 	}
 
 	t.Run("TestExecuteRunbookLocal", testExecuteRunbookLocal)
@@ -117,10 +117,10 @@ func TestSendResultToOpsGenie(t *testing.T) {
 	defer ts.Close()
 
 	actionResult := &ActionResultPayload{
-		Action:"testAction",
-		AlertId:"testAlert",
-		IsSuccessful:true,
-		FailureMessage:"fail",
+		Action:         "testAction",
+		AlertId:        "testAlert",
+		IsSuccessful:   true,
+		FailureMessage: "fail",
 	}
 
 	apiKey := "testKey"
@@ -148,7 +148,7 @@ func TestSendResultToOpsGenieClientError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	defer func() {client.DoFunc = nil }()
+	defer func() { client.DoFunc = nil }()
 	client.DoFunc = func(retryer *retryer.Retryer, request *retryer.Request) (*http.Response, error) {
 		return nil, errors.New("Test client error")
 	}

@@ -2,7 +2,7 @@ package queue
 
 import (
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/opsgenie/marid2/runbook"
+	"github.com/opsgenie/ois/runbook"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"sync"
@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	JobInitial   = iota
+	JobInitial = iota
 	JobExecuting
 	JobFinished
 	JobError
@@ -22,26 +22,26 @@ type Job interface {
 }
 
 type SqsJob struct {
-	queueProvider	QueueProvider
-	queueMessage	QueueMessage
+	queueProvider QueueProvider
+	queueMessage  QueueMessage
 
-	integrationId 	*string
-	apiKey			*string
-	baseUrl			*string
+	integrationId *string
+	apiKey        *string
+	baseUrl       *string
 
-	state         int32
-	executeMutex  *sync.Mutex
+	state        int32
+	executeMutex *sync.Mutex
 }
 
 func NewSqsJob(queueMessage QueueMessage, queueProvider QueueProvider, apiKey, baseUrl, integrationId *string) Job {
 	return &SqsJob{
-		queueProvider:  queueProvider,
-		queueMessage:	queueMessage,
-		executeMutex:	&sync.Mutex{},
-		apiKey:			apiKey,
-		baseUrl:		baseUrl,
-		integrationId:	integrationId,
-		state:          JobInitial,
+		queueProvider: queueProvider,
+		queueMessage:  queueMessage,
+		executeMutex:  &sync.Mutex{},
+		apiKey:        apiKey,
+		baseUrl:       baseUrl,
+		integrationId: integrationId,
+		state:         JobInitial,
 	}
 }
 
@@ -63,7 +63,7 @@ func (j *SqsJob) Execute() error {
 	}
 	j.state = JobExecuting
 
-	region := j.queueProvider.MaridMetadata().Region()
+	region := j.queueProvider.OISMetadata().Region()
 	messageId := j.JobId()
 
 	err := j.queueProvider.DeleteMessage(j.SqsMessage())
@@ -76,7 +76,7 @@ func (j *SqsJob) Execute() error {
 
 	messageAttr := j.SqsMessage().MessageAttributes
 
-	if  messageAttr == nil ||
+	if messageAttr == nil ||
 		*messageAttr[integrationId].StringValue != *j.integrationId {
 		j.state = JobError
 		return errors.Errorf("Message[%s] is invalid, will not be processed.", messageId)
@@ -90,7 +90,6 @@ func (j *SqsJob) Execute() error {
 	}
 	took := time.Now().Sub(start)
 	logrus.Debugf("Message[%s] processing has been done and it took %f seconds.", messageId, took.Seconds())
-
 
 	go func() {
 		start = time.Now()

@@ -2,9 +2,9 @@ package queue
 
 import (
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/opsgenie/marid2/conf"
-	"github.com/opsgenie/marid2/git"
-	"github.com/opsgenie/marid2/util"
+	"github.com/opsgenie/ois/conf"
+	"github.com/opsgenie/ois/git"
+	"github.com/opsgenie/ois/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"sync"
@@ -19,21 +19,21 @@ type Poller interface {
 	QueueProvider() QueueProvider
 }
 
-type MaridPoller struct {
-	workerPool		WorkerPool
-	queueProvider 	QueueProvider
+type OISPoller struct {
+	workerPool    WorkerPool
+	queueProvider QueueProvider
 
-	integrationId	*string
-	apiKey 			*string
-	baseUrl 		*string
-	pollerConf 		*conf.PollerConf
-	actionMappings 	*conf.ActionMappings
-	repositories	*git.Repositories
+	integrationId  *string
+	apiKey         *string
+	baseUrl        *string
+	pollerConf     *conf.PollerConf
+	actionMappings *conf.ActionMappings
+	repositories   *git.Repositories
 
-	isRunning		bool
-	startStopMutex 	*sync.Mutex
-	quit           	chan struct{}
-	wakeUpChan     	chan struct{}
+	isRunning      bool
+	startStopMutex *sync.Mutex
+	quit           chan struct{}
+	wakeUpChan     chan struct{}
 }
 
 func NewPoller(workerPool WorkerPool, queueProvider QueueProvider,
@@ -41,31 +41,31 @@ func NewPoller(workerPool WorkerPool, queueProvider QueueProvider,
 	apiKey, baseUrl, integrationId *string,
 	repositories *git.Repositories) Poller {
 
-	return &MaridPoller {
+	return &OISPoller{
 		quit:           make(chan struct{}),
 		wakeUpChan:     make(chan struct{}),
-		isRunning:		false,
+		isRunning:      false,
 		startStopMutex: &sync.Mutex{},
 		pollerConf:     pollerConf,
 		actionMappings: actionMappings,
-		repositories:	repositories,
-		apiKey:			apiKey,
-		baseUrl:		baseUrl,
-		integrationId:	integrationId,
+		repositories:   repositories,
+		apiKey:         apiKey,
+		baseUrl:        baseUrl,
+		integrationId:  integrationId,
 		workerPool:     workerPool,
 		queueProvider:  queueProvider,
 	}
 }
 
-func (p *MaridPoller) QueueProvider() QueueProvider {
+func (p *OISPoller) QueueProvider() QueueProvider {
 	return p.queueProvider
 }
 
-func (p *MaridPoller) RefreshClient(assumeRoleResult AssumeRoleResult) error {
+func (p *OISPoller) RefreshClient(assumeRoleResult AssumeRoleResult) error {
 	return p.queueProvider.RefreshClient(assumeRoleResult)
 }
 
-func (p *MaridPoller) StartPolling() error {
+func (p *OISPoller) StartPolling() error {
 	defer p.startStopMutex.Unlock()
 	p.startStopMutex.Lock()
 
@@ -80,7 +80,7 @@ func (p *MaridPoller) StartPolling() error {
 	return nil
 }
 
-func (p *MaridPoller) StopPolling() error {
+func (p *OISPoller) StopPolling() error {
 	defer p.startStopMutex.Unlock()
 	p.startStopMutex.Lock()
 
@@ -96,31 +96,31 @@ func (p *MaridPoller) StopPolling() error {
 	return nil
 }
 
-func (p *MaridPoller) terminateMessageVisibility(messages []*sqs.Message) {
+func (p *OISPoller) terminateMessageVisibility(messages []*sqs.Message) {
 
-	region := p.queueProvider.MaridMetadata().Region()
+	region := p.queueProvider.OISMetadata().Region()
 
 	for i := 0; i < len(messages); i++ {
 		messageId := *messages[i].MessageId
 
 		err := p.queueProvider.ChangeMessageVisibility(messages[i], 0)
 		if err != nil {
-			logrus.Warnf("Poller[%s] could not terminate visibility of message[%s]: %s.", region , messageId, err.Error())
+			logrus.Warnf("Poller[%s] could not terminate visibility of message[%s]: %s.", region, messageId, err.Error())
 			continue
 		}
 
-		logrus.Debugf("Poller[%s] terminated visibility of message[%s].", region , messageId)
+		logrus.Debugf("Poller[%s] terminated visibility of message[%s].", region, messageId)
 	}
 }
 
-func (p *MaridPoller) poll() (shouldWait bool) {
+func (p *OISPoller) poll() (shouldWait bool) {
 
 	availableWorkerCount := p.workerPool.NumberOfAvailableWorker()
 	if !(availableWorkerCount > 0) {
 		return true
 	}
 
-	region := p.queueProvider.MaridMetadata().Region()
+	region := p.queueProvider.OISMetadata().Region()
 	maxNumberOfMessages := util.Min(p.pollerConf.MaxNumberOfMessages, int64(availableWorkerCount))
 
 	messages, err := p.queueProvider.ReceiveMessage(maxNumberOfMessages, p.pollerConf.VisibilityTimeoutInSeconds)
@@ -140,7 +140,7 @@ func (p *MaridPoller) poll() (shouldWait bool) {
 	for i := 0; i < messageLength; i++ {
 
 		job := NewSqsJob(
-			NewMaridMessage(
+			NewOISMessage(
 				messages[i],
 				p.actionMappings,
 				p.repositories,
@@ -165,9 +165,9 @@ func (p *MaridPoller) poll() (shouldWait bool) {
 	return false
 }
 
-func (p *MaridPoller) wait(pollingWaitInterval time.Duration) {
+func (p *OISPoller) wait(pollingWaitInterval time.Duration) {
 
-	queueUrl := p.queueProvider.MaridMetadata().QueueUrl()
+	queueUrl := p.queueProvider.OISMetadata().QueueUrl()
 	logrus.Tracef("Poller[%s] will wait %s before next polling", queueUrl, pollingWaitInterval.String())
 
 	ticker := time.NewTicker(pollingWaitInterval)
@@ -175,18 +175,18 @@ func (p *MaridPoller) wait(pollingWaitInterval time.Duration) {
 
 	for {
 		select {
-		case <- p.wakeUpChan:
+		case <-p.wakeUpChan:
 			logrus.Infof("Poller[%s] has been interrupted while waiting for next polling.", queueUrl)
 			return
-		case <- ticker.C:
+		case <-ticker.C:
 			return
 		}
 	}
 }
 
-func (p *MaridPoller) run() {
+func (p *OISPoller) run() {
 
-	queueUrl := p.queueProvider.MaridMetadata().QueueUrl()
+	queueUrl := p.queueProvider.OISMetadata().QueueUrl()
 	logrus.Infof("Poller[%s] has started to run.", queueUrl)
 
 	pollingWaitInterval := p.pollerConf.PollingWaitIntervalInMillis * time.Millisecond
@@ -194,12 +194,12 @@ func (p *MaridPoller) run() {
 
 	for {
 		select {
-		case <- p.quit:
+		case <-p.quit:
 			logrus.Infof("Poller[%s] has stopped to poll.", queueUrl)
 			return
 		default:
 			if p.queueProvider.IsTokenExpired() {
-				region := p.queueProvider.MaridMetadata().Region()
+				region := p.queueProvider.OISMetadata().Region()
 				logrus.Warnf("Security token is expired, poller[%s] skips to receive message.", region)
 				p.wait(expiredTokenWaitInterval)
 			} else if shouldWait := p.poll(); shouldWait {
