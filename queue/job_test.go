@@ -128,7 +128,7 @@ func TestExecuteWithProcessError(t *testing.T) {
 	err := sqsJob.Execute()
 	assert.NotNil(t, err)
 
-	expectedErr := errors.Errorf("Message[%s] could not be processed: %s.", sqsJob.JobId(), "Process Error")
+	expectedErr := errors.Errorf("Message[%s] could not be processed: %s", sqsJob.JobId(), "Process Error")
 	assert.EqualError(t, err, expectedErr.Error())
 
 	expectedState := int32(JobError)

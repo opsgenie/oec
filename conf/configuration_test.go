@@ -18,7 +18,7 @@ var mockConf = &Configuration{
 	ActionMappings: mockActionMappings,
 }
 
-var mockActionMappings = (map[ActionName]MappedAction)(ActionMappings{
+var mockActionMappings = ActionMappings{
 	"Create": MappedAction{
 		SourceType:           "local",
 		Filepath:             "/path/to/runbook.bin",
@@ -31,8 +31,9 @@ var mockActionMappings = (map[ActionName]MappedAction)(ActionMappings{
 			PrivateKeyFilepath: "testKeyPath",
 		},
 		EnvironmentVariables: []string{"e1=v1", "e2=v2"},
+		Filepath:             "/path/to/runbook.bin",
 	},
-})
+}
 
 func expectedConf() *Configuration {
 	expectedConf := *mockConf
@@ -65,7 +66,8 @@ var mockJsonConfFileContent = []byte(`{
             },
             "environmentVariables": [
                 "e1=v1", "e2=v2"
-            ]
+            ],
+			"filepath": "/path/to/runbook.bin"
         }
     }
 }`)
@@ -88,6 +90,7 @@ actionMappings:
     environmentVariables:
     - e1=v1
     - e2=v2
+    filepath: "/path/to/runbook.bin"
 `)
 
 const testLocalConfFilePath = "/path/to/test/conf/file.json"
@@ -137,7 +140,10 @@ func mockReadConfigurationFromLocalWithDefaultPathWithoutActionMappings(confPath
 		return nil, errors.Errorf("confPath was not as the same as the default path, confPath[%s] != default[%s]", confPath, addHomeDirPrefix(confPath))
 	}
 
-	testConfMapWithoutActionMappings := &Configuration{}
+	testConfMapWithoutActionMappings := &Configuration{
+		ApiKey:  "ApiKey",
+		BaseUrl: "BaseUrl",
+	}
 
 	return testConfMapWithoutActionMappings, nil
 }
@@ -246,7 +252,7 @@ func TestReadConfFileWithUnknownSource(t *testing.T) {
 	_, err := ReadConfFile()
 	assert.Error(t, err, "Error should be thrown.")
 
-	if err.Error() != "Unknown configuration source [dummy]." {
+	if err.Error() != "Unknown configuration source[dummy]." {
 		t.Error("Error message was wrong.")
 	}
 

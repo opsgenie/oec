@@ -94,9 +94,6 @@ func validateConfiguration(conf *Configuration) error {
 	if conf == nil || conf == (&Configuration{}) {
 		return errors.New("The configuration is empty.")
 	}
-	if len(conf.ActionMappings) == 0 {
-		return errors.New("Action mappings configuration is not found in the configuration file.")
-	}
 	if conf.ApiKey == "" {
 		return errors.New("ApiKey is not found in the configuration file.")
 	}
@@ -104,6 +101,26 @@ func validateConfiguration(conf *Configuration) error {
 		conf.BaseUrl = defaultBaseUrl
 		logrus.Infof("BaseUrl is not found in the configuration file, default url[%s] is set.", defaultBaseUrl)
 	}
+
+	if len(conf.ActionMappings) == 0 {
+		return errors.New("Action mappings configuration is not found in the configuration file.")
+	} else {
+		for actionName, action := range conf.ActionMappings {
+			if action.SourceType != LocalSourceType &&
+				action.SourceType != GitSourceType {
+				return errors.Errorf("Action source type of action[%s] should be either local or git.", actionName)
+			} else {
+				if action.Filepath == "" {
+					return errors.Errorf("Filepath of action[%s] is empty.", actionName)
+				}
+				if action.SourceType == GitSourceType &&
+					action.GitOptions == (git.GitOptions{}) {
+					return errors.Errorf("Git options of action[%s] is empty.", actionName)
+				}
+			}
+		}
+	}
+
 	level, err := logrus.ParseLevel(conf.LogLevel)
 	if err != nil {
 		conf.LogrusLevel = logrus.InfoLevel
@@ -143,6 +160,6 @@ func readConfFileFromSource(confSource string) (*Configuration, error) {
 
 		return readConfigurationFromLocalFunc(confFilepath)
 	default:
-		return nil, errors.Errorf("Unknown configuration source [%s].", confSource)
+		return nil, errors.Errorf("Unknown configuration source[%s].", confSource)
 	}
 }

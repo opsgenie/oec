@@ -82,17 +82,14 @@ func (j *SqsJob) Execute() error {
 		return errors.Errorf("Message[%s] is invalid, will not be processed.", messageId)
 	}
 
-	start := time.Now()
 	result, err := j.queueMessage.Process()
 	if err != nil {
 		j.state = JobError
-		return errors.Errorf("Message[%s] could not be processed: %s.", messageId, err)
+		return errors.Errorf("Message[%s] could not be processed: %s", messageId, err)
 	}
-	took := time.Now().Sub(start)
-	logrus.Debugf("Message[%s] processing has been done and it took %f seconds.", messageId, took.Seconds())
 
 	go func() {
-		start = time.Now()
+		start := time.Now()
 
 		err = runbook.SendResultToOpsGenieFunc(result, j.apiKey, j.baseUrl)
 		if err != nil {
