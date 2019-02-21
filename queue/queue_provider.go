@@ -13,8 +13,8 @@ import (
 const integrationId = "integrationId"
 
 type SQS interface {
-	DeleteMessage(input *sqs.DeleteMessageInput) (*sqs.DeleteMessageOutput, error)
 	ChangeMessageVisibility(input *sqs.ChangeMessageVisibilityInput) (*sqs.ChangeMessageVisibilityOutput, error)
+	DeleteMessage(input *sqs.DeleteMessageInput) (*sqs.DeleteMessageOutput, error)
 	ReceiveMessage(input *sqs.ReceiveMessageInput) (*sqs.ReceiveMessageOutput, error)
 }
 
@@ -31,16 +31,19 @@ type QueueProvider interface {
 }
 
 type OISQueueProvider struct {
-	oisMetadata        OISMetadata
-	client             SQS
-	isTokenExpired     bool
+	oisMetadata    OISMetadata
+	client         SQS
+	isTokenExpired bool
+
 	refreshClientMutex *sync.RWMutex
+	expirationMutex    *sync.RWMutex
 }
 
 func NewQueueProvider(oisMetadata OISMetadata) (QueueProvider, error) {
 	provider := &OISQueueProvider{
 		oisMetadata:        oisMetadata,
 		refreshClientMutex: &sync.RWMutex{},
+		expirationMutex:    &sync.RWMutex{},
 	}
 
 	err := provider.RefreshClient(oisMetadata.AssumeRoleResult)
@@ -57,8 +60,8 @@ func (qp *OISQueueProvider) OISMetadata() OISMetadata {
 }
 
 func (qp *OISQueueProvider) IsTokenExpired() bool {
-	qp.refreshClientMutex.RLock()
-	defer qp.refreshClientMutex.RUnlock()
+	qp.expirationMutex.RLock()
+	defer qp.expirationMutex.RUnlock()
 	return qp.isTokenExpired
 }
 
@@ -74,9 +77,8 @@ func (qp *OISQueueProvider) ChangeMessageVisibility(message *sqs.Message, visibi
 
 	qp.refreshClientMutex.RLock()
 	_, err := qp.client.ChangeMessageVisibility(request)
-	qp.refreshClientMutex.RUnlock()
-
 	qp.checkExpiration(err)
+	qp.refreshClientMutex.RUnlock()
 
 	if err != nil {
 		return err
@@ -95,9 +97,8 @@ func (qp *OISQueueProvider) DeleteMessage(message *sqs.Message) error {
 
 	qp.refreshClientMutex.RLock()
 	_, err := qp.client.DeleteMessage(request)
-	qp.refreshClientMutex.RUnlock()
-
 	qp.checkExpiration(err)
+	qp.refreshClientMutex.RUnlock()
 
 	if err != nil {
 		return err
@@ -121,9 +122,8 @@ func (qp *OISQueueProvider) ReceiveMessage(maxNumOfMessage int64, visibilityTime
 
 	qp.refreshClientMutex.RLock()
 	result, err := qp.client.ReceiveMessage(request)
-	qp.refreshClientMutex.RUnlock()
-
 	qp.checkExpiration(err)
+	qp.refreshClientMutex.RUnlock()
 
 	if err != nil {
 		return nil, err
@@ -142,8 +142,11 @@ func (qp *OISQueueProvider) RefreshClient(assumeRoleResult AssumeRoleResult) err
 	qp.refreshClientMutex.Lock()
 	qp.client = sqs.New(sess)
 	qp.oisMetadata.AssumeRoleResult = assumeRoleResult
-	qp.isTokenExpired = false
 	qp.refreshClientMutex.Unlock()
+
+	qp.expirationMutex.Lock()
+	qp.isTokenExpired = false
+	qp.expirationMutex.Unlock()
 
 	return nil
 }
@@ -167,9 +170,9 @@ func (qp *OISQueueProvider) newConfig(assumeRoleResult AssumeRoleResult) *aws.Co
 func (qp *OISQueueProvider) checkExpiration(err error) {
 	if err, ok := err.(awserr.Error); ok {
 		if strings.Contains(err.Code(), "ExpiredToken") {
-			qp.refreshClientMutex.Lock()
+			qp.expirationMutex.Lock()
 			qp.isTokenExpired = true
-			qp.refreshClientMutex.Unlock()
+			qp.expirationMutex.Unlock()
 		}
 	}
 }

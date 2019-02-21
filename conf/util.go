@@ -47,17 +47,20 @@ func readConfigurationFromFile(filepath string) (*Configuration, error) {
 }
 
 func addHomeDirPrefix(filepath string) string {
+	tildePrefix := "~" + string(os.PathSeparator)
 
-	if strings.HasPrefix(filepath, "~/") {
-		home := "HOME"
-		if runtime.GOOS == "windows" {
-			home = "USERPROFILE"
-		}
-
-		return fpath.Join(os.Getenv(home), strings.TrimPrefix(filepath, "~/"))
+	if strings.HasPrefix(filepath, tildePrefix) {
+		return fpath.Join(homeDir(), strings.TrimPrefix(filepath, tildePrefix))
 	}
 
 	return fpath.Clean(filepath)
+}
+
+func homeDir() string {
+	if runtime.GOOS == "windows" {
+		return os.Getenv("USERPROFILE")
+	}
+	return os.Getenv("HOME")
 }
 
 func addHomeDirPrefixToLocalActionFilepaths(mappings *ActionMappings) {
