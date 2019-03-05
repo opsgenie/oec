@@ -18,24 +18,22 @@ type GitUrl string
 
 type Repositories map[GitUrl]*Repository
 
-func NewRepositories() *Repositories {
-	repositories := new(Repositories)
-	*repositories = Repositories(make(map[GitUrl]*Repository))
-	return repositories
+func NewRepositories() Repositories {
+	return Repositories(make(map[GitUrl]*Repository))
 }
 
-func (r *Repositories) NotEmpty() bool {
-	return len(*r) != 0
+func (r Repositories) NotEmpty() bool {
+	return len(r) != 0
 }
 
-func (r *Repositories) Get(gitUrl string) (*Repository, error) {
-	if repository, contains := (*r)[GitUrl(gitUrl)]; contains {
+func (r Repositories) Get(gitUrl string) (*Repository, error) {
+	if repository, contains := r[GitUrl(gitUrl)]; contains {
 		return repository, nil
 	}
 	return nil, errors.Errorf("Git repository[%s] could not be found.", gitUrl)
 }
 
-func (r *Repositories) DownloadAll(gitOptionsList []GitOptions) (err error) {
+func (r Repositories) DownloadAll(gitOptionsList []GitOptions) (err error) {
 
 	for _, options := range gitOptionsList {
 		err = r.Download(&options)
@@ -47,25 +45,32 @@ func (r *Repositories) DownloadAll(gitOptionsList []GitOptions) (err error) {
 	return nil
 }
 
-func (r *Repositories) Download(options *GitOptions) (err error) {
+func (r Repositories) Download(options *GitOptions) (err error) {
 
-	if _, contains := (*r)[GitUrl(options.Url)]; !contains {
+	if _, contains := r[GitUrl(options.Url)]; !contains {
 		repositoryPath, err := CloneMaster(options.Url, options.PrivateKeyFilepath, options.Passphrase)
 		if err != nil {
 			return errors.Errorf("Git repository[%s] could not be downloaded: %s", options.Url, err.Error())
 		}
 
 		logrus.Debugf("Git repository[%s] is downloaded.", options.Url)
-		(*r)[GitUrl(options.Url)] = NewRepository(repositoryPath, *options)
+
+		repository := NewRepository(repositoryPath, *options)
+		err = repository.Chmod(0700)
+		if err != nil {
+			logrus.Warnf("Git repository[%s] chmod failed: %s", options.Url, err)
+		}
+
+		r[GitUrl(options.Url)] = repository
 		return nil
 	}
 
-	logrus.Debugf("Git repository[%s] is already existed.", options.Url)
+	logrus.Tracef("Git repository[%s] is already existed.", options.Url)
 	return nil
 }
 
-func (r *Repositories) PullAll() {
-	for _, repository := range *r {
+func (r Repositories) PullAll() {
+	for _, repository := range r {
 		err := repository.Pull()
 		if err == git.NoErrAlreadyUpToDate {
 			logrus.Tracef("Git repository[%s] is already up-to-date.", repository.Options.Url)
@@ -79,8 +84,8 @@ func (r *Repositories) PullAll() {
 	}
 }
 
-func (r *Repositories) RemoveAll() {
-	for _, repository := range *r {
+func (r Repositories) RemoveAll() {
+	for _, repository := range r {
 		err := repository.Remove()
 		if err != nil {
 			logrus.Warnf("Git repository[%s] in directory[%s] could not be removed: %s", repository.Options.Url, repository.Path, err.Error())
@@ -91,22 +96,28 @@ func (r *Repositories) RemoveAll() {
 /******************************************************************************************/
 
 type Repository struct {
-	Path 	string
+	Path    string
 	Options GitOptions
-	rw 		*sync.RWMutex
+	rw      *sync.RWMutex
 }
 
 func NewRepository(path string, options GitOptions) *Repository {
 	return &Repository{
-		rw: 		&sync.RWMutex{},
-		Path:		path,
-		Options: 	options,
+		rw:      &sync.RWMutex{},
+		Path:    path,
+		Options: options,
 	}
 }
 
 func (r *Repository) Pull() error {
 	r.rw.Lock()
 	defer r.rw.Unlock()
+	defer func() {
+		err := chmodRecursively(r.Path, 0700)
+		if err != nil {
+			logrus.Debugf("Git repository[%s] chmod failed: %s", r.Options.Url, err)
+		}
+	}()
 	return PullMaster(r.Path, r.Options.PrivateKeyFilepath, r.Options.Passphrase)
 }
 
@@ -116,10 +127,14 @@ func (r *Repository) Remove() error {
 	return os.RemoveAll(r.Path)
 }
 
-func (r *Repository) RLock()  {
+func (r *Repository) Chmod(mode os.FileMode) error {
+	return chmodRecursively(r.Path, mode)
+}
+
+func (r *Repository) RLock() {
 	r.rw.RLock()
 }
 
-func (r *Repository) RUnlock()  {
+func (r *Repository) RUnlock() {
 	r.rw.RUnlock()
 }

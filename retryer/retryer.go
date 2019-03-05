@@ -11,8 +11,9 @@ import (
 	"net/http"
 	"time"
 )
+
 const maxRetryCount = 5
-const timeout = 30 * time.Second
+const timeout = 40 * time.Second
 
 var DefaultClient = &http.Client{Timeout: timeout}
 
@@ -65,9 +66,10 @@ func DoWithExponentialBackoff(retryer *Retryer, request *Request) (*http.Respons
 		response, err := client.Do(request.Request)
 
 		if err, ok := err.(net.Error); ok {
-			logrus.Warn(err)
 			// On error, any Response can be ignored.
-			if !err.Timeout() {
+			if err.Timeout() {
+				logrus.Warn(err)
+			} else {
 				return nil, err
 			}
 		} else if shouldRetry(response.StatusCode) {
@@ -79,7 +81,7 @@ func DoWithExponentialBackoff(retryer *Retryer, request *Request) (*http.Respons
 			return response, err
 		}
 
-		if retryCount < maxRetryCount - 1 {
+		if retryCount < maxRetryCount-1 {
 			waitDuration := getWaitTime(retryCount)
 			time.Sleep(waitDuration)
 			retryCount++
@@ -115,5 +117,3 @@ func NewRequest(method, url string, body io.Reader) (*Request, error) {
 	}
 	return &Request{rs, request}, nil
 }
-
-

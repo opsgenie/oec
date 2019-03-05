@@ -2,6 +2,7 @@ package runbook
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,18 +11,22 @@ import (
 
 var ExecuteFunc = Execute
 
-var executables = map[string]string{
-	".bat": "cmd",
-	".cmd": "cmd",
-	".ps1": "powershell",
-	".sh":  "sh",
-	".py":  "python",
+var executables = map[string][]string{
+	".bat":    {"cmd"},
+	".cmd":    {"cmd", "/C"},
+	".ps1":    {"powershell"},
+	".sh":     {"sh"},
+	".py":     {"python"},
+	".groovy": {"groovy"},
+	".go":     {"go", "run"},
 }
 
-func Execute(executablePath string, args []string, environmentVars []string) (string, string, error) {
+type ExecError struct {
+	Stderr string
+	error
+}
 
-	fileExt := filepath.Ext(strings.ToLower(executablePath))
-	executable, _ := executables[fileExt]
+func Execute(executablePath string, args, environmentVars []string, stdout, stderr io.Writer) error {
 
 	if args == nil {
 		args = []string{}
@@ -30,23 +35,26 @@ func Execute(executablePath string, args []string, environmentVars []string) (st
 	}
 
 	var cmd *exec.Cmd
+	fileExt := filepath.Ext(strings.ToLower(executablePath))
+	command, exist := executables[fileExt]
 
-	switch executable {
-	case "cmd":
-		cmd = exec.Command(executable, append([]string{"/C", executablePath}, args...)...)
-	case "sh", "powershell", "python":
-		cmd = exec.Command(executable, append([]string{executablePath}, args...)...)
-	default:
+	if exist {
+		args = append(append(command[1:], executablePath), args...)
+		cmd = exec.Command(command[0], args...)
+	} else {
 		cmd = exec.Command(executablePath, args...)
 	}
 
-	var cmdOutput, cmdErr bytes.Buffer
-
-	cmd.Stdout = &cmdOutput
-	cmd.Stderr = &cmdErr
 	cmd.Env = append(os.Environ(), environmentVars...)
 
-	err := cmd.Run()
+	stderrBuff := &bytes.Buffer{}
+	cmd.Stdout = stdout
+	cmd.Stderr = io.MultiWriter(stderr, stderrBuff)
 
-	return cmdOutput.String(), cmdErr.String(), err
+	err := cmd.Run()
+	if err != nil {
+		return &ExecError{stderrBuff.String(), err}
+	}
+
+	return nil
 }

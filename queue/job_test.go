@@ -25,9 +25,9 @@ func newJobTest() *SqsJob {
 		queueProvider: NewMockQueueProvider(),
 		queueMessage:  mockQueueMessage,
 		executeMutex:  &sync.Mutex{},
-		apiKey:        &mockApiKey,
-		baseUrl:       &mockBaseUrl,
-		integrationId: &mockIntegrationId,
+		apiKey:        mockApiKey,
+		baseUrl:       mockBaseUrl,
+		integrationId: mockIntegrationId,
 		state:         JobInitial,
 	}
 }
@@ -58,7 +58,7 @@ func TestExecute(t *testing.T) {
 	defer testServer.Close()
 
 	sqsJob := newJobTest()
-	sqsJob.baseUrl = &testServer.URL
+	sqsJob.baseUrl = testServer.URL
 
 	wg.Add(1)
 	err := sqsJob.Execute()
@@ -82,7 +82,7 @@ func TestMultipleExecute(t *testing.T) {
 	defer testServer.Close()
 
 	sqsJob := newJobTest()
-	sqsJob.baseUrl = &testServer.URL
+	sqsJob.baseUrl = testServer.URL
 
 	errorResults := make(chan error, 25)
 

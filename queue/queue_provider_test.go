@@ -16,6 +16,7 @@ func newQueueProviderTest() *OISQueueProvider {
 	return &OISQueueProvider{
 		oisMetadata:        mockOISMetadata1,
 		refreshClientMutex: &sync.RWMutex{},
+		expirationMutex:    &sync.RWMutex{},
 		client:             NewMockSqsClient(nil),
 	}
 }

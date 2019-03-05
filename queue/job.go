@@ -25,15 +25,15 @@ type SqsJob struct {
 	queueProvider QueueProvider
 	queueMessage  QueueMessage
 
-	integrationId *string
-	apiKey        *string
-	baseUrl       *string
+	integrationId string
+	apiKey        string
+	baseUrl       string
 
 	state        int32
 	executeMutex *sync.Mutex
 }
 
-func NewSqsJob(queueMessage QueueMessage, queueProvider QueueProvider, apiKey, baseUrl, integrationId *string) Job {
+func NewSqsJob(queueMessage QueueMessage, queueProvider QueueProvider, apiKey, baseUrl, integrationId string) Job {
 	return &SqsJob{
 		queueProvider: queueProvider,
 		queueMessage:  queueMessage,
@@ -77,7 +77,7 @@ func (j *SqsJob) Execute() error {
 	messageAttr := j.SqsMessage().MessageAttributes
 
 	if messageAttr == nil ||
-		*messageAttr[integrationId].StringValue != *j.integrationId {
+		*messageAttr[integrationId].StringValue != j.integrationId {
 		j.state = JobError
 		return errors.Errorf("Message[%s] is invalid, will not be processed.", messageId)
 	}
@@ -95,7 +95,7 @@ func (j *SqsJob) Execute() error {
 		if err != nil {
 			logrus.Warnf("Could not send action result[%+v] of message[%s] to Opsgenie: %s", result, messageId, err)
 		} else {
-			took := time.Now().Sub(start)
+			took := time.Since(start)
 			logrus.Debugf("Successfully sent result of message[%s] to OpsGenie and it took %f seconds.", messageId, took.Seconds())
 		}
 	}()

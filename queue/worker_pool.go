@@ -211,7 +211,7 @@ func (wp *WorkerPoolImpl) run() {
 	for {
 		select {
 		case <-wp.quit:
-			logrus.Infof("Worker pool is waiting to quit.")
+			logrus.Infof("Worker pool is waiting that all workers are done.")
 			close(wp.jobQueue)
 			wp.workersWaitGroup.Wait()
 			return

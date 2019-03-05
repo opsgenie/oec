@@ -13,16 +13,18 @@ var readConfigurationFromGitCalled = false
 var readConfigurationFromLocalCalled = false
 
 var mockConf = &Configuration{
-	ApiKey:         "ApiKey",
-	BaseUrl:        "https://api.opsgenie.com",
-	ActionMappings: mockActionMappings,
+	ApiKey:  "ApiKey",
+	BaseUrl: "https://api.opsgenie.com",
+	ActionSpecifications: ActionSpecifications{
+		ActionMappings: mockActionMappings,
+	},
 }
 
 var mockActionMappings = ActionMappings{
 	"Create": MappedAction{
-		SourceType:           "local",
-		Filepath:             "/path/to/runbook.bin",
-		EnvironmentVariables: []string{"e1=v1", "e2=v2"},
+		SourceType: "local",
+		Filepath:   "/path/to/runbook.bin",
+		Env:        []string{"e1=v1", "e2=v2"},
 	},
 	"Close": MappedAction{
 		SourceType: "git",
@@ -30,16 +32,16 @@ var mockActionMappings = ActionMappings{
 			Url:                "testUrl",
 			PrivateKeyFilepath: "testKeyPath",
 		},
-		EnvironmentVariables: []string{"e1=v1", "e2=v2"},
-		Filepath:             "/path/to/runbook.bin",
+		Env:      []string{"e1=v1", "e2=v2"},
+		Filepath: "/path/to/runbook.bin",
 	},
 }
 
 func expectedConf() *Configuration {
 	expectedConf := *mockConf
 	expectedConf.ActionMappings = copyActionMappings(mockConf.ActionMappings)
-	addHomeDirPrefixToLocalActionFilepaths(&expectedConf.ActionMappings)
-	addHomeDirPrefixToPrivateKeyFilepaths(&expectedConf.ActionMappings)
+	addHomeDirPrefixToActionMappings(expectedConf.ActionMappings)
+	expectedConf.GlobalArgs = append([]string{"-apiKey", expectedConf.ApiKey, "-opsgenieUrl", expectedConf.BaseUrl}, expectedConf.GlobalArgs...)
 
 	if expectedConf.LogrusLevel == 0 {
 		expectedConf.LogrusLevel = logrus.InfoLevel
@@ -54,7 +56,7 @@ var mockJsonConfFileContent = []byte(`{
         "Create": {
             "filepath": "/path/to/runbook.bin",
             "sourceType": "local",
-            "environmentVariables": [
+            "env": [
                 "e1=v1", "e2=v2"
             ]
         },
@@ -64,7 +66,7 @@ var mockJsonConfFileContent = []byte(`{
                 "url" : "testUrl",
                 "privateKeyFilepath" : "testKeyPath"
             },
-            "environmentVariables": [
+            "env": [
                 "e1=v1", "e2=v2"
             ],
 			"filepath": "/path/to/runbook.bin"
@@ -73,13 +75,14 @@ var mockJsonConfFileContent = []byte(`{
 }`)
 
 var mockYamlConfFileContent = []byte(`
+---
 apiKey: ApiKey
 baseUrl: https://api.opsgenie.com
 actionMappings:
   Create:
     filepath: "/path/to/runbook.bin"
     sourceType: local
-    environmentVariables:
+    env:
     - e1=v1
     - e2=v2
   Close:
@@ -87,7 +90,7 @@ actionMappings:
     gitOptions:
       url: testUrl
       privateKeyFilepath: testKeyPath
-    environmentVariables:
+    env:
     - e1=v1
     - e2=v2
     filepath: "/path/to/runbook.bin"

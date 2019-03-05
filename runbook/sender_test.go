@@ -62,7 +62,7 @@ func TestSendResultToOpsGenie(t *testing.T) {
 	}
 
 	apiKey := "testKey"
-	err := SendResultToOpsGenie(actionResult, &apiKey, &ts.URL)
+	err := SendResultToOpsGenie(actionResult, apiKey, ts.URL)
 
 	assert.Nil(t, err)
 }
@@ -75,7 +75,7 @@ func TestCannotSendResultToOpsGenie(t *testing.T) {
 	defer ts.Close()
 
 	apiKey := "testKey"
-	err := SendResultToOpsGenie(new(ActionResultPayload), &apiKey, &ts.URL)
+	err := SendResultToOpsGenie(new(ActionResultPayload), apiKey, ts.URL)
 
 	assert.Error(t, err, "Could not send action result to OpsGenie. HttpStatus: 400")
 }
@@ -92,7 +92,7 @@ func TestSendResultToOpsGenieClientError(t *testing.T) {
 	}
 
 	apiKey := "testKey"
-	err := SendResultToOpsGenie(new(ActionResultPayload), &apiKey, &ts.URL)
+	err := SendResultToOpsGenie(new(ActionResultPayload), apiKey, ts.URL)
 
 	assert.Error(t, err, "Could not send action result to OpsGenie. Reason: Test client error")
 }

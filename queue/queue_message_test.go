@@ -7,6 +7,7 @@ import (
 	"github.com/opsgenie/ois/runbook"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"io"
 	"math/rand"
 	"testing"
 	"time"
@@ -19,11 +20,15 @@ var (
 	mockIntegrationId = "mockIntegrationId"
 )
 
-var mockActionMappings = &conf.ActionMappings{
+var mockActionSpecs = &conf.ActionSpecifications{
+	ActionMappings: mockActionMappings,
+}
+
+var mockActionMappings = conf.ActionMappings{
 	"Create": conf.MappedAction{
-		SourceType:           "local",
-		Filepath:             "/path/to/runbook.bin",
-		EnvironmentVariables: []string{"e1=v1", "e2=v2"},
+		SourceType: "local",
+		Filepath:   "/path/to/runbook.bin",
+		Env:        []string{"e1=v1", "e2=v2"},
 	},
 	"Close": conf.MappedAction{
 		SourceType: "git",
@@ -32,13 +37,13 @@ var mockActionMappings = &conf.ActionMappings{
 			PrivateKeyFilepath: "testKeyPath",
 			Passphrase:         "testPass",
 		},
-		Filepath:             "ois/testConfig.json",
-		EnvironmentVariables: []string{"e1=v1", "e2=v2"},
+		Filepath: "ois/testConfig.json",
+		Env:      []string{"e1=v1", "e2=v2"},
 	},
 }
 
-func mockExecute(executablePath string, args []string, environmentVars []string) (s string, s2 string, e error) {
-	return "Operation executed successfully!", "", nil
+func mockExecute(executablePath string, args, environmentVars []string, stdout, stderr io.Writer) error {
+	return nil
 }
 
 func TestGetMessage(t *testing.T) {
@@ -47,7 +52,7 @@ func TestGetMessage(t *testing.T) {
 	expectedMessage.SetMessageId("messageId")
 	expectedMessage.SetBody("messageBody")
 
-	queueMessage := NewOISMessage(expectedMessage, mockActionMappings, nil)
+	queueMessage := NewOISMessage(expectedMessage, nil, mockActionSpecs)
 	actualMessage := queueMessage.Message()
 
 	assert.Equal(t, expectedMessage, actualMessage)
@@ -69,7 +74,7 @@ func testProcessSuccessfully(t *testing.T) {
 	body := `{"action":"Create"}`
 	id := "MessageId"
 	message := &sqs.Message{Body: &body, MessageId: &id}
-	queueMessage := NewOISMessage(message, mockActionMappings, nil)
+	queueMessage := NewOISMessage(message, nil, mockActionSpecs)
 
 	result, err := queueMessage.Process()
 	assert.Nil(t, err)
@@ -82,7 +87,7 @@ func testProcessMappedActionNotFound(t *testing.T) {
 
 	body := `{"action":"Ack"}`
 	message := &sqs.Message{Body: &body}
-	queueMessage := NewOISMessage(message, mockActionMappings, nil)
+	queueMessage := NewOISMessage(message, nil, mockActionSpecs)
 
 	_, err := queueMessage.Process()
 	expectedErr := errors.New("There is no mapped action found for action[Ack].")
@@ -95,41 +100,11 @@ func testProcessFieldMissing(t *testing.T) {
 
 	body := `{"alert":{}}`
 	message := &sqs.Message{Body: &body}
-	queueMessage := NewOISMessage(message, mockActionMappings, nil)
+	queueMessage := NewOISMessage(message, nil, mockActionSpecs)
 
 	_, err := queueMessage.Process()
 	expectedErr := errors.New("SQS message does not contain action property.")
 	assert.EqualError(t, err, expectedErr.Error())
-}
-
-func TestGetExePathGitNilRepositories(t *testing.T) {
-
-	closeAction := (*mockActionMappings)["Close"]
-	_, err := getExePath(&closeAction, nil)
-
-	assert.NotNil(t, err)
-	assert.EqualError(t, err, "Repositories should be provided.")
-}
-
-func TestExecuteRunbookGitNonExistingRepository(t *testing.T) {
-
-	repositories := &git.Repositories{}
-
-	closeAction := (*mockActionMappings)["Close"]
-	_, err := getExePath(&closeAction, repositories)
-
-	assert.NotNil(t, err)
-	assert.EqualError(t, err, "Git repository[testUrl] could not be found.")
-}
-
-func TestExecuteRunbookLocal(t *testing.T) {
-
-	createAction := (*mockActionMappings)["Create"]
-	exePath, err := getExePath(&createAction, nil)
-
-	assert.NoError(t, err)
-	assert.Equal(t, createAction.Filepath, exePath)
-
 }
 
 // Mock Queue Message

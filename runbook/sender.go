@@ -16,20 +16,20 @@ var SendResultToOpsGenieFunc = SendResultToOpsGenie
 
 var client = &retryer.Retryer{}
 
-func SendResultToOpsGenie(resultPayload *ActionResultPayload, apiKey, baseUrl *string) error {
+func SendResultToOpsGenie(resultPayload *ActionResultPayload, apiKey, baseUrl string) error {
 
 	body, err := json.Marshal(resultPayload)
 	if err != nil {
 		return errors.Errorf("Cannot marshall payload: %s", err)
 	}
 
-	resultUrl := *baseUrl + resultPath
+	resultUrl := baseUrl + resultPath
 
 	request, err := retryer.NewRequest("POST", resultUrl, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
-	request.Header.Add("Authorization", "GenieKey "+*apiKey)
+	request.Header.Add("Authorization", "GenieKey "+apiKey)
 	request.Header.Add("Content-Type", "application/json; charset=UTF-8")
 
 	response, err := client.Do(request)

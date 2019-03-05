@@ -53,11 +53,15 @@ func mockHttpGetError(retryer *retryer.Retryer, request *retryer.Request) (*http
 func mockHttpGet(retryer *retryer.Retryer, request *retryer.Request) (*http.Response, error) {
 
 	token, _ := json.Marshal(mockToken)
-	buff := bytes.NewBuffer(token)
 
-	response := &http.Response{}
-	response.StatusCode = 200
-	response.Body = ioutil.NopCloser(buff)
+	header := http.Header{}
+	header.Add("Token", string(token))
+
+	response := &http.Response{
+		StatusCode: 200,
+		Header:     header,
+		Body:       ioutil.NopCloser(nil),
+	}
 
 	return response, nil
 }
@@ -223,17 +227,17 @@ func TestAddTwoDifferentPollersTest(t *testing.T) {
 
 	processor := newQueueProcessorTest()
 
-	poller := processor.addPoller(NewMockQueueProvider(), &mockIntegrationId).(*OISPoller)
+	poller := processor.addPoller(NewMockQueueProvider(), mockIntegrationId).(*OISPoller)
 
 	mockQueueProvider2 := NewMockQueueProvider().(*MockQueueProvider)
 	mockQueueProvider2.OISMetadataFunc = func() OISMetadata {
 		return mockOISMetadata2
 	}
 
-	processor.addPoller(mockQueueProvider2, &mockIntegrationId)
+	processor.addPoller(mockQueueProvider2, mockIntegrationId)
 
 	assert.Equal(t, mockOISMetadata1, poller.QueueProvider().OISMetadata())
-	assert.Equal(t, processor.conf.PollerConf, *poller.pollerConf)
+	assert.Equal(t, processor.conf.PollerConf, poller.conf.PollerConf)
 
 	_, contains := processor.pollers[mockOISMetadata1.QueueUrl()]
 	assert.True(t, contains)

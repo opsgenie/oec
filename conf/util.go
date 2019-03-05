@@ -2,6 +2,7 @@ package conf
 
 import (
 	"encoding/json"
+	"github.com/opsgenie/ois/git"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
@@ -46,7 +47,18 @@ func readConfigurationFromFile(filepath string) (*Configuration, error) {
 	}
 }
 
+func homeDir() string {
+	if runtime.GOOS == "windows" {
+		return os.Getenv("USERPROFILE")
+	}
+	return os.Getenv("HOME")
+}
+
 func addHomeDirPrefix(filepath string) string {
+	if filepath == "" {
+		return filepath
+	}
+
 	tildePrefix := "~" + string(os.PathSeparator)
 
 	if strings.HasPrefix(filepath, tildePrefix) {
@@ -56,42 +68,37 @@ func addHomeDirPrefix(filepath string) string {
 	return fpath.Clean(filepath)
 }
 
-func homeDir() string {
-	if runtime.GOOS == "windows" {
-		return os.Getenv("USERPROFILE")
-	}
-	return os.Getenv("HOME")
-}
-
-func addHomeDirPrefixToLocalActionFilepaths(mappings *ActionMappings) {
-	for index, action := range *mappings {
+func addHomeDirPrefixToActionMappings(mappings ActionMappings) {
+	for index, action := range mappings {
 		if action.SourceType == LocalSourceType {
 			action.Filepath = addHomeDirPrefix(action.Filepath)
-			(*mappings)[index] = action
+		}
+		if action.SourceType == GitSourceType {
+			action.GitOptions.PrivateKeyFilepath = addHomeDirPrefix(action.GitOptions.PrivateKeyFilepath)
+		}
+		action.Stdout = addHomeDirPrefix(action.Stdout)
+		action.Stderr = addHomeDirPrefix(action.Stderr)
+		mappings[index] = action
+	}
+}
+
+func AddRepositoryPathToGitActionFilepaths(mappings ActionMappings, repositories git.Repositories) {
+	for index, action := range mappings {
+		if action.SourceType == GitSourceType {
+			repository, _ := repositories.Get(action.GitOptions.Url)
+			action.Filepath = fpath.Join(repository.Path, action.Filepath)
+			mappings[index] = action
 		}
 	}
 }
 
-func chmodLocalActions(mappings *ActionMappings, mode os.FileMode) {
-	for _, action := range *mappings {
+func chmodLocalActions(mappings ActionMappings, mode os.FileMode) {
+	for _, action := range mappings {
 		if action.SourceType == LocalSourceType {
 			err := os.Chmod(action.Filepath, mode)
 			if err != nil {
 				logrus.Warn(err)
 			}
-		}
-	}
-}
-
-func addHomeDirPrefixToPrivateKeyFilepaths(mappings *ActionMappings) {
-	for index, action := range *mappings {
-		if action.SourceType == GitSourceType {
-			if action.GitOptions.PrivateKeyFilepath == "" {
-				continue
-			}
-			action.GitOptions.PrivateKeyFilepath = addHomeDirPrefix(action.GitOptions.PrivateKeyFilepath)
-			(*mappings)[index] = action
-
 		}
 	}
 }

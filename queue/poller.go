@@ -23,37 +23,32 @@ type OISPoller struct {
 	workerPool    WorkerPool
 	queueProvider QueueProvider
 
-	integrationId  *string
-	apiKey         *string
-	baseUrl        *string
-	pollerConf     *conf.PollerConf
-	actionMappings *conf.ActionMappings
-	repositories   *git.Repositories
+	integrationId string
+	conf          *conf.Configuration
+	repositories  git.Repositories
 
-	isRunning      bool
-	startStopMutex *sync.Mutex
-	quit           chan struct{}
-	wakeUpChan     chan struct{}
+	isRunning          bool
+	isRunningWaitGroup *sync.WaitGroup
+	startStopMutex     *sync.Mutex
+	quit               chan struct{}
+	wakeUpChan         chan struct{}
 }
 
 func NewPoller(workerPool WorkerPool, queueProvider QueueProvider,
-	pollerConf *conf.PollerConf, actionMappings *conf.ActionMappings,
-	apiKey, baseUrl, integrationId *string,
-	repositories *git.Repositories) Poller {
+	conf *conf.Configuration, integrationId string,
+	repositories git.Repositories) Poller {
 
 	return &OISPoller{
-		quit:           make(chan struct{}),
-		wakeUpChan:     make(chan struct{}),
-		isRunning:      false,
-		startStopMutex: &sync.Mutex{},
-		pollerConf:     pollerConf,
-		actionMappings: actionMappings,
-		repositories:   repositories,
-		apiKey:         apiKey,
-		baseUrl:        baseUrl,
-		integrationId:  integrationId,
-		workerPool:     workerPool,
-		queueProvider:  queueProvider,
+		quit:               make(chan struct{}),
+		wakeUpChan:         make(chan struct{}),
+		isRunning:          false,
+		isRunningWaitGroup: &sync.WaitGroup{},
+		startStopMutex:     &sync.Mutex{},
+		conf:               conf,
+		repositories:       repositories,
+		integrationId:      integrationId,
+		workerPool:         workerPool,
+		queueProvider:      queueProvider,
 	}
 }
 
@@ -73,6 +68,7 @@ func (p *OISPoller) StartPolling() error {
 		return errors.New("Poller is already running.")
 	}
 
+	p.isRunningWaitGroup.Add(1)
 	go p.run()
 
 	p.isRunning = true
@@ -91,6 +87,7 @@ func (p *OISPoller) StopPolling() error {
 	close(p.quit)
 	close(p.wakeUpChan)
 
+	p.isRunningWaitGroup.Wait()
 	p.isRunning = false
 
 	return nil
@@ -121,9 +118,9 @@ func (p *OISPoller) poll() (shouldWait bool) {
 	}
 
 	region := p.queueProvider.OISMetadata().Region()
-	maxNumberOfMessages := util.Min(p.pollerConf.MaxNumberOfMessages, int64(availableWorkerCount))
+	maxNumberOfMessages := util.Min(p.conf.PollerConf.MaxNumberOfMessages, int64(availableWorkerCount))
 
-	messages, err := p.queueProvider.ReceiveMessage(maxNumberOfMessages, p.pollerConf.VisibilityTimeoutInSeconds)
+	messages, err := p.queueProvider.ReceiveMessage(maxNumberOfMessages, p.conf.PollerConf.VisibilityTimeoutInSeconds)
 	if err != nil { // todo check wait time according to error / check error
 		logrus.Errorf("Poller[%s] could not receive message: %s", region, err.Error())
 		return true
@@ -142,12 +139,12 @@ func (p *OISPoller) poll() (shouldWait bool) {
 		job := NewSqsJob(
 			NewOISMessage(
 				messages[i],
-				p.actionMappings,
 				p.repositories,
+				&p.conf.ActionSpecifications,
 			),
 			p.queueProvider,
-			p.apiKey,
-			p.baseUrl,
+			p.conf.ApiKey,
+			p.conf.BaseUrl,
 			p.integrationId,
 		)
 
@@ -156,9 +153,7 @@ func (p *OISPoller) poll() (shouldWait bool) {
 			logrus.Debugf("Error occurred while submitting, messages will be terminated: %s.", err.Error())
 			p.terminateMessageVisibility(messages[i:])
 			return true
-		} else if isSubmitted {
-			continue
-		} else {
+		} else if !isSubmitted {
 			p.terminateMessageVisibility(messages[i : i+1])
 		}
 	}
@@ -176,7 +171,7 @@ func (p *OISPoller) wait(pollingWaitInterval time.Duration) {
 	for {
 		select {
 		case <-p.wakeUpChan:
-			logrus.Infof("Poller[%s] has been interrupted while waiting for next polling.", queueUrl)
+			logrus.Debugf("Poller[%s] has been interrupted while waiting for next polling.", queueUrl)
 			return
 		case <-ticker.C:
 			return
@@ -189,13 +184,14 @@ func (p *OISPoller) run() {
 	queueUrl := p.queueProvider.OISMetadata().QueueUrl()
 	logrus.Infof("Poller[%s] has started to run.", queueUrl)
 
-	pollingWaitInterval := p.pollerConf.PollingWaitIntervalInMillis * time.Millisecond
+	pollingWaitInterval := p.conf.PollerConf.PollingWaitIntervalInMillis * time.Millisecond
 	expiredTokenWaitInterval := errorRefreshPeriod
 
 	for {
 		select {
 		case <-p.quit:
 			logrus.Infof("Poller[%s] has stopped to poll.", queueUrl)
+			p.isRunningWaitGroup.Done()
 			return
 		default:
 			if p.queueProvider.IsTokenExpired() {

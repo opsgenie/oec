@@ -1,6 +1,17 @@
 package queue
 
 type QueuePayload struct {
+	Alert  Alert  `json:"alert"`
+	Action string `json:"action"`
+}
+
+type Alert struct {
+	AlertId string `json:"alertId"`
+}
+
+/* Unmarshaling of full payload is not necessary
+
+type QueuePayload struct {
 	Source           Source           `json:"source,omitempty"`
 	Alert            Alert            `json:"alert,omitempty"`
 	Action           string           `json:"action,omitempty"`
@@ -46,8 +57,8 @@ type Alert struct {
 }
 
 type MappedAction struct {
-	MappedAction string `json:"mappedAction,omitempty"`
-	ExtraField   string `json:"extraField,omitempty"`
+	Name 		string `json:"name,omitempty"`
+	ExtraField	string `json:"extraField,omitempty"`
 }
 
 type EscalationNotify struct {
@@ -56,3 +67,4 @@ type EscalationNotify struct {
 	Type   string `json:"type,omitempty"`
 	Name   string `json:"name,omitempty"`
 }
+*/

@@ -19,16 +19,19 @@ var mockPollerConf = &conf.PollerConf{
 
 func newPollerTest() *OISPoller {
 	return &OISPoller{
-		quit:           make(chan struct{}),
-		wakeUpChan:     make(chan struct{}),
-		isRunning:      false,
-		startStopMutex: &sync.Mutex{},
-		pollerConf:     mockPollerConf,
-		workerPool:     NewMockWorkerPool(),
-		queueProvider:  NewMockQueueProvider(),
-		actionMappings: mockActionMappings,
-		apiKey:         &mockApiKey,
-		baseUrl:        &mockBaseUrl,
+		quit:               make(chan struct{}),
+		wakeUpChan:         make(chan struct{}),
+		isRunning:          false,
+		isRunningWaitGroup: &sync.WaitGroup{},
+		startStopMutex:     &sync.Mutex{},
+		conf: &conf.Configuration{
+			ApiKey:               mockApiKey,
+			BaseUrl:              mockBaseUrl,
+			PollerConf:           *mockPollerConf,
+			ActionSpecifications: *mockActionSpecs,
+		},
+		workerPool:    NewMockWorkerPool(),
+		queueProvider: NewMockQueueProvider(),
 	}
 }
 
@@ -141,7 +144,7 @@ func TestPollMaxMessageUpperBound(t *testing.T) {
 
 	shouldWait := poller.poll()
 	assert.True(t, shouldWait)
-	assert.Equal(t, poller.pollerConf.MaxNumberOfMessages, maxNumberOfMessages)
+	assert.Equal(t, poller.conf.PollerConf.MaxNumberOfMessages, maxNumberOfMessages)
 }
 
 func TestPollMessageSubmitFail(t *testing.T) {
@@ -240,9 +243,8 @@ func NewMockPoller() Poller {
 }
 
 func NewMockPollerForQueueProcessor(workerPool WorkerPool, queueProvider QueueProvider,
-	pollerConf *conf.PollerConf, actionMappings *conf.ActionMappings,
-	apiKey, baseUrl, integrationId *string,
-	repositories *git.Repositories) Poller {
+	conf *conf.Configuration, integrationId string,
+	repositories git.Repositories) Poller {
 	return NewMockPoller()
 }
 

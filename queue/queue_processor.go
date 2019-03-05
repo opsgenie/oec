@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"bytes"
 	"encoding/json"
 	"github.com/opsgenie/ois/conf"
 	"github.com/opsgenie/ois/git"
@@ -45,22 +46,21 @@ type QueueProcessor interface {
 }
 
 type OISQueueProcessor struct {
-	successRefreshPeriod time.Duration
-	errorRefreshPeriod   time.Duration
-
-	conf         *conf.Configuration
-	repositories *git.Repositories
-	oisVersion   string
-
 	workerPool WorkerPool
 	pollers    map[string]Poller
+
+	retryer *retryer.Retryer
+
+	conf         *conf.Configuration
+	repositories git.Repositories
+
+	successRefreshPeriod time.Duration
+	errorRefreshPeriod   time.Duration
 
 	isRunning          bool
 	isRunningWaitGroup *sync.WaitGroup
 	startStopMutex     *sync.Mutex
-
-	retryer *retryer.Retryer
-	quit    chan struct{}
+	quit               chan struct{}
 }
 
 func NewQueueProcessor(conf *conf.Configuration) QueueProcessor {
@@ -126,6 +126,8 @@ func (qp *OISQueueProcessor) StartProcessing() error {
 	if qp.repositories.NotEmpty() {
 		qp.isRunningWaitGroup.Add(1) // one for pulling repositories
 		go qp.startPullingRepositories(repositoryRefreshPeriod)
+
+		conf.AddRepositoryPathToGitActionFilepaths(qp.conf.ActionMappings, qp.repositories)
 	}
 	qp.workerPool.Start()
 	qp.refreshPollers(token)
@@ -147,11 +149,12 @@ func (qp *OISQueueProcessor) StopProcessing() error {
 	logrus.Infof("Queue processor is stopping.")
 
 	close(qp.quit)
+	qp.isRunningWaitGroup.Wait()
+
 	qp.workerPool.Stop()
 	qp.repositories.RemoveAll()
 
 	qp.isRunning = false
-	qp.isRunningWaitGroup.Wait()
 	logrus.Infof("Queue processor has stopped.")
 	return nil
 }
@@ -189,8 +192,10 @@ func (qp *OISQueueProcessor) receiveToken() (*OISToken, error) {
 		return nil, errors.Errorf("Token could not be received from Opsgenie, status: %s, message: %s", response.Status, body)
 	}
 
+	responseToken := bytes.NewBufferString(response.Header.Get("Token"))
+
 	token := &OISToken{}
-	err = json.NewDecoder(response.Body).Decode(&token)
+	err = json.NewDecoder(responseToken).Decode(&token)
 	if err != nil {
 		return nil, err
 	}
@@ -198,14 +203,11 @@ func (qp *OISQueueProcessor) receiveToken() (*OISToken, error) {
 	return token, nil
 }
 
-func (qp *OISQueueProcessor) addPoller(queueProvider QueueProvider, integrationId *string) Poller {
+func (qp *OISQueueProcessor) addPoller(queueProvider QueueProvider, integrationId string) Poller {
 	poller := newPollerFunc(
 		qp.workerPool,
 		queueProvider,
-		&qp.conf.PollerConf,
-		&qp.conf.ActionMappings,
-		&qp.conf.ApiKey,
-		&qp.conf.BaseUrl,
+		qp.conf,
 		integrationId,
 		qp.repositories,
 	)
@@ -247,7 +249,7 @@ func (qp *OISQueueProcessor) refreshPollers(token *OISToken) {
 				logrus.Errorf("Poller[%s] could not be added: %s.", queueUrl, err)
 				continue
 			}
-			qp.addPoller(queueProvider, &token.IntegrationId).StartPolling()
+			qp.addPoller(queueProvider, token.IntegrationId).StartPolling()
 			logrus.Debugf("Poller[%s] is added.", queueUrl)
 		}
 	}
@@ -305,6 +307,7 @@ func (qp *OISQueueProcessor) startPullingRepositories(pullPeriod time.Duration) 
 		select {
 		case <-qp.quit:
 			ticker.Stop()
+			logrus.Info("All git repositories are removed.")
 			qp.isRunningWaitGroup.Done()
 			return
 		case <-ticker.C:

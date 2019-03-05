@@ -9,7 +9,8 @@ import (
 	"github.com/opsgenie/ois/runbook"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"path/filepath"
+	"gopkg.in/natefinch/lumberjack.v2"
+	"io"
 	"time"
 )
 
@@ -19,17 +20,17 @@ type QueueMessage interface {
 }
 
 type OISQueueMessage struct {
-	message        *sqs.Message
-	actionMappings *conf.ActionMappings
-	repositories   *git.Repositories
+	message      *sqs.Message
+	repositories git.Repositories
+	actionSpecs  *conf.ActionSpecifications
 }
 
-func NewOISMessage(message *sqs.Message, actionMappings *conf.ActionMappings, repositories *git.Repositories) QueueMessage {
+func NewOISMessage(message *sqs.Message, repositories git.Repositories, actionSpecs *conf.ActionSpecifications) QueueMessage {
 
 	return &OISQueueMessage{
-		message:        message,
-		actionMappings: actionMappings,
-		repositories:   repositories,
+		message:      message,
+		repositories: repositories,
+		actionSpecs:  actionSpecs,
 	}
 }
 
@@ -49,14 +50,9 @@ func (qm *OISQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 		return nil, errors.New("SQS message does not contain action property.")
 	}
 
-	mappedAction, ok := (*qm.actionMappings)[conf.ActionName(action)]
+	mappedAction, ok := qm.actionSpecs.ActionMappings[conf.ActionName(action)]
 	if !ok {
 		return nil, errors.Errorf("There is no mapped action found for action[%s].", action)
-	}
-
-	exePath, err := getExePath(&mappedAction, qm.repositories)
-	if err != nil {
-		return nil, err
 	}
 
 	result := &runbook.ActionResultPayload{
@@ -65,47 +61,70 @@ func (qm *OISQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 	}
 
 	start := time.Now()
-	_, errorOutput, err := runbook.ExecuteFunc(exePath, []string{*qm.message.Body}, mappedAction.EnvironmentVariables)
-	if err != nil {
-		result.FailureMessage = fmt.Sprintf("Err: %s, Stderr: %s", err.Error(), errorOutput)
-		logrus.Debugf("Action[%s] execution of message[%s] failed: %s Stderr: %s", action, *qm.message.MessageId, err, errorOutput)
-	} else {
+	err = qm.execute(&mappedAction)
+	took := time.Since(start)
+
+	switch err := err.(type) {
+	case *runbook.ExecError:
+		result.FailureMessage = fmt.Sprintf("Err: %s, Stderr: %s", err.Error(), err.Stderr)
+		logrus.Debugf("Action[%s] execution of message[%s] failed: %s Stderr: %s", action, *qm.message.MessageId, err.Error(), err.Stderr)
+
+	case nil:
 		result.IsSuccessful = true
-		took := time.Now().Sub(start)
 		logrus.Debugf("Action[%s] execution of message[%s] has been completed and it took %f seconds.", action, *qm.message.MessageId, took.Seconds())
+
+	default:
+		return nil, err
 	}
 
 	return result, nil
 }
 
-func getExePath(mappedAction *conf.MappedAction, repositories *git.Repositories) (string, error) {
-	source := mappedAction.SourceType
-	exePath := mappedAction.Filepath
+func (qm *OISQueueMessage) execute(mappedAction *conf.MappedAction) error {
+	args := append([]string{"-payload", *qm.message.Body}, qm.actionSpecs.GlobalFlags.Args()...)
+	args = append(args, mappedAction.Flags.Args()...)
+	args = append(args, qm.actionSpecs.GlobalArgs...)
+	args = append(args, mappedAction.Args...)
+	env := append(qm.actionSpecs.GlobalEnv, mappedAction.Env...)
 
-	switch source {
-	case conf.LocalSourceType:
-		return exePath, nil
+	var outFile, errFile io.Writer
 
+	if mappedAction.Stdout != "" {
+		outFile = &lumberjack.Logger{
+			Filename:  mappedAction.Stdout,
+			MaxSize:   3, // MB
+			MaxAge:    1, // Days
+			LocalTime: true,
+		}
+	}
+	if mappedAction.Stderr != "" {
+		errFile = &lumberjack.Logger{
+			Filename:  mappedAction.Stderr,
+			MaxSize:   3, // MB
+			MaxAge:    1, // Days
+			LocalTime: true,
+		}
+	}
+
+	sourceType := mappedAction.SourceType
+
+	switch sourceType {
 	case conf.GitSourceType:
-		if repositories == nil {
-			return "", errors.New("Repositories should be provided.")
+		if qm.repositories == nil {
+			return errors.New("Repositories should be provided.")
 		}
 
-		url := mappedAction.GitOptions.Url
-
-		repository, err := repositories.Get(url)
+		repository, err := qm.repositories.Get(mappedAction.GitOptions.Url)
 		if err != nil {
-			return "", err
+			return err
 		}
 
 		repository.RLock()
 		defer repository.RUnlock()
-
-		exePath = filepath.Join(repository.Path, exePath)
-
-		return exePath, nil
-
+		fallthrough
+	case conf.LocalSourceType:
+		return runbook.ExecuteFunc(mappedAction.Filepath, args, env, outFile, errFile)
 	default:
-		return "", errors.Errorf("Unknown runbook source[%s].", source)
+		return errors.Errorf("Unknown runbook sourceType[%s].", sourceType)
 	}
 }

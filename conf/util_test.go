@@ -13,7 +13,7 @@ func TestReadConfigurationFromJsonFile(t *testing.T) {
 	confPath, err := util.CreateTempTestFile(mockJsonConfFileContent, ".json")
 	assert.Nil(t, err)
 
-	actualConf, _ := readConfigurationFromFile(confPath)
+	actualConf, err := readConfigurationFromFile(confPath)
 
 	defer os.Remove(confPath)
 

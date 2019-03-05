@@ -13,26 +13,41 @@ import (
 const (
 	LocalSourceType = "local"
 	GitSourceType   = "git"
+
+	DefaultBaseUrl = "https://api.opsgenie.com"
 )
 
+var readConfigurationFromGitFunc = readConfigurationFromGit
+var readConfigurationFromLocalFunc = readConfigurationFromLocal
+
+var defaultConfFilepath = filepath.Join("~", "ois", "config.json")
+
 type Configuration struct {
-	ApiKey         string         `json:"apiKey" yaml:"apiKey"`
-	BaseUrl        string         `json:"baseUrl" yaml:"baseUrl"`
+	ActionSpecifications `yaml:",inline"`
+	AppName              string     `json:"appName" yaml:"appName"`
+	ApiKey               string     `json:"apiKey" yaml:"apiKey"`
+	BaseUrl              string     `json:"baseUrl" yaml:"baseUrl"`
+	PollerConf           PollerConf `json:"pollerConf" yaml:"pollerConf"`
+	PoolConf             PoolConf   `json:"poolConf" yaml:"poolConf"`
+	LogLevel             string     `json:"logLevel" yaml:"logLevel"`
+	LogrusLevel          logrus.Level
+}
+
+type ActionSpecifications struct {
 	ActionMappings ActionMappings `json:"actionMappings" yaml:"actionMappings"`
-	PollerConf     PollerConf     `json:"pollerConf" yaml:"pollerConf"`
-	PoolConf       PoolConf       `json:"poolConf" yaml:"poolConf"`
-	LogLevel       string         `json:"logLevel" yaml:"logLevel"`
-	LogrusLevel    logrus.Level
+	GlobalFlags    Flags          `json:"globalFlags" yaml:"globalFlags"`
+	GlobalArgs     []string       `json:"globalArgs" yaml:"globalArgs"`
+	GlobalEnv      []string       `json:"environmentVariables" yaml:"environmentVariables"`
 }
 
 type ActionName string
 
 type ActionMappings map[ActionName]MappedAction
 
-func (m *ActionMappings) GitActions() []git.GitOptions {
+func (m ActionMappings) GitActions() []git.GitOptions {
 
 	opts := make([]git.GitOptions, 0)
-	for _, action := range *m {
+	for _, action := range m {
 		if (action.GitOptions != git.GitOptions{}) {
 			opts = append(opts, action.GitOptions)
 		}
@@ -42,10 +57,27 @@ func (m *ActionMappings) GitActions() []git.GitOptions {
 }
 
 type MappedAction struct {
-	SourceType           string         `json:"sourceType" yaml:"sourceType"`
-	GitOptions           git.GitOptions `json:"gitOptions" yaml:"gitOptions"`
-	Filepath             string         `json:"filepath" yaml:"filepath"`
-	EnvironmentVariables []string       `json:"environmentVariables" yaml:"environmentVariables"`
+	SourceType string         `json:"sourceType" yaml:"sourceType"`
+	GitOptions git.GitOptions `json:"gitOptions" yaml:"gitOptions"`
+	Filepath   string         `json:"filepath" yaml:"filepath"`
+	Flags      Flags          `json:"flags" yaml:"flags"`
+	Args       []string       `json:"args" yaml:"args"`
+	Env        []string       `json:"env" yaml:"env"`
+	Stdout     string         `json:"stdout" yaml:"stdout"`
+	Stderr     string         `json:"stderr" yaml:"stderr"`
+}
+
+type Flags map[string]string
+
+func (f Flags) Args() []string {
+
+	args := make([]string, 0)
+	for flagName, flagValue := range f {
+		args = append(args, "-"+flagName)
+		args = append(args, flagValue)
+	}
+
+	return args
 }
 
 type PollerConf struct {
@@ -62,13 +94,6 @@ type PoolConf struct {
 	MonitoringPeriodInMillis time.Duration `json:"monitoringPeriodInMillis" yaml:"monitoringPeriodInMillis"`
 }
 
-var readConfigurationFromGitFunc = readConfigurationFromGit
-var readConfigurationFromLocalFunc = readConfigurationFromLocal
-
-var defaultConfFilepath = filepath.Join("~", "ois", "config.json")
-
-const defaultBaseUrl = "https://api.opsgenie.com"
-
 func ReadConfFile() (*Configuration, error) {
 
 	confSource := os.Getenv("OIS_CONF_SOURCE")
@@ -82,11 +107,16 @@ func ReadConfFile() (*Configuration, error) {
 		return nil, err
 	}
 
-	addHomeDirPrefixToLocalActionFilepaths(&conf.ActionMappings)
-	chmodLocalActions(&conf.ActionMappings, 0700)
-	addHomeDirPrefixToPrivateKeyFilepaths(&conf.ActionMappings)
+	addHomeDirPrefixToActionMappings(conf.ActionMappings)
+	chmodLocalActions(conf.ActionMappings, 0700)
+
+	conf.addDefaultFlags()
 
 	return conf, nil
+}
+
+func (c *Configuration) addDefaultFlags() {
+	c.GlobalArgs = append([]string{"-apiKey", c.ApiKey, "-opsgenieUrl", c.BaseUrl}, c.GlobalArgs...)
 }
 
 func validateConfiguration(conf *Configuration) error {
@@ -98,8 +128,8 @@ func validateConfiguration(conf *Configuration) error {
 		return errors.New("ApiKey is not found in the configuration file.")
 	}
 	if conf.BaseUrl == "" {
-		conf.BaseUrl = defaultBaseUrl
-		logrus.Infof("BaseUrl is not found in the configuration file, default url[%s] is set.", defaultBaseUrl)
+		conf.BaseUrl = DefaultBaseUrl
+		logrus.Infof("BaseUrl is not found in the configuration file, default url[%s] is set.", DefaultBaseUrl)
 	}
 
 	if len(conf.ActionMappings) == 0 {
