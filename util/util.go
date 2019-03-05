@@ -2,6 +2,8 @@ package util
 
 import (
 	"io/ioutil"
+	"os"
+	"path/filepath"
 )
 
 func Min(x, y int64) int64 {
@@ -13,7 +15,7 @@ func Min(x, y int64) int64 {
 
 func CreateTempTestFile(content []byte, fileExtension string) (string, error) {
 
-	tempFile, err := ioutil.TempFile("", "*" + fileExtension)
+	tempFile, err := ioutil.TempFile("", "*"+fileExtension)
 	if err != nil {
 		return "", err
 	}
@@ -25,4 +27,13 @@ func CreateTempTestFile(content []byte, fileExtension string) (string, error) {
 	}
 
 	return tempFile.Name(), nil
+}
+
+func ChmodRecursively(path string, mode os.FileMode) error {
+	return filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		return os.Chmod(path, mode)
+	})
 }

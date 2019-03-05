@@ -26,48 +26,48 @@ type QueueProvider interface {
 	ReceiveMessage(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error)
 
 	RefreshClient(assumeRoleResult AssumeRoleResult) error
-	OISMetadata() OISMetadata
+	OECMetadata() OECMetadata
 	IsTokenExpired() bool
 }
 
-type OISQueueProvider struct {
-	oisMetadata    OISMetadata
+type OECQueueProvider struct {
+	oecMetadata    OECMetadata
 	client         SQS
 	isTokenExpired bool
 
-	refreshClientMutex *sync.RWMutex
-	expirationMutex    *sync.RWMutex
+	refreshClientMu *sync.RWMutex
+	expirationMu    *sync.RWMutex
 }
 
-func NewQueueProvider(oisMetadata OISMetadata) (QueueProvider, error) {
-	provider := &OISQueueProvider{
-		oisMetadata:        oisMetadata,
-		refreshClientMutex: &sync.RWMutex{},
-		expirationMutex:    &sync.RWMutex{},
+func NewQueueProvider(oecMetadata OECMetadata) (QueueProvider, error) {
+	provider := &OECQueueProvider{
+		oecMetadata:     oecMetadata,
+		refreshClientMu: &sync.RWMutex{},
+		expirationMu:    &sync.RWMutex{},
 	}
 
-	err := provider.RefreshClient(oisMetadata.AssumeRoleResult)
+	err := provider.RefreshClient(oecMetadata.AssumeRoleResult)
 	if err != nil {
 		return nil, err
 	}
 	return provider, nil
 }
 
-func (qp *OISQueueProvider) OISMetadata() OISMetadata {
-	qp.refreshClientMutex.RLock()
-	defer qp.refreshClientMutex.RUnlock()
-	return qp.oisMetadata
+func (qp *OECQueueProvider) OECMetadata() OECMetadata {
+	qp.refreshClientMu.RLock()
+	defer qp.refreshClientMu.RUnlock()
+	return qp.oecMetadata
 }
 
-func (qp *OISQueueProvider) IsTokenExpired() bool {
-	qp.expirationMutex.RLock()
-	defer qp.expirationMutex.RUnlock()
+func (qp *OECQueueProvider) IsTokenExpired() bool {
+	qp.expirationMu.RLock()
+	defer qp.expirationMu.RUnlock()
 	return qp.isTokenExpired
 }
 
-func (qp *OISQueueProvider) ChangeMessageVisibility(message *sqs.Message, visibilityTimeout int64) error {
+func (qp *OECQueueProvider) ChangeMessageVisibility(message *sqs.Message, visibilityTimeout int64) error {
 
-	queueUrl := qp.oisMetadata.QueueUrl()
+	queueUrl := qp.oecMetadata.QueueUrl()
 
 	request := &sqs.ChangeMessageVisibilityInput{
 		ReceiptHandle:     message.ReceiptHandle,
@@ -75,10 +75,10 @@ func (qp *OISQueueProvider) ChangeMessageVisibility(message *sqs.Message, visibi
 		VisibilityTimeout: &visibilityTimeout,
 	}
 
-	qp.refreshClientMutex.RLock()
+	qp.refreshClientMu.RLock()
 	_, err := qp.client.ChangeMessageVisibility(request)
 	qp.checkExpiration(err)
-	qp.refreshClientMutex.RUnlock()
+	qp.refreshClientMu.RUnlock()
 
 	if err != nil {
 		return err
@@ -86,19 +86,19 @@ func (qp *OISQueueProvider) ChangeMessageVisibility(message *sqs.Message, visibi
 	return nil
 }
 
-func (qp *OISQueueProvider) DeleteMessage(message *sqs.Message) error {
+func (qp *OECQueueProvider) DeleteMessage(message *sqs.Message) error {
 
-	queueUrl := qp.oisMetadata.QueueUrl()
+	queueUrl := qp.oecMetadata.QueueUrl()
 
 	request := &sqs.DeleteMessageInput{
 		QueueUrl:      &queueUrl,
 		ReceiptHandle: message.ReceiptHandle,
 	}
 
-	qp.refreshClientMutex.RLock()
+	qp.refreshClientMu.RLock()
 	_, err := qp.client.DeleteMessage(request)
 	qp.checkExpiration(err)
-	qp.refreshClientMutex.RUnlock()
+	qp.refreshClientMu.RUnlock()
 
 	if err != nil {
 		return err
@@ -106,9 +106,9 @@ func (qp *OISQueueProvider) DeleteMessage(message *sqs.Message) error {
 	return nil
 }
 
-func (qp *OISQueueProvider) ReceiveMessage(maxNumOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
+func (qp *OECQueueProvider) ReceiveMessage(maxNumOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
 
-	queueUrl := qp.oisMetadata.QueueUrl()
+	queueUrl := qp.oecMetadata.QueueUrl()
 
 	request := &sqs.ReceiveMessageInput{
 		MessageAttributeNames: []*string{
@@ -120,10 +120,10 @@ func (qp *OISQueueProvider) ReceiveMessage(maxNumOfMessage int64, visibilityTime
 		WaitTimeSeconds:     aws.Int64(0),
 	}
 
-	qp.refreshClientMutex.RLock()
+	qp.refreshClientMu.RLock()
 	result, err := qp.client.ReceiveMessage(request)
 	qp.checkExpiration(err)
-	qp.refreshClientMutex.RUnlock()
+	qp.refreshClientMu.RUnlock()
 
 	if err != nil {
 		return nil, err
@@ -131,7 +131,7 @@ func (qp *OISQueueProvider) ReceiveMessage(maxNumOfMessage int64, visibilityTime
 	return result.Messages, nil
 }
 
-func (qp *OISQueueProvider) RefreshClient(assumeRoleResult AssumeRoleResult) error {
+func (qp *OECQueueProvider) RefreshClient(assumeRoleResult AssumeRoleResult) error {
 
 	config := qp.newConfig(assumeRoleResult)
 	sess, err := session.NewSession(config)
@@ -139,19 +139,19 @@ func (qp *OISQueueProvider) RefreshClient(assumeRoleResult AssumeRoleResult) err
 		return err
 	}
 
-	qp.refreshClientMutex.Lock()
+	qp.refreshClientMu.Lock()
 	qp.client = sqs.New(sess)
-	qp.oisMetadata.AssumeRoleResult = assumeRoleResult
-	qp.refreshClientMutex.Unlock()
+	qp.oecMetadata.AssumeRoleResult = assumeRoleResult
+	qp.refreshClientMu.Unlock()
 
-	qp.expirationMutex.Lock()
+	qp.expirationMu.Lock()
 	qp.isTokenExpired = false
-	qp.expirationMutex.Unlock()
+	qp.expirationMu.Unlock()
 
 	return nil
 }
 
-func (qp *OISQueueProvider) newConfig(assumeRoleResult AssumeRoleResult) *aws.Config {
+func (qp *OECQueueProvider) newConfig(assumeRoleResult AssumeRoleResult) *aws.Config {
 
 	assumeRoleResultCredentials := assumeRoleResult.Credentials
 	creds := credentials.NewStaticCredentials(
@@ -161,18 +161,18 @@ func (qp *OISQueueProvider) newConfig(assumeRoleResult AssumeRoleResult) *aws.Co
 	)
 
 	awsConfig := aws.NewConfig().
-		WithRegion(qp.oisMetadata.Region()).
+		WithRegion(qp.oecMetadata.Region()).
 		WithCredentials(creds)
 
 	return awsConfig
 }
 
-func (qp *OISQueueProvider) checkExpiration(err error) {
+func (qp *OECQueueProvider) checkExpiration(err error) {
 	if err, ok := err.(awserr.Error); ok {
 		if strings.Contains(err.Code(), "ExpiredToken") {
-			qp.expirationMutex.Lock()
+			qp.expirationMu.Lock()
 			qp.isTokenExpired = true
-			qp.expirationMutex.Unlock()
+			qp.expirationMu.Unlock()
 		}
 	}
 }

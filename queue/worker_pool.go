@@ -2,7 +2,7 @@ package queue
 
 import (
 	"github.com/google/uuid"
-	"github.com/opsgenie/ois/conf"
+	"github.com/opsgenie/oec/conf"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"sync"
@@ -31,9 +31,9 @@ type WorkerPoolImpl struct {
 	quitNow   chan struct{}
 	isRunning bool
 
-	workersWaitGroup    *sync.WaitGroup
-	startStopMutex      *sync.RWMutex
-	numberOfWorkerMutex *sync.RWMutex
+	workersWg        *sync.WaitGroup
+	startStopMu      *sync.RWMutex
+	numberOfWorkerMu *sync.RWMutex
 }
 
 func NewWorkerPool(poolConf *conf.PoolConf) WorkerPool {
@@ -69,20 +69,20 @@ func NewWorkerPool(poolConf *conf.PoolConf) WorkerPool {
 	}
 
 	return &WorkerPoolImpl{
-		jobQueue:            make(chan Job, poolConf.QueueSize),
-		quit:                make(chan struct{}),
-		quitNow:             make(chan struct{}),
-		poolConf:            poolConf,
-		workersWaitGroup:    &sync.WaitGroup{},
-		startStopMutex:      &sync.RWMutex{},
-		numberOfWorkerMutex: &sync.RWMutex{},
-		isRunning:           false,
+		jobQueue:         make(chan Job, poolConf.QueueSize),
+		quit:             make(chan struct{}),
+		quitNow:          make(chan struct{}),
+		poolConf:         poolConf,
+		workersWg:        &sync.WaitGroup{},
+		startStopMu:      &sync.RWMutex{},
+		numberOfWorkerMu: &sync.RWMutex{},
+		isRunning:        false,
 	}
 }
 
 func (wp *WorkerPoolImpl) Start() error {
-	defer wp.startStopMutex.Unlock()
-	wp.startStopMutex.Lock()
+	defer wp.startStopMu.Unlock()
+	wp.startStopMu.Lock()
 
 	if wp.isRunning {
 		return errors.New("Worker pool is already running.")
@@ -97,8 +97,8 @@ func (wp *WorkerPoolImpl) Start() error {
 }
 
 func (wp *WorkerPoolImpl) Stop() error {
-	defer wp.startStopMutex.Unlock()
-	wp.startStopMutex.Lock()
+	defer wp.startStopMu.Unlock()
+	wp.startStopMu.Lock()
 
 	if !wp.isRunning {
 		return errors.New("Worker pool is not running.")
@@ -107,15 +107,15 @@ func (wp *WorkerPoolImpl) Stop() error {
 
 	logrus.Infof("Worker pool is stopping.")
 	close(wp.quit)
-	wp.workersWaitGroup.Wait()
+	wp.workersWg.Wait()
 	logrus.Infof("Worker pool has stopped.")
 
 	return nil
 }
 
 func (wp *WorkerPoolImpl) StopNow() error {
-	defer wp.startStopMutex.Unlock()
-	wp.startStopMutex.Lock()
+	defer wp.startStopMu.Unlock()
+	wp.startStopMu.Lock()
 
 	if !wp.isRunning {
 		return errors.New("Worker pool is not running.")
@@ -129,8 +129,8 @@ func (wp *WorkerPoolImpl) StopNow() error {
 }
 
 func (wp *WorkerPoolImpl) IsRunning() bool {
-	defer wp.startStopMutex.RUnlock()
-	wp.startStopMutex.RLock()
+	defer wp.startStopMu.RUnlock()
+	wp.startStopMu.RLock()
 
 	return wp.isRunning
 }
@@ -141,8 +141,8 @@ func (wp *WorkerPoolImpl) SubmitChannel() chan<- Job {
 
 func (wp *WorkerPoolImpl) Submit(job Job) (isSubmitted bool, err error) {
 
-	defer wp.startStopMutex.RUnlock()
-	wp.startStopMutex.RLock()
+	defer wp.startStopMu.RUnlock()
+	wp.startStopMu.RLock()
 
 	if !wp.isRunning {
 		return false, errors.New("Worker pool is not working")
@@ -159,7 +159,7 @@ func (wp *WorkerPoolImpl) Submit(job Job) (isSubmitted bool, err error) {
 		}
 
 		if wp.CompareAndIncrementCurrentWorker() {
-			wp.workersWaitGroup.Add(1)
+			wp.workersWg.Add(1)
 			go func() {
 				worker := NewWorker(wp)
 				worker.work(job)
@@ -196,7 +196,7 @@ func (wp *WorkerPoolImpl) monitorMetrics(monitoringPeriodInMillis time.Duration)
 func (wp *WorkerPoolImpl) addInitialWorkers(num int32) {
 
 	wp.AddNumberOfCurrentAndIdleWorker(num)
-	wp.workersWaitGroup.Add(int(num))
+	wp.workersWg.Add(int(num))
 
 	for i := int32(0); i < num; i++ {
 		worker := NewWorker(wp)
@@ -213,7 +213,7 @@ func (wp *WorkerPoolImpl) run() {
 		case <-wp.quit:
 			logrus.Infof("Worker pool is waiting that all workers are done.")
 			close(wp.jobQueue)
-			wp.workersWaitGroup.Wait()
+			wp.workersWg.Wait()
 			return
 		case <-wp.quitNow:
 			logrus.Infof("Worker pool has stopped immediately.")
@@ -223,39 +223,39 @@ func (wp *WorkerPoolImpl) run() {
 }
 
 func (wp *WorkerPoolImpl) NumberOfAvailableWorker() int32 {
-	wp.numberOfWorkerMutex.Lock()
-	defer wp.numberOfWorkerMutex.Unlock()
+	wp.numberOfWorkerMu.Lock()
+	defer wp.numberOfWorkerMu.Unlock()
 	return wp.poolConf.MaxNumberOfWorker - wp.numberOfCurrentWorker + wp.numberOfIdleWorker
 }
 
 func (wp *WorkerPoolImpl) NumberOfCurrentWorker() int32 {
-	wp.numberOfWorkerMutex.RLock()
-	defer wp.numberOfWorkerMutex.RUnlock()
+	wp.numberOfWorkerMu.RLock()
+	defer wp.numberOfWorkerMu.RUnlock()
 	return atomic.LoadInt32(&wp.numberOfCurrentWorker)
 }
 
 func (wp *WorkerPoolImpl) AddNumberOfCurrentAndIdleWorker(num int32) {
-	wp.numberOfWorkerMutex.Lock()
-	defer wp.numberOfWorkerMutex.Unlock()
+	wp.numberOfWorkerMu.Lock()
+	defer wp.numberOfWorkerMu.Unlock()
 	wp.numberOfCurrentWorker += num
 	wp.numberOfIdleWorker += num
 }
 
 func (wp *WorkerPoolImpl) NumberOfIdleWorker() int32 {
-	wp.numberOfWorkerMutex.RLock()
-	defer wp.numberOfWorkerMutex.RUnlock()
+	wp.numberOfWorkerMu.RLock()
+	defer wp.numberOfWorkerMu.RUnlock()
 	return atomic.LoadInt32(&wp.numberOfIdleWorker)
 }
 
 func (wp *WorkerPoolImpl) AddNumberOfIdleWorker(num int32) {
-	wp.numberOfWorkerMutex.Lock()
-	defer wp.numberOfWorkerMutex.Unlock()
+	wp.numberOfWorkerMu.Lock()
+	defer wp.numberOfWorkerMu.Unlock()
 	wp.numberOfIdleWorker += num
 }
 
 func (wp *WorkerPoolImpl) CompareAndIncrementCurrentWorker() bool {
-	wp.numberOfWorkerMutex.Lock()
-	defer wp.numberOfWorkerMutex.Unlock()
+	wp.numberOfWorkerMu.Lock()
+	defer wp.numberOfWorkerMu.Unlock()
 	if wp.numberOfCurrentWorker < wp.poolConf.MaxNumberOfWorker {
 		wp.numberOfCurrentWorker++
 		wp.numberOfIdleWorker++
@@ -265,8 +265,8 @@ func (wp *WorkerPoolImpl) CompareAndIncrementCurrentWorker() bool {
 }
 
 func (wp *WorkerPoolImpl) CompareAndDecrementCurrentWorker() bool {
-	wp.numberOfWorkerMutex.Lock()
-	defer wp.numberOfWorkerMutex.Unlock()
+	wp.numberOfWorkerMu.Lock()
+	defer wp.numberOfWorkerMu.Unlock()
 	if wp.numberOfCurrentWorker > wp.poolConf.MinNumberOfWorker {
 		wp.numberOfCurrentWorker--
 		wp.numberOfIdleWorker--
@@ -307,7 +307,7 @@ func (w *Worker) doJob(job Job) {
 func (w *Worker) work(initialJob Job) {
 
 	logrus.Debugf("Worker[%s] is spawned.", w.id.String())
-	defer w.workerPool.workersWaitGroup.Done()
+	defer w.workerPool.workersWg.Done()
 
 	if initialJob != nil {
 		w.doJob(initialJob)

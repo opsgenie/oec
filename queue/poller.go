@@ -2,9 +2,9 @@ package queue
 
 import (
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/opsgenie/ois/conf"
-	"github.com/opsgenie/ois/git"
-	"github.com/opsgenie/ois/util"
+	"github.com/opsgenie/oec/conf"
+	"github.com/opsgenie/oec/git"
+	"github.com/opsgenie/oec/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"sync"
@@ -19,7 +19,7 @@ type Poller interface {
 	QueueProvider() QueueProvider
 }
 
-type OISPoller struct {
+type OECPoller struct {
 	workerPool    WorkerPool
 	queueProvider QueueProvider
 
@@ -27,48 +27,48 @@ type OISPoller struct {
 	conf          *conf.Configuration
 	repositories  git.Repositories
 
-	isRunning          bool
-	isRunningWaitGroup *sync.WaitGroup
-	startStopMutex     *sync.Mutex
-	quit               chan struct{}
-	wakeUpChan         chan struct{}
+	isRunning   bool
+	isRunningWg *sync.WaitGroup
+	startStopMu *sync.Mutex
+	quit        chan struct{}
+	wakeUp      chan struct{}
 }
 
 func NewPoller(workerPool WorkerPool, queueProvider QueueProvider,
 	conf *conf.Configuration, integrationId string,
 	repositories git.Repositories) Poller {
 
-	return &OISPoller{
-		quit:               make(chan struct{}),
-		wakeUpChan:         make(chan struct{}),
-		isRunning:          false,
-		isRunningWaitGroup: &sync.WaitGroup{},
-		startStopMutex:     &sync.Mutex{},
-		conf:               conf,
-		repositories:       repositories,
-		integrationId:      integrationId,
-		workerPool:         workerPool,
-		queueProvider:      queueProvider,
+	return &OECPoller{
+		quit:          make(chan struct{}),
+		wakeUp:        make(chan struct{}),
+		isRunning:     false,
+		isRunningWg:   &sync.WaitGroup{},
+		startStopMu:   &sync.Mutex{},
+		conf:          conf,
+		repositories:  repositories,
+		integrationId: integrationId,
+		workerPool:    workerPool,
+		queueProvider: queueProvider,
 	}
 }
 
-func (p *OISPoller) QueueProvider() QueueProvider {
+func (p *OECPoller) QueueProvider() QueueProvider {
 	return p.queueProvider
 }
 
-func (p *OISPoller) RefreshClient(assumeRoleResult AssumeRoleResult) error {
+func (p *OECPoller) RefreshClient(assumeRoleResult AssumeRoleResult) error {
 	return p.queueProvider.RefreshClient(assumeRoleResult)
 }
 
-func (p *OISPoller) StartPolling() error {
-	defer p.startStopMutex.Unlock()
-	p.startStopMutex.Lock()
+func (p *OECPoller) StartPolling() error {
+	defer p.startStopMu.Unlock()
+	p.startStopMu.Lock()
 
 	if p.isRunning {
 		return errors.New("Poller is already running.")
 	}
 
-	p.isRunningWaitGroup.Add(1)
+	p.isRunningWg.Add(1)
 	go p.run()
 
 	p.isRunning = true
@@ -76,26 +76,26 @@ func (p *OISPoller) StartPolling() error {
 	return nil
 }
 
-func (p *OISPoller) StopPolling() error {
-	defer p.startStopMutex.Unlock()
-	p.startStopMutex.Lock()
+func (p *OECPoller) StopPolling() error {
+	defer p.startStopMu.Unlock()
+	p.startStopMu.Lock()
 
 	if !p.isRunning {
 		return errors.New("Poller is not running.")
 	}
 
 	close(p.quit)
-	close(p.wakeUpChan)
+	close(p.wakeUp)
 
-	p.isRunningWaitGroup.Wait()
+	p.isRunningWg.Wait()
 	p.isRunning = false
 
 	return nil
 }
 
-func (p *OISPoller) terminateMessageVisibility(messages []*sqs.Message) {
+func (p *OECPoller) terminateMessageVisibility(messages []*sqs.Message) {
 
-	region := p.queueProvider.OISMetadata().Region()
+	region := p.queueProvider.OECMetadata().Region()
 
 	for i := 0; i < len(messages); i++ {
 		messageId := *messages[i].MessageId
@@ -110,14 +110,14 @@ func (p *OISPoller) terminateMessageVisibility(messages []*sqs.Message) {
 	}
 }
 
-func (p *OISPoller) poll() (shouldWait bool) {
+func (p *OECPoller) poll() (shouldWait bool) {
 
 	availableWorkerCount := p.workerPool.NumberOfAvailableWorker()
 	if !(availableWorkerCount > 0) {
 		return true
 	}
 
-	region := p.queueProvider.OISMetadata().Region()
+	region := p.queueProvider.OECMetadata().Region()
 	maxNumberOfMessages := util.Min(p.conf.PollerConf.MaxNumberOfMessages, int64(availableWorkerCount))
 
 	messages, err := p.queueProvider.ReceiveMessage(maxNumberOfMessages, p.conf.PollerConf.VisibilityTimeoutInSeconds)
@@ -137,7 +137,7 @@ func (p *OISPoller) poll() (shouldWait bool) {
 	for i := 0; i < messageLength; i++ {
 
 		job := NewSqsJob(
-			NewOISMessage(
+			NewOECMessage(
 				messages[i],
 				p.repositories,
 				&p.conf.ActionSpecifications,
@@ -160,9 +160,9 @@ func (p *OISPoller) poll() (shouldWait bool) {
 	return false
 }
 
-func (p *OISPoller) wait(pollingWaitInterval time.Duration) {
+func (p *OECPoller) wait(pollingWaitInterval time.Duration) {
 
-	queueUrl := p.queueProvider.OISMetadata().QueueUrl()
+	queueUrl := p.queueProvider.OECMetadata().QueueUrl()
 	logrus.Tracef("Poller[%s] will wait %s before next polling", queueUrl, pollingWaitInterval.String())
 
 	ticker := time.NewTicker(pollingWaitInterval)
@@ -170,7 +170,7 @@ func (p *OISPoller) wait(pollingWaitInterval time.Duration) {
 
 	for {
 		select {
-		case <-p.wakeUpChan:
+		case <-p.wakeUp:
 			logrus.Debugf("Poller[%s] has been interrupted while waiting for next polling.", queueUrl)
 			return
 		case <-ticker.C:
@@ -179,9 +179,9 @@ func (p *OISPoller) wait(pollingWaitInterval time.Duration) {
 	}
 }
 
-func (p *OISPoller) run() {
+func (p *OECPoller) run() {
 
-	queueUrl := p.queueProvider.OISMetadata().QueueUrl()
+	queueUrl := p.queueProvider.OECMetadata().QueueUrl()
 	logrus.Infof("Poller[%s] has started to run.", queueUrl)
 
 	pollingWaitInterval := p.conf.PollerConf.PollingWaitIntervalInMillis * time.Millisecond
@@ -191,11 +191,11 @@ func (p *OISPoller) run() {
 		select {
 		case <-p.quit:
 			logrus.Infof("Poller[%s] has stopped to poll.", queueUrl)
-			p.isRunningWaitGroup.Done()
+			p.isRunningWg.Done()
 			return
 		default:
 			if p.queueProvider.IsTokenExpired() {
-				region := p.queueProvider.OISMetadata().Region()
+				region := p.queueProvider.OECMetadata().Region()
 				logrus.Warnf("Security token is expired, poller[%s] skips to receive message.", region)
 				p.wait(expiredTokenWaitInterval)
 			} else if shouldWait := p.poll(); shouldWait {

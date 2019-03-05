@@ -1,11 +1,11 @@
 package queue
 
-type OISToken struct {
+type OECToken struct {
 	IntegrationId   string        `json:"integrationId,omitempty"`
-	OISMetadataList []OISMetadata `json:"queueProperties,omitempty"`
+	OECMetadataList []OECMetadata `json:"queueProperties,omitempty"`
 }
 
-type OISMetadata struct {
+type OECMetadata struct {
 	AssumeRoleResult   AssumeRoleResult   `json:"assumeRoleResult,omitempty"`
 	QueueConfiguration QueueConfiguration `json:"queueConfiguration,omitempty"`
 }
@@ -34,14 +34,14 @@ type QueueConfiguration struct {
 	QueueUrl                      string `json:"queueUrl,omitempty"`
 }
 
-func (mmt OISMetadata) ExpireTimeMillis() int64 {
-	return mmt.AssumeRoleResult.Credentials.ExpireTimeMillis
+func (m OECMetadata) ExpireTimeMillis() int64 {
+	return m.AssumeRoleResult.Credentials.ExpireTimeMillis
 }
 
-func (mmt OISMetadata) Region() string {
-	return mmt.QueueConfiguration.Region
+func (m OECMetadata) Region() string {
+	return m.QueueConfiguration.Region
 }
 
-func (mmt OISMetadata) QueueUrl() string {
-	return mmt.QueueConfiguration.QueueUrl
+func (m OECMetadata) QueueUrl() string {
+	return m.QueueConfiguration.QueueUrl
 }

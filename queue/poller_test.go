@@ -2,8 +2,8 @@ package queue
 
 import (
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/opsgenie/ois/conf"
-	"github.com/opsgenie/ois/git"
+	"github.com/opsgenie/oec/conf"
+	"github.com/opsgenie/oec/git"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -17,13 +17,13 @@ var mockPollerConf = &conf.PollerConf{
 	maxNumberOfMessages,
 }
 
-func newPollerTest() *OISPoller {
-	return &OISPoller{
-		quit:               make(chan struct{}),
-		wakeUpChan:         make(chan struct{}),
-		isRunning:          false,
-		isRunningWaitGroup: &sync.WaitGroup{},
-		startStopMutex:     &sync.Mutex{},
+func newPollerTest() *OECPoller {
+	return &OECPoller{
+		quit:        make(chan struct{}),
+		wakeUp:      make(chan struct{}),
+		isRunning:   false,
+		isRunningWg: &sync.WaitGroup{},
+		startStopMu: &sync.Mutex{},
 		conf: &conf.Configuration{
 			ApiKey:               mockApiKey,
 			BaseUrl:              mockBaseUrl,

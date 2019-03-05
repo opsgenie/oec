@@ -1,7 +1,7 @@
 package conf
 
 import (
-	"github.com/opsgenie/ois/git"
+	"github.com/opsgenie/oec/git"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"os"
@@ -20,7 +20,7 @@ const (
 var readConfigurationFromGitFunc = readConfigurationFromGit
 var readConfigurationFromLocalFunc = readConfigurationFromLocal
 
-var defaultConfFilepath = filepath.Join("~", "ois", "config.json")
+var defaultConfFilepath = filepath.Join("~", "oec", "config.json")
 
 type Configuration struct {
 	ActionSpecifications `yaml:",inline"`
@@ -96,7 +96,7 @@ type PoolConf struct {
 
 func ReadConfFile() (*Configuration, error) {
 
-	confSource := os.Getenv("OIS_CONF_SOURCE")
+	confSource := os.Getenv("OEC_CONF_SOURCE")
 	conf, err := readConfFileFromSource(strings.ToLower(confSource))
 	if err != nil {
 		return nil, err
@@ -165,10 +165,10 @@ func readConfFileFromSource(confSource string) (*Configuration, error) {
 
 	switch confSource {
 	case GitSourceType:
-		url := os.Getenv("OIS_CONF_GIT_URL")
-		privateKeyFilepath := os.Getenv("OIS_CONF_GIT_PRIVATE_KEY_FILEPATH")
-		passphrase := os.Getenv("OIS_CONF_GIT_PASSPHRASE")
-		confFilepath := os.Getenv("OIS_CONF_GIT_FILEPATH")
+		url := os.Getenv("OEC_CONF_GIT_URL")
+		privateKeyFilepath := os.Getenv("OEC_CONF_GIT_PRIVATE_KEY_FILEPATH")
+		passphrase := os.Getenv("OEC_CONF_GIT_PASSPHRASE")
+		confFilepath := os.Getenv("OEC_CONF_GIT_FILEPATH")
 
 		if privateKeyFilepath != "" {
 			privateKeyFilepath = addHomeDirPrefix(privateKeyFilepath)
@@ -180,7 +180,7 @@ func readConfFileFromSource(confSource string) (*Configuration, error) {
 
 		return readConfigurationFromGitFunc(url, privateKeyFilepath, passphrase, confFilepath)
 	case LocalSourceType:
-		confFilepath := os.Getenv("OIS_CONF_LOCAL_FILEPATH")
+		confFilepath := os.Getenv("OEC_CONF_LOCAL_FILEPATH")
 
 		if len(confFilepath) <= 0 {
 			confFilepath = addHomeDirPrefix(defaultConfFilepath)

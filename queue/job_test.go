@@ -3,7 +3,7 @@ package queue
 import (
 	"encoding/json"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/opsgenie/ois/runbook"
+	"github.com/opsgenie/oec/runbook"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"
@@ -148,7 +148,7 @@ func TestExecuteWithDeleteError(t *testing.T) {
 	err := sqsJob.Execute()
 	assert.NotNil(t, err)
 
-	expectedErr := errors.Errorf("Message[%s] could not be deleted from the queue[%s]: %s", sqsJob.JobId(), sqsJob.queueProvider.OISMetadata().Region(), "Delete Error")
+	expectedErr := errors.Errorf("Message[%s] could not be deleted from the queue[%s]: %s", sqsJob.JobId(), sqsJob.queueProvider.OECMetadata().Region(), "Delete Error")
 	assert.EqualError(t, err, expectedErr.Error())
 
 	expectedState := int32(JobError)

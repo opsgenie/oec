@@ -18,8 +18,8 @@ var mockAssumeRoleResult2 = AssumeRoleResult{
 	},
 }
 
-var mockQueueUrl1 = "https://sqs.us-west-2.amazonaws.com/255452344566/ois-test-1-2"
-var mockQueueUrl2 = "https://sqs.us-east-2.amazonaws.com/255452344566/ois-test-1-2"
+var mockQueueUrl1 = "https://sqs.us-west-2.amazonaws.com/255452344566/oec-test-1-2"
+var mockQueueUrl2 = "https://sqs.us-east-2.amazonaws.com/255452344566/oec-test-1-2"
 
 var mockQueueConf1 = QueueConfiguration{
 	SuccessRefreshPeriodInSeconds: 60,
@@ -35,40 +35,40 @@ var mockQueueConf2 = QueueConfiguration{
 	QueueUrl:                      mockQueueUrl2,
 }
 
-var mockOISMetadata1 = OISMetadata{
+var mockOECMetadata1 = OECMetadata{
 	AssumeRoleResult:   mockAssumeRoleResult1,
 	QueueConfiguration: mockQueueConf1,
 }
 
-var mockOISMetadata2 = OISMetadata{
+var mockOECMetadata2 = OECMetadata{
 	AssumeRoleResult:   mockAssumeRoleResult2,
 	QueueConfiguration: mockQueueConf2,
 }
 
-var mockOISMetadataWithEmptyAssumeRoleResult1 = OISMetadata{
+var mockOECMetadataWithEmptyAssumeRoleResult1 = OECMetadata{
 	AssumeRoleResult:   AssumeRoleResult{},
 	QueueConfiguration: mockQueueConf1,
 }
 
-var mockOISMetadataWithEmptyAssumeRoleResult2 = OISMetadata{
+var mockOECMetadataWithEmptyAssumeRoleResult2 = OECMetadata{
 	AssumeRoleResult:   AssumeRoleResult{},
 	QueueConfiguration: mockQueueConf2,
 }
 
-var mockToken = OISToken{
+var mockToken = OECToken{
 	"12345",
-	[]OISMetadata{
-		mockOISMetadata1,
-		mockOISMetadata2,
+	[]OECMetadata{
+		mockOECMetadata1,
+		mockOECMetadata2,
 	},
 }
 
-var mockTokenWithEmptyAssumeRoleResult = OISToken{
+var mockTokenWithEmptyAssumeRoleResult = OECToken{
 	"54321",
-	[]OISMetadata{
-		mockOISMetadataWithEmptyAssumeRoleResult1,
-		mockOISMetadataWithEmptyAssumeRoleResult2,
+	[]OECMetadata{
+		mockOECMetadataWithEmptyAssumeRoleResult1,
+		mockOECMetadataWithEmptyAssumeRoleResult2,
 	},
 }
 
-var mockEmptyToken = OISToken{}
+var mockEmptyToken = OECToken{}

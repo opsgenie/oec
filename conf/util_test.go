@@ -2,7 +2,7 @@ package conf
 
 import (
 	"fmt"
-	"github.com/opsgenie/ois/util"
+	"github.com/opsgenie/oec/util"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"

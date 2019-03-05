@@ -2,7 +2,7 @@ package runbook
 
 import (
 	"encoding/json"
-	"github.com/opsgenie/ois/retryer"
+	"github.com/opsgenie/oec/retryer"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"

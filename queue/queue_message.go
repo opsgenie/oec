@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/opsgenie/ois/conf"
-	"github.com/opsgenie/ois/git"
-	"github.com/opsgenie/ois/runbook"
+	"github.com/opsgenie/oec/conf"
+	"github.com/opsgenie/oec/git"
+	"github.com/opsgenie/oec/runbook"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -19,26 +19,26 @@ type QueueMessage interface {
 	Process() (*runbook.ActionResultPayload, error)
 }
 
-type OISQueueMessage struct {
+type OECQueueMessage struct {
 	message      *sqs.Message
 	repositories git.Repositories
 	actionSpecs  *conf.ActionSpecifications
 }
 
-func NewOISMessage(message *sqs.Message, repositories git.Repositories, actionSpecs *conf.ActionSpecifications) QueueMessage {
+func NewOECMessage(message *sqs.Message, repositories git.Repositories, actionSpecs *conf.ActionSpecifications) QueueMessage {
 
-	return &OISQueueMessage{
+	return &OECQueueMessage{
 		message:      message,
 		repositories: repositories,
 		actionSpecs:  actionSpecs,
 	}
 }
 
-func (qm *OISQueueMessage) Message() *sqs.Message {
+func (qm *OECQueueMessage) Message() *sqs.Message {
 	return qm.message
 }
 
-func (qm *OISQueueMessage) Process() (*runbook.ActionResultPayload, error) {
+func (qm *OECQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 	queuePayload := QueuePayload{}
 	err := json.Unmarshal([]byte(*qm.message.Body), &queuePayload)
 	if err != nil {
@@ -80,7 +80,7 @@ func (qm *OISQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 	return result, nil
 }
 
-func (qm *OISQueueMessage) execute(mappedAction *conf.MappedAction) error {
+func (qm *OECQueueMessage) execute(mappedAction *conf.MappedAction) error {
 	args := append([]string{"-payload", *qm.message.Body}, qm.actionSpecs.GlobalFlags.Args()...)
 	args = append(args, mappedAction.Flags.Args()...)
 	args = append(args, qm.actionSpecs.GlobalArgs...)

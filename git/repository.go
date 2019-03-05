@@ -1,6 +1,7 @@
 package git
 
 import (
+	"github.com/opsgenie/oec/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/src-d/go-git.v4"
@@ -113,7 +114,7 @@ func (r *Repository) Pull() error {
 	r.rw.Lock()
 	defer r.rw.Unlock()
 	defer func() {
-		err := chmodRecursively(r.Path, 0700)
+		err := util.ChmodRecursively(r.Path, 0700)
 		if err != nil {
 			logrus.Debugf("Git repository[%s] chmod failed: %s", r.Options.Url, err)
 		}
@@ -128,7 +129,7 @@ func (r *Repository) Remove() error {
 }
 
 func (r *Repository) Chmod(mode os.FileMode) error {
-	return chmodRecursively(r.Path, mode)
+	return util.ChmodRecursively(r.Path, mode)
 }
 
 func (r *Repository) RLock() {

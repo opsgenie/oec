@@ -10,7 +10,7 @@ import (
 
 var gitCloneMasterFunc = gitCloneMaster
 
-const repositoryDirPrefix = "ois"
+const repositoryDirPrefix = "oec"
 
 func CloneMaster(url, privateKeyFilepath, passPhrase string) (repositoryPath string, err error) {
 

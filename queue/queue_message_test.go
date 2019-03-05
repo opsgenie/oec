@@ -2,9 +2,9 @@ package queue
 
 import (
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/opsgenie/ois/conf"
-	"github.com/opsgenie/ois/git"
-	"github.com/opsgenie/ois/runbook"
+	"github.com/opsgenie/oec/conf"
+	"github.com/opsgenie/oec/git"
+	"github.com/opsgenie/oec/runbook"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"io"
@@ -37,7 +37,7 @@ var mockActionMappings = conf.ActionMappings{
 			PrivateKeyFilepath: "testKeyPath",
 			Passphrase:         "testPass",
 		},
-		Filepath: "ois/testConfig.json",
+		Filepath: "oec/testConfig.json",
 		Env:      []string{"e1=v1", "e2=v2"},
 	},
 }
@@ -52,7 +52,7 @@ func TestGetMessage(t *testing.T) {
 	expectedMessage.SetMessageId("messageId")
 	expectedMessage.SetBody("messageBody")
 
-	queueMessage := NewOISMessage(expectedMessage, nil, mockActionSpecs)
+	queueMessage := NewOECMessage(expectedMessage, nil, mockActionSpecs)
 	actualMessage := queueMessage.Message()
 
 	assert.Equal(t, expectedMessage, actualMessage)
@@ -74,7 +74,7 @@ func testProcessSuccessfully(t *testing.T) {
 	body := `{"action":"Create"}`
 	id := "MessageId"
 	message := &sqs.Message{Body: &body, MessageId: &id}
-	queueMessage := NewOISMessage(message, nil, mockActionSpecs)
+	queueMessage := NewOECMessage(message, nil, mockActionSpecs)
 
 	result, err := queueMessage.Process()
 	assert.Nil(t, err)
@@ -87,7 +87,7 @@ func testProcessMappedActionNotFound(t *testing.T) {
 
 	body := `{"action":"Ack"}`
 	message := &sqs.Message{Body: &body}
-	queueMessage := NewOISMessage(message, nil, mockActionSpecs)
+	queueMessage := NewOECMessage(message, nil, mockActionSpecs)
 
 	_, err := queueMessage.Process()
 	expectedErr := errors.New("There is no mapped action found for action[Ack].")
@@ -100,7 +100,7 @@ func testProcessFieldMissing(t *testing.T) {
 
 	body := `{"alert":{}}`
 	message := &sqs.Message{Body: &body}
-	queueMessage := NewOISMessage(message, nil, mockActionSpecs)
+	queueMessage := NewOECMessage(message, nil, mockActionSpecs)
 
 	_, err := queueMessage.Process()
 	expectedErr := errors.New("SQS message does not contain action property.")
