@@ -3,8 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/opsgenie/ois/conf"
-	"github.com/opsgenie/ois/queue"
+	"github.com/opsgenie/oec/conf"
+	"github.com/opsgenie/oec/queue"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -19,11 +19,11 @@ import (
 	"time"
 )
 
-var metricAddr = flag.String("ois-metrics", "8082", "The address to listen on for HTTP requests.")
-var defaultLogFilepath = filepath.Join("/var", "log", "opsgenie", "ois"+strconv.Itoa(os.Getpid())+".log")
+var metricAddr = flag.String("oec-metrics", "7070", "The address to listen on for HTTP requests.")
+var defaultLogFilepath = filepath.Join("/var", "log", "opsgenie", "oec"+strconv.Itoa(os.Getpid())+".log")
 
-var OISVersion string
-var OISCommitVersion string
+var OECVersion string
+var OECCommitVersion string
 
 func main() {
 
@@ -49,8 +49,8 @@ func main() {
 
 	logrus.SetOutput(io.MultiWriter(os.Stdout, logger))
 
-	logrus.Infof("OIS version is %s", OISVersion)
-	logrus.Infof("OIS commit version is %s", OISCommitVersion)
+	logrus.Infof("OEC version is %s", OECVersion)
+	logrus.Infof("OEC commit version is %s", OECCommitVersion)
 
 	go checkLogFile(logger, time.Second*10)
 
@@ -64,12 +64,12 @@ func main() {
 	flag.Parse()
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		logrus.Infof("OIS-metrics serves in http://localhost:%s/metrics.", *metricAddr)
-		logrus.Error("OIS-metrics error: ", http.ListenAndServe(":"+*metricAddr, nil))
+		logrus.Infof("OEC-metrics serves in http://localhost:%s/metrics.", *metricAddr)
+		logrus.Error("OEC-metrics error: ", http.ListenAndServe(":"+*metricAddr, nil))
 	}()
 
 	queueProcessor := queue.NewQueueProcessor(configuration)
-	queue.UserAgentHeader = fmt.Sprintf("%s/%s %s (%s/%s)", OISVersion, OISCommitVersion, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	queue.UserAgentHeader = fmt.Sprintf("%s/%s %s (%s/%s)", OECVersion, OECCommitVersion, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 
 	go func() {
 		if configuration.AppName != "" {
@@ -86,7 +86,7 @@ func main() {
 
 	select {
 	case <-signals:
-		logrus.Infof("OIS will be stopped gracefully.")
+		logrus.Infof("OEC will be stopped gracefully.")
 		err := queueProcessor.StopProcessing()
 		if err != nil {
 			logrus.Fatalln(err)
@@ -101,11 +101,11 @@ func checkLogFile(logger *lumberjack.Logger, interval time.Duration) {
 		select {
 		case <-time.After(interval):
 			if _, err := os.Stat(defaultLogFilepath); os.IsNotExist(err) {
-				logrus.Warnf("Failed to open OIS log file: %v. New file will be created.", err)
+				logrus.Warnf("Failed to open OEC log file: %v. New file will be created.", err)
 				if err = logger.Rotate(); err != nil {
 					logrus.Warn(err)
 				} else {
-					logrus.Warnf("New OIS log file is created, previous one might be removed accidentally.")
+					logrus.Warnf("New OEC log file is created, previous one might be removed accidentally.")
 				}
 				break
 			}

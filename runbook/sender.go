@@ -3,14 +3,14 @@ package runbook
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/opsgenie/ois/retryer"
+	"github.com/opsgenie/oec/retryer"
 	"github.com/pkg/errors"
 	"io/ioutil"
 	"net/http"
 	"strconv"
 )
 
-const resultPath = "/v2/integrations/ois/actionExecutionResult"
+const resultPath = "/v2/integrations/oec/actionExecutionResult"
 
 var SendResultToOpsGenieFunc = SendResultToOpsGenie
 

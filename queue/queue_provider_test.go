@@ -12,12 +12,12 @@ import (
 	"testing"
 )
 
-func newQueueProviderTest() *OISQueueProvider {
-	return &OISQueueProvider{
-		oisMetadata:        mockOISMetadata1,
-		refreshClientMutex: &sync.RWMutex{},
-		expirationMutex:    &sync.RWMutex{},
-		client:             NewMockSqsClient(nil),
+func newQueueProviderTest() *OECQueueProvider {
+	return &OECQueueProvider{
+		oecMetadata:     mockOECMetadata1,
+		refreshClientMu: &sync.RWMutex{},
+		expirationMu:    &sync.RWMutex{},
+		client:          NewMockSqsClient(nil),
 	}
 }
 
@@ -137,12 +137,12 @@ func TestRefreshClient(t *testing.T) {
 	assert.Nil(t, err)
 
 	expectedConfig := aws.NewConfig().
-		WithRegion(provider.OISMetadata().Region()).
+		WithRegion(provider.OECMetadata().Region()).
 		WithCredentials(mockCreds)
 
 	assert.Equal(t, expectedConfig.Credentials, provider.client.(*sqs.SQS).Config.Credentials)
 	assert.Equal(t, expectedConfig.Region, provider.client.(*sqs.SQS).Config.Region)
-	assert.Equal(t, mockAssumeRoleResult2, provider.oisMetadata.AssumeRoleResult)
+	assert.Equal(t, mockAssumeRoleResult2, provider.oecMetadata.AssumeRoleResult)
 }
 
 // Mock SqsClient
@@ -182,7 +182,7 @@ type MockQueueProvider struct {
 	ChangeMessageVisibilityFunc func(message *sqs.Message, visibilityTimeout int64) error
 	DeleteMessageFunc           func(message *sqs.Message) error
 	ReceiveMessageFunc          func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error)
-	OISMetadataFunc             func() OISMetadata
+	OECMetadataFunc             func() OECMetadata
 	RefreshClientFunc           func(assumeRoleResult AssumeRoleResult) error
 	IsTokenExpiredFunc          func() bool
 }
@@ -219,11 +219,11 @@ func (mqp *MockQueueProvider) ReceiveMessage(numOfMessage int64, visibilityTimeo
 	return []*sqs.Message{}, nil
 }
 
-func (mqp *MockQueueProvider) OISMetadata() OISMetadata {
-	if mqp.OISMetadataFunc != nil {
-		return mqp.OISMetadataFunc()
+func (mqp *MockQueueProvider) OECMetadata() OECMetadata {
+	if mqp.OECMetadataFunc != nil {
+		return mqp.OECMetadataFunc()
 	}
-	return mockOISMetadata1
+	return mockOECMetadata1
 }
 
 func (mqp *MockQueueProvider) RefreshClient(assumeRoleResult AssumeRoleResult) error {

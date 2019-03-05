@@ -2,7 +2,7 @@ package conf
 
 import (
 	"encoding/json"
-	"github.com/opsgenie/ois/git"
+	"github.com/opsgenie/oec/git"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
@@ -85,7 +85,10 @@ func addHomeDirPrefixToActionMappings(mappings ActionMappings) {
 func AddRepositoryPathToGitActionFilepaths(mappings ActionMappings, repositories git.Repositories) {
 	for index, action := range mappings {
 		if action.SourceType == GitSourceType {
-			repository, _ := repositories.Get(action.GitOptions.Url)
+			repository, err := repositories.Get(action.GitOptions.Url)
+			if err != nil {
+				continue
+			}
 			action.Filepath = fpath.Join(repository.Path, action.Filepath)
 			mappings[index] = action
 		}

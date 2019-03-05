@@ -1,7 +1,7 @@
 package conf
 
 import (
-	"github.com/opsgenie/ois/git"
+	"github.com/opsgenie/oec/git"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -175,11 +175,11 @@ func TestReadConfFile(t *testing.T) {
 }
 
 func testReadConfFileFromGit(t *testing.T) {
-	os.Setenv("OIS_CONF_SOURCE", "git")
-	os.Setenv("OIS_CONF_GIT_URL", "utl")
-	os.Setenv("OIS_CONF_GIT_PRIVATE_KEY_FILEPATH", "/test_id_rsa")
-	os.Setenv("OIS_CONF_GIT_FILEPATH", "ois/testConf.json")
-	os.Setenv("OIS_CONF_GIT_PASSPHRASE", "pass")
+	os.Setenv("OEC_CONF_SOURCE", "git")
+	os.Setenv("OEC_CONF_GIT_URL", "utl")
+	os.Setenv("OEC_CONF_GIT_PRIVATE_KEY_FILEPATH", "/test_id_rsa")
+	os.Setenv("OEC_CONF_GIT_FILEPATH", "oec/testConf.json")
+	os.Setenv("OEC_CONF_GIT_PASSPHRASE", "pass")
 
 	readConfigurationFromGitFunc = mockReadConfigurationFromGit
 	configuration, err := ReadConfFile()
@@ -198,7 +198,7 @@ func testReadConfFileFromGit(t *testing.T) {
 }
 
 func testReadConfFileFromLocalWithDefaultPath(t *testing.T) {
-	os.Setenv("OIS_CONF_SOURCE", "local")
+	os.Setenv("OEC_CONF_SOURCE", "local")
 
 	readConfigurationFromLocalFunc = mockReadConfigurationFromLocalWithDefaultPath
 	configuration, err := ReadConfFile()
@@ -215,7 +215,7 @@ func testReadConfFileFromLocalWithDefaultPath(t *testing.T) {
 }
 
 func testReadConfFileWithoutActionMappings(t *testing.T) {
-	os.Setenv("OIS_CONF_SOURCE", "local")
+	os.Setenv("OEC_CONF_SOURCE", "local")
 
 	readConfigurationFromLocalFunc = mockReadConfigurationFromLocalWithDefaultPathWithoutActionMappings
 	_, err := ReadConfFile()
@@ -232,8 +232,8 @@ func testReadConfFileWithoutActionMappings(t *testing.T) {
 }
 
 func testReadConfFileFromLocalWithCustomPath(t *testing.T) {
-	os.Setenv("OIS_CONF_SOURCE", "local")
-	os.Setenv("OIS_CONF_LOCAL_FILEPATH", testLocalConfFilePath)
+	os.Setenv("OEC_CONF_SOURCE", "local")
+	os.Setenv("OEC_CONF_LOCAL_FILEPATH", testLocalConfFilePath)
 
 	readConfigurationFromLocalFunc = mockReadConfigurationFromLocalWithCustomPath
 	configuration, err := ReadConfFile()
@@ -250,7 +250,7 @@ func testReadConfFileFromLocalWithCustomPath(t *testing.T) {
 }
 
 func TestReadConfFileWithUnknownSource(t *testing.T) {
-	os.Setenv("OIS_CONF_SOURCE", "dummy")
+	os.Setenv("OEC_CONF_SOURCE", "dummy")
 
 	_, err := ReadConfFile()
 	assert.Error(t, err, "Error should be thrown.")

@@ -2,7 +2,7 @@ package runbook
 
 import (
 	"bytes"
-	"github.com/opsgenie/ois/util"
+	"github.com/opsgenie/oec/util"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"runtime"

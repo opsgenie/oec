@@ -2,7 +2,7 @@ package queue
 
 import (
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/opsgenie/ois/runbook"
+	"github.com/opsgenie/oec/runbook"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"sync"
@@ -63,7 +63,7 @@ func (j *SqsJob) Execute() error {
 	}
 	j.state = JobExecuting
 
-	region := j.queueProvider.OISMetadata().Region()
+	region := j.queueProvider.OECMetadata().Region()
 	messageId := j.JobId()
 
 	err := j.queueProvider.DeleteMessage(j.SqsMessage())

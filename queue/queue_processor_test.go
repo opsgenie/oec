@@ -3,9 +3,9 @@ package queue
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/opsgenie/ois/conf"
-	"github.com/opsgenie/ois/git"
-	"github.com/opsgenie/ois/retryer"
+	"github.com/opsgenie/oec/conf"
+	"github.com/opsgenie/oec/git"
+	"github.com/opsgenie/oec/retryer"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"io"
@@ -24,19 +24,19 @@ var mockConf = &conf.Configuration{
 	PoolConf:   *mockPoolConf,
 }
 
-func newQueueProcessorTest() *OISQueueProcessor {
+func newQueueProcessorTest() *OECQueueProcessor {
 
-	return &OISQueueProcessor{
+	return &OECQueueProcessor{
 		successRefreshPeriod: successRefreshPeriod,
 		errorRefreshPeriod:   errorRefreshPeriod,
 		workerPool:           NewMockWorkerPool(),
-		conf:                 mockConf,
+		configuration:        mockConf,
 		repositories:         git.NewRepositories(),
 		pollers:              make(map[string]Poller),
 		quit:                 make(chan struct{}),
 		isRunning:            false,
-		isRunningWaitGroup:   &sync.WaitGroup{},
-		startStopMutex:       &sync.Mutex{},
+		isRunningWg:          &sync.WaitGroup{},
+		startStopMu:          &sync.Mutex{},
 		retryer:              &retryer.Retryer{},
 	}
 }
@@ -76,11 +76,11 @@ func mockHttpGetInvalidJson(retryer *retryer.Retryer, request *retryer.Request) 
 
 func TestValidateNewQueueProcessor(t *testing.T) {
 	configuration := &conf.Configuration{}
-	processor := NewQueueProcessor(configuration).(*OISQueueProcessor)
+	processor := NewQueueProcessor(configuration).(*OECQueueProcessor)
 
-	assert.Equal(t, int64(maxNumberOfMessages), processor.conf.PollerConf.MaxNumberOfMessages)
-	assert.Equal(t, int64(visibilityTimeoutInSec), processor.conf.PollerConf.VisibilityTimeoutInSeconds)
-	assert.Equal(t, time.Duration(pollingWaitIntervalInMillis), processor.conf.PollerConf.PollingWaitIntervalInMillis)
+	assert.Equal(t, int64(maxNumberOfMessages), processor.configuration.PollerConf.MaxNumberOfMessages)
+	assert.Equal(t, int64(visibilityTimeoutInSec), processor.configuration.PollerConf.VisibilityTimeoutInSeconds)
+	assert.Equal(t, time.Duration(pollingWaitIntervalInMillis), processor.configuration.PollerConf.PollingWaitIntervalInMillis)
 }
 
 func TestStartAndStopQueueProcessor(t *testing.T) {
@@ -170,19 +170,19 @@ func TestReceiveToken(t *testing.T) {
 	token, err := processor.receiveToken()
 
 	assert.Nil(t, err)
-	assert.Equal(t, 2, len(token.OISMetadataList))
-	assert.Equal(t, "accessKeyId1", token.OISMetadataList[0].AssumeRoleResult.Credentials.AccessKeyId)
-	assert.Equal(t, "accessKeyId2", token.OISMetadataList[1].AssumeRoleResult.Credentials.AccessKeyId)
+	assert.Equal(t, 2, len(token.OECMetadataList))
+	assert.Equal(t, "accessKeyId1", token.OECMetadataList[0].AssumeRoleResult.Credentials.AccessKeyId)
+	assert.Equal(t, "accessKeyId2", token.OECMetadataList[1].AssumeRoleResult.Credentials.AccessKeyId)
 
 	for _, poller := range processor.pollers {
-		oisMetadata := poller.QueueProvider().OISMetadata()
-		expectedQuery := oisMetadata.Region() + "=" + strconv.FormatInt(oisMetadata.ExpireTimeMillis(), 10)
+		oecMetadata := poller.QueueProvider().OECMetadata()
+		expectedQuery := oecMetadata.Region() + "=" + strconv.FormatInt(oecMetadata.ExpireTimeMillis(), 10)
 
 		assert.True(t, strings.Contains(actualRequest.URL.RawQuery, expectedQuery))
 	}
 
 	//assert.Equal(t, "api.opsgenie.com", actualRequest.URL.Host)
-	assert.Equal(t, "/v2/integrations/ois/credentials", actualRequest.URL.Path)
+	assert.Equal(t, "/v2/integrations/oec/credentials", actualRequest.URL.Path)
 }
 
 func TestReceiveTokenInvalidJson(t *testing.T) {
@@ -227,19 +227,19 @@ func TestAddTwoDifferentPollersTest(t *testing.T) {
 
 	processor := newQueueProcessorTest()
 
-	poller := processor.addPoller(NewMockQueueProvider(), mockIntegrationId).(*OISPoller)
+	poller := processor.addPoller(NewMockQueueProvider(), mockIntegrationId).(*OECPoller)
 
 	mockQueueProvider2 := NewMockQueueProvider().(*MockQueueProvider)
-	mockQueueProvider2.OISMetadataFunc = func() OISMetadata {
-		return mockOISMetadata2
+	mockQueueProvider2.OECMetadataFunc = func() OECMetadata {
+		return mockOECMetadata2
 	}
 
 	processor.addPoller(mockQueueProvider2, mockIntegrationId)
 
-	assert.Equal(t, mockOISMetadata1, poller.QueueProvider().OISMetadata())
-	assert.Equal(t, processor.conf.PollerConf, poller.conf.PollerConf)
+	assert.Equal(t, mockOECMetadata1, poller.QueueProvider().OECMetadata())
+	assert.Equal(t, processor.configuration.PollerConf, poller.conf.PollerConf)
 
-	_, contains := processor.pollers[mockOISMetadata1.QueueUrl()]
+	_, contains := processor.pollers[mockOECMetadata1.QueueUrl()]
 	assert.True(t, contains)
 
 	assert.Equal(t, 2, len(processor.pollers))
@@ -254,7 +254,7 @@ func TestRemovePollerTest(t *testing.T) {
 	poller := processor.removePoller(mockQueueUrl1)
 	processor.removePoller(mockQueueUrl2)
 
-	assert.Equal(t, mockOISMetadata1.QueueUrl(), poller.QueueProvider().OISMetadata().QueueUrl())
+	assert.Equal(t, mockOECMetadata1.QueueUrl(), poller.QueueProvider().OECMetadata().QueueUrl())
 
 	assert.Equal(t, 0, len(processor.pollers))
 }

@@ -1,7 +1,7 @@
 package conf
 
 import (
-	"github.com/opsgenie/ois/git"
+	"github.com/opsgenie/oec/git"
 	"os"
 	"path/filepath"
 )

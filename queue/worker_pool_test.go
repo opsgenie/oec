@@ -1,7 +1,7 @@
 package queue
 
 import (
-	"github.com/opsgenie/ois/conf"
+	"github.com/opsgenie/oec/conf"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"
