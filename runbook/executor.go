@@ -48,8 +48,13 @@ func Execute(executablePath string, args, environmentVars []string, stdout, stde
 	cmd.Env = append(os.Environ(), environmentVars...)
 
 	stderrBuff := &bytes.Buffer{}
-	cmd.Stdout = stdout
-	cmd.Stderr = io.MultiWriter(stderr, stderrBuff)
+	cmd.Stderr = stderrBuff
+	if stderr != nil {
+		cmd.Stderr = io.MultiWriter(stderr, cmd.Stderr)
+	}
+	if stdout != nil {
+		cmd.Stdout = stdout
+	}
 
 	err := cmd.Run()
 	if err != nil {
