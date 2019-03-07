@@ -35,7 +35,7 @@ func main() {
 		},
 	)
 
-	err := os.Chmod(filepath.Join("/var", "log"), 0644)
+	err := os.Chmod(filepath.Join("/var", "log", "opsgenie"), 0744)
 	if err != nil {
 		logrus.Warn(err)
 	}
