@@ -2,6 +2,7 @@ package retryer
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"io"
@@ -55,6 +56,7 @@ func DoWithExponentialBackoff(retryer *Retryer, request *Request) (*http.Respons
 	}
 
 	retryCount := 0
+	errMessage := ""
 	for {
 
 		if request.body != nil {
@@ -81,16 +83,21 @@ func DoWithExponentialBackoff(retryer *Retryer, request *Request) (*http.Respons
 			return response, err
 		}
 
-		if retryCount < maxRetryCount-1 {
-			waitDuration := getWaitTime(retryCount)
-			time.Sleep(waitDuration)
-			retryCount++
-			continue
+		retryCount++
+		if retryCount == maxRetryCount {
+			if err != nil {
+				errMessage = fmt.Sprintf("last error: %s", err)
+			} else {
+				errMessage = fmt.Sprintf("status code: %d", response.StatusCode)
+			}
+			break
 		}
-		break
+
+		waitDuration := getWaitTime(retryCount - 1)
+		time.Sleep(waitDuration)
 	}
 
-	return nil, errors.Errorf("Couldn't get a success response, maximum retry count[%d] is exceeded.", maxRetryCount)
+	return nil, errors.Errorf("Couldn't get a success response, maximum retry count[%d] is exceeded, %s", maxRetryCount, errMessage)
 }
 
 /******************************************************************************************/

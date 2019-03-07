@@ -32,7 +32,7 @@ func gitCloneMaster(tmpDir, gitUrl, privateKeyFilepath, passPhrase string) error
 
 	options := &git.CloneOptions{
 		URL:               gitUrl,
-		RecurseSubmodules: git.DefaultSubmoduleRecursionDepth, // todo max depth and master
+		RecurseSubmodules: git.DefaultSubmoduleRecursionDepth, // todo restrict max depth
 		ReferenceName:     plumbing.Master,
 		SingleBranch:      true,
 	}
@@ -47,12 +47,7 @@ func gitCloneMaster(tmpDir, gitUrl, privateKeyFilepath, passPhrase string) error
 		options.Auth = auth
 	}
 
-	err := options.Validate()
-	if err != nil {
-		return err
-	}
-
-	_, err = git.PlainClone(tmpDir, false, options)
+	_, err := git.PlainClone(tmpDir, false, options)
 
 	return err
 }

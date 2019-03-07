@@ -56,13 +56,7 @@ func (r Repositories) Download(options *GitOptions) (err error) {
 
 		logrus.Debugf("Git repository[%s] is downloaded.", options.Url)
 
-		repository := NewRepository(repositoryPath, *options)
-		err = repository.Chmod(0700)
-		if err != nil {
-			logrus.Warnf("Git repository[%s] chmod failed: %s", options.Url, err)
-		}
-
-		r[GitUrl(options.Url)] = repository
+		r[GitUrl(options.Url)] = NewRepository(repositoryPath, *options)
 		return nil
 	}
 
@@ -103,11 +97,18 @@ type Repository struct {
 }
 
 func NewRepository(path string, options GitOptions) *Repository {
-	return &Repository{
+	repository := &Repository{
 		rw:      &sync.RWMutex{},
 		Path:    path,
 		Options: options,
 	}
+
+	err := repository.Chmod(0700)
+	if err != nil {
+		logrus.Warnf("Git repository[%s] chmod failed: %s", options.Url, err)
+	}
+
+	return repository
 }
 
 func (r *Repository) Pull() error {
@@ -116,10 +117,10 @@ func (r *Repository) Pull() error {
 	defer func() {
 		err := util.ChmodRecursively(r.Path, 0700)
 		if err != nil {
-			logrus.Debugf("Git repository[%s] chmod failed: %s", r.Options.Url, err)
+			logrus.Warnf("Git repository[%s] chmod failed: %s", r.Options.Url, err)
 		}
 	}()
-	return PullMaster(r.Path, r.Options.PrivateKeyFilepath, r.Options.Passphrase)
+	return FetchAndReset(r.Path, r.Options.PrivateKeyFilepath, r.Options.Passphrase)
 }
 
 func (r *Repository) Remove() error {
