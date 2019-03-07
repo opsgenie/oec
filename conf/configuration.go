@@ -96,8 +96,8 @@ type PoolConf struct {
 
 func ReadConfFile() (*Configuration, error) {
 
-	confSource := os.Getenv("OEC_CONF_SOURCE")
-	conf, err := readConfFileFromSource(strings.ToLower(confSource))
+	confSourceType := os.Getenv("OEC_CONF_SOURCE_TYPE")
+	conf, err := readConfFileFromSource(strings.ToLower(confSourceType))
 	if err != nil {
 		return nil, err
 	}
@@ -161,9 +161,9 @@ func validateConfiguration(conf *Configuration) error {
 	return nil
 }
 
-func readConfFileFromSource(confSource string) (*Configuration, error) {
+func readConfFileFromSource(confSourceType string) (*Configuration, error) {
 
-	switch confSource {
+	switch confSourceType {
 	case GitSourceType:
 		url := os.Getenv("OEC_CONF_GIT_URL")
 		privateKeyFilepath := os.Getenv("OEC_CONF_GIT_PRIVATE_KEY_FILEPATH")
@@ -189,7 +189,9 @@ func readConfFileFromSource(confSource string) (*Configuration, error) {
 		}
 
 		return readConfigurationFromLocalFunc(confFilepath)
+	case "":
+		return nil, errors.Errorf("OEC_CONF_SOURCE_TYPE should be set as \"local\" or \"git\".")
 	default:
-		return nil, errors.Errorf("Unknown configuration source[%s].", confSource)
+		return nil, errors.Errorf("Unknown configuration source type[%s], valid types are \"local\" and \"git\".", confSourceType)
 	}
 }
