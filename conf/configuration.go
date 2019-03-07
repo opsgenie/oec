@@ -37,7 +37,7 @@ type ActionSpecifications struct {
 	ActionMappings ActionMappings `json:"actionMappings" yaml:"actionMappings"`
 	GlobalFlags    Flags          `json:"globalFlags" yaml:"globalFlags"`
 	GlobalArgs     []string       `json:"globalArgs" yaml:"globalArgs"`
-	GlobalEnv      []string       `json:"environmentVariables" yaml:"environmentVariables"`
+	GlobalEnv      []string       `json:"globalEnv" yaml:"globalEnv"`
 }
 
 type ActionName string
