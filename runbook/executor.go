@@ -14,7 +14,7 @@ var ExecuteFunc = Execute
 var executables = map[string][]string{
 	".bat":    {"cmd"},
 	".cmd":    {"cmd", "/C"},
-	".ps1":    {"powershell"},
+	".ps1":    {"powershell", "-File"},
 	".sh":     {"sh"},
 	".py":     {"python"},
 	".groovy": {"groovy"},

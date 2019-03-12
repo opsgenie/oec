@@ -45,7 +45,11 @@ func (qm *OECQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 		return nil, err
 	}
 
-	action := queuePayload.Action
+	action := queuePayload.MappedAction.Name
+	if action == "" {
+		action = queuePayload.Action
+	}
+
 	if action == "" {
 		return nil, errors.New("SQS message does not contain action property.")
 	}
@@ -81,8 +85,16 @@ func (qm *OECQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 }
 
 func (qm *OECQueueMessage) execute(mappedAction *conf.MappedAction) error {
-	args := append([]string{"-payload", *qm.message.Body}, qm.actionSpecs.GlobalFlags.Args()...)
-	args = append(args, mappedAction.Flags.Args()...)
+
+	args := append(qm.actionSpecs.GlobalFlags.Args(), mappedAction.Flags.Args()...)
+
+	payload, err := json.Marshal(*qm.message.Body)
+	if err != nil {
+		logrus.Error("Payload could not be marshaled: %v", err)
+	} else {
+		args = append(args, []string{"-payload", string(payload)}...)
+	}
+
 	args = append(args, qm.actionSpecs.GlobalArgs...)
 	args = append(args, mappedAction.Args...)
 	env := append(qm.actionSpecs.GlobalEnv, mappedAction.Env...)

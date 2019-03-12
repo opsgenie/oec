@@ -1,12 +1,18 @@
 package queue
 
 type QueuePayload struct {
-	Alert  Alert  `json:"alert"`
-	Action string `json:"action"`
+	Alert        Alert        `json:"alert"`
+	Action       string       `json:"action"`
+	MappedAction MappedAction `json:"mappedActionV2"`
 }
 
 type Alert struct {
 	AlertId string `json:"alertId"`
+}
+
+type MappedAction struct {
+	Name       string `json:"name"`
+	ExtraField string `json:"extraField"`
 }
 
 /* Unmarshaling of full payload is not necessary

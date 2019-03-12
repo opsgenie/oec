@@ -286,7 +286,7 @@ func (qp *OECQueueProcessor) run() {
 			token, err := qp.receiveToken()
 			if err != nil {
 				logrus.Warnf("Refresh cycle of queue processor has failed: %s", err)
-				logrus.Infof("Will refresh token after %s", qp.errorRefreshPeriod.String())
+				logrus.Debugf("Will refresh token after %s", qp.errorRefreshPeriod.String())
 				ticker = time.NewTicker(qp.errorRefreshPeriod)
 				break
 			}
