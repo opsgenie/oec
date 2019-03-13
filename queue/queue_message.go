@@ -87,14 +87,7 @@ func (qm *OECQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 func (qm *OECQueueMessage) execute(mappedAction *conf.MappedAction) error {
 
 	args := append(qm.actionSpecs.GlobalFlags.Args(), mappedAction.Flags.Args()...)
-
-	payload, err := json.Marshal(*qm.message.Body)
-	if err != nil {
-		logrus.Error("Payload could not be marshaled: %v", err)
-	} else {
-		args = append(args, []string{"-payload", string(payload)}...)
-	}
-
+	args = append(args, []string{"-payload", *qm.message.Body}...)
 	args = append(args, qm.actionSpecs.GlobalArgs...)
 	args = append(args, mappedAction.Args...)
 	env := append(qm.actionSpecs.GlobalEnv, mappedAction.Env...)
