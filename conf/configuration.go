@@ -116,7 +116,14 @@ func ReadConfFile() (*Configuration, error) {
 }
 
 func (c *Configuration) addDefaultFlags() {
-	c.GlobalArgs = append([]string{"-apiKey", c.ApiKey, "-opsgenieUrl", c.BaseUrl}, c.GlobalArgs...)
+	c.GlobalArgs = append(
+		[]string{
+			"-apiKey", c.ApiKey,
+			"-opsgenieUrl", c.BaseUrl,
+			"-logLevel", strings.ToUpper(c.LogLevel),
+		},
+		c.GlobalArgs...,
+	)
 }
 
 func validateConfiguration(conf *Configuration) error {
