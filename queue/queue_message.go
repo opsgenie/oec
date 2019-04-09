@@ -45,23 +45,24 @@ func (qm *OECQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 		return nil, err
 	}
 
+	alertId := queuePayload.Alert.AlertId
 	action := queuePayload.MappedAction.Name
 	if action == "" {
 		action = queuePayload.Action
 	}
 
 	if action == "" {
-		return nil, errors.New("SQS message does not contain action property.")
+		return nil, errors.Errorf("SQS message with alertId[%s] does not contain action property.", alertId)
 	}
 
 	mappedAction, ok := qm.actionSpecs.ActionMappings[conf.ActionName(action)]
 	if !ok {
-		return nil, errors.Errorf("There is no mapped action found for action[%s].", action)
+		return nil, errors.Errorf("There is no mapped action found for action[%s]. SQS message with alertId[%s] will be ignored.", action, alertId)
 	}
 
 	result := &runbook.ActionResultPayload{
-		AlertId: queuePayload.Alert.AlertId,
-		Action:  queuePayload.Action,
+		AlertId: alertId,
+		Action:  action,
 	}
 
 	start := time.Now()
@@ -71,11 +72,11 @@ func (qm *OECQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 	switch err := err.(type) {
 	case *runbook.ExecError:
 		result.FailureMessage = fmt.Sprintf("Err: %s, Stderr: %s", err.Error(), err.Stderr)
-		logrus.Debugf("Action[%s] execution of message[%s] failed: %s Stderr: %s", action, *qm.message.MessageId, err.Error(), err.Stderr)
+		logrus.Debugf("Action[%s] execution of message[%s] with alertId[%s] failed: %s Stderr: %s", action, *qm.message.MessageId, alertId, err.Error(), err.Stderr)
 
 	case nil:
 		result.IsSuccessful = true
-		logrus.Debugf("Action[%s] execution of message[%s] has been completed and it took %f seconds.", action, *qm.message.MessageId, took.Seconds())
+		logrus.Debugf("Action[%s] execution of message[%s] with alertId[%s] has been completed and it took %f seconds.", action, *qm.message.MessageId, alertId, took.Seconds())
 
 	default:
 		return nil, err
