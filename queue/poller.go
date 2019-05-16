@@ -142,7 +142,10 @@ func (p *OECPoller) poll() (shouldWait bool) {
 
 	for i := 0; i < messageLength; i++ {
 
-		p.queueMessageLogrus.WithField("messageId", *messages[i].MessageId).Infof("Message body: %s", *messages[i].Body)
+		p.queueMessageLogrus.
+			WithField("messageId", *messages[i].MessageId).
+			Info("Message body: ", *messages[i].Body)
+
 		job := NewSqsJob(
 			NewOECMessage(
 				messages[i],
@@ -213,7 +216,7 @@ func (p *OECPoller) run() {
 }
 
 func newQueueMessageLogrus(region string) *logrus.Logger {
-	logFilePath := filepath.Join("/var", "log", "opsgenie", "oecQueueMessage-"+region+strconv.Itoa(os.Getpid())+".log")
+	logFilePath := filepath.Join("/var", "log", "opsgenie", "oecQueueMessages-"+region+"-"+strconv.Itoa(os.Getpid())+".log")
 	queueMessageLogger := &lumberjack.Logger{
 		Filename:  logFilePath,
 		MaxSize:   3,  // MB

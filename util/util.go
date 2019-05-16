@@ -41,11 +41,11 @@ func ChmodRecursively(path string, mode os.FileMode) error {
 	})
 }
 
-func CheckLogFile(logger *lumberjack.Logger, interval time.Duration, defaultLogFilepath string) {
+func CheckLogFile(logger *lumberjack.Logger, interval time.Duration, logFilepath string) {
 	for {
 		select {
 		case <-time.After(interval):
-			if _, err := os.Stat(defaultLogFilepath); os.IsNotExist(err) {
+			if _, err := os.Stat(logFilepath); os.IsNotExist(err) {
 				logrus.Warnf("Failed to open OEC log file: %v. New file will be created.", err)
 				if err = logger.Rotate(); err != nil {
 					logrus.Warn(err)
