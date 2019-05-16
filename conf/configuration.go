@@ -161,6 +161,7 @@ func validateConfiguration(conf *Configuration) error {
 	level, err := logrus.ParseLevel(conf.LogLevel)
 	if err != nil {
 		conf.LogrusLevel = logrus.InfoLevel
+		conf.LogLevel = "info"
 	} else {
 		conf.LogrusLevel = level
 	}

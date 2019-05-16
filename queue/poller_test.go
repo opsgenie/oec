@@ -30,8 +30,10 @@ func newPollerTest() *OECPoller {
 			PollerConf:           *mockPollerConf,
 			ActionSpecifications: *mockActionSpecs,
 		},
-		workerPool:    NewMockWorkerPool(),
-		queueProvider: NewMockQueueProvider(),
+
+		workerPool:         NewMockWorkerPool(),
+		queueProvider:      NewMockQueueProvider(),
+		queueMessageLogrus: &logrus.Logger{},
 	}
 }
 

@@ -39,9 +39,15 @@ var mockActionMappings = ActionMappings{
 
 func expectedConf() *Configuration {
 	expectedConf := *mockConf
+	expectedConf.LogLevel = "info"
 	expectedConf.ActionMappings = copyActionMappings(mockConf.ActionMappings)
 	addHomeDirPrefixToActionMappings(expectedConf.ActionMappings)
-	expectedConf.GlobalArgs = append([]string{"-apiKey", expectedConf.ApiKey, "-opsgenieUrl", expectedConf.BaseUrl}, expectedConf.GlobalArgs...)
+	expectedConf.GlobalArgs = append([]string{
+		"-apiKey", expectedConf.ApiKey,
+		"-opsgenieUrl", expectedConf.BaseUrl,
+		"-logLevel", "INFO"},
+		expectedConf.GlobalArgs...
+	)
 
 	if expectedConf.LogrusLevel == 0 {
 		expectedConf.LogrusLevel = logrus.InfoLevel
@@ -175,7 +181,7 @@ func TestReadConfFile(t *testing.T) {
 }
 
 func testReadConfFileFromGit(t *testing.T) {
-	os.Setenv("OEC_CONF_SOURCE", "git")
+	os.Setenv("OEC_CONF_SOURCE_TYPE", "git")
 	os.Setenv("OEC_CONF_GIT_URL", "utl")
 	os.Setenv("OEC_CONF_GIT_PRIVATE_KEY_FILEPATH", "/test_id_rsa")
 	os.Setenv("OEC_CONF_GIT_FILEPATH", "oec/testConf.json")
@@ -198,7 +204,7 @@ func testReadConfFileFromGit(t *testing.T) {
 }
 
 func testReadConfFileFromLocalWithDefaultPath(t *testing.T) {
-	os.Setenv("OEC_CONF_SOURCE", "local")
+	os.Setenv("OEC_CONF_SOURCE_TYPE", "local")
 
 	readConfigurationFromLocalFunc = mockReadConfigurationFromLocalWithDefaultPath
 	configuration, err := ReadConfFile()
@@ -215,7 +221,7 @@ func testReadConfFileFromLocalWithDefaultPath(t *testing.T) {
 }
 
 func testReadConfFileWithoutActionMappings(t *testing.T) {
-	os.Setenv("OEC_CONF_SOURCE", "local")
+	os.Setenv("OEC_CONF_SOURCE_TYPE", "local")
 
 	readConfigurationFromLocalFunc = mockReadConfigurationFromLocalWithDefaultPathWithoutActionMappings
 	_, err := ReadConfFile()
@@ -232,7 +238,7 @@ func testReadConfFileWithoutActionMappings(t *testing.T) {
 }
 
 func testReadConfFileFromLocalWithCustomPath(t *testing.T) {
-	os.Setenv("OEC_CONF_SOURCE", "local")
+	os.Setenv("OEC_CONF_SOURCE_TYPE", "local")
 	os.Setenv("OEC_CONF_LOCAL_FILEPATH", testLocalConfFilePath)
 
 	readConfigurationFromLocalFunc = mockReadConfigurationFromLocalWithCustomPath
@@ -250,14 +256,12 @@ func testReadConfFileFromLocalWithCustomPath(t *testing.T) {
 }
 
 func TestReadConfFileWithUnknownSource(t *testing.T) {
-	os.Setenv("OEC_CONF_SOURCE", "dummy")
+	os.Setenv("OEC_CONF_SOURCE_TYPE", "dummy")
 
 	_, err := ReadConfFile()
 	assert.Error(t, err, "Error should be thrown.")
 
-	if err.Error() != "Unknown configuration source[dummy]." {
-		t.Error("Error message was wrong.")
-	}
+	assert.Equal(t, "Unknown configuration source type[dummy], valid types are \"local\" and \"git\".", err.Error())
 
 	assert.False(t, readConfigurationFromGitCalled,
 		"ReadConfFile should not call the method readConfigurationFromGit.")
