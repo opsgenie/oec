@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/opsgenie/oec/conf"
 	"github.com/opsgenie/oec/queue"
+	"github.com/opsgenie/oec/util"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -52,7 +53,7 @@ func main() {
 	logrus.Infof("OEC version is %s", OECVersion)
 	logrus.Infof("OEC commit version is %s", OECCommitVersion)
 
-	go checkLogFile(logger, time.Second*10)
+	go util.CheckLogFile(logger, time.Second*10, defaultLogFilepath)
 
 	configuration, err := conf.ReadConfFile()
 	if err != nil {
@@ -94,21 +95,4 @@ func main() {
 	}
 
 	os.Exit(0)
-}
-
-func checkLogFile(logger *lumberjack.Logger, interval time.Duration) {
-	for {
-		select {
-		case <-time.After(interval):
-			if _, err := os.Stat(defaultLogFilepath); os.IsNotExist(err) {
-				logrus.Warnf("Failed to open OEC log file: %v. New file will be created.", err)
-				if err = logger.Rotate(); err != nil {
-					logrus.Warn(err)
-				} else {
-					logrus.Warnf("New OEC log file is created, previous one might be removed accidentally.")
-				}
-				break
-			}
-		}
-	}
 }
