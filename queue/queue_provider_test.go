@@ -234,11 +234,12 @@ func (mqp *MockQueueProvider) RefreshClient(assumeRoleResult AssumeRoleResult) e
 }
 
 var mockSuccessReceiveFunc = func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
+	body := "body"
 	messages := make([]*sqs.Message, 0)
 	for i := int64(0); i < numOfMessage; i++ {
 		id := strconv.FormatInt(i, 10)
 		messageAttr := map[string]*sqs.MessageAttributeValue{"integrationId": {StringValue: &mockIntegrationId}}
-		messages = append(messages, &sqs.Message{MessageId: &id, MessageAttributes: messageAttr})
+		messages = append(messages, &sqs.Message{MessageId: &id, MessageAttributes: messageAttr, Body: &body})
 	}
 
 	return messages, nil

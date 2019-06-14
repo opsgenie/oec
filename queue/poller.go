@@ -7,6 +7,10 @@ import (
 	"github.com/opsgenie/oec/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/natefinch/lumberjack.v2"
+	"os"
+	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -23,9 +27,10 @@ type OECPoller struct {
 	workerPool    WorkerPool
 	queueProvider QueueProvider
 
-	integrationId string
-	conf          *conf.Configuration
-	repositories  git.Repositories
+	integrationId      string
+	conf               *conf.Configuration
+	repositories       git.Repositories
+	queueMessageLogrus *logrus.Logger
 
 	isRunning   bool
 	isRunningWg *sync.WaitGroup
@@ -39,16 +44,17 @@ func NewPoller(workerPool WorkerPool, queueProvider QueueProvider,
 	repositories git.Repositories) Poller {
 
 	return &OECPoller{
-		quit:          make(chan struct{}),
-		wakeUp:        make(chan struct{}),
-		isRunning:     false,
-		isRunningWg:   &sync.WaitGroup{},
-		startStopMu:   &sync.Mutex{},
-		conf:          conf,
-		repositories:  repositories,
-		integrationId: integrationId,
-		workerPool:    workerPool,
-		queueProvider: queueProvider,
+		quit:               make(chan struct{}),
+		wakeUp:             make(chan struct{}),
+		isRunning:          false,
+		isRunningWg:        &sync.WaitGroup{},
+		startStopMu:        &sync.Mutex{},
+		conf:               conf,
+		repositories:       repositories,
+		integrationId:      integrationId,
+		workerPool:         workerPool,
+		queueProvider:      queueProvider,
+		queueMessageLogrus: newQueueMessageLogrus(queueProvider.OECMetadata().Region()),
 	}
 }
 
@@ -136,6 +142,10 @@ func (p *OECPoller) poll() (shouldWait bool) {
 
 	for i := 0; i < messageLength; i++ {
 
+		p.queueMessageLogrus.
+			WithField("messageId", *messages[i].MessageId).
+			Info("Message body: ", *messages[i].Body)
+
 		job := NewSqsJob(
 			NewOECMessage(
 				messages[i],
@@ -203,4 +213,35 @@ func (p *OECPoller) run() {
 			}
 		}
 	}
+}
+
+func newQueueMessageLogrus(region string) *logrus.Logger {
+	logFilePath := filepath.Join("/var", "log", "opsgenie", "oecQueueMessages-"+region+"-"+strconv.Itoa(os.Getpid())+".log")
+	queueMessageLogger := &lumberjack.Logger{
+		Filename:  logFilePath,
+		MaxSize:   3,  // MB
+		MaxAge:    10, // Days
+		LocalTime: true,
+	}
+
+	queueMessageLogrus := logrus.New()
+	queueMessageLogrus.SetFormatter(
+		&logrus.TextFormatter{
+			ForceColors:     true,
+			FullTimestamp:   true,
+			TimestampFormat: time.RFC3339Nano,
+		},
+	)
+
+	err := queueMessageLogger.Rotate()
+
+	if err != nil {
+		logrus.Info("Cannot create log file for queueMessages. Reason: ", err)
+	}
+
+	queueMessageLogrus.SetOutput(queueMessageLogger)
+
+	go util.CheckLogFile(queueMessageLogger, time.Second*10, logFilePath)
+
+	return queueMessageLogrus
 }
