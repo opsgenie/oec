@@ -12,7 +12,7 @@ import (
 var ExecuteFunc = Execute
 
 var executables = map[string][]string{
-	".bat":    {"cmd"},
+	".bat":    {"cmd", "/C"},
 	".cmd":    {"cmd", "/C"},
 	".ps1":    {"powershell", "-File"},
 	".sh":     {"sh"},
