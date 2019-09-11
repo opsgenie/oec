@@ -14,10 +14,10 @@ import (
 )
 
 var (
-	mockMessageId     = "mockMessageId"
-	mockApiKey        = "mockApiKey"
-	mockBaseUrl       = "mockBaseUrl"
-	mockIntegrationId = "mockIntegrationId"
+	mockMessageId = "mockMessageId"
+	mockApiKey    = "mockApiKey"
+	mockBaseUrl   = "mockBaseUrl"
+	mockOwnerId   = "mockOwnerId"
 )
 
 var mockActionSpecs = &conf.ActionSpecifications{
@@ -90,7 +90,7 @@ func testProcessMappedActionNotFound(t *testing.T) {
 	queueMessage := NewOECMessage(message, nil, mockActionSpecs)
 
 	_, err := queueMessage.Process()
-	expectedErr := errors.New("There is no mapped action found for action[Ack]. SQS message with alertId[] will be ignored.")
+	expectedErr := errors.New("There is no mapped action found for action[Ack]. SQS message with entityId[] will be ignored.")
 	assert.EqualError(t, err, expectedErr.Error())
 }
 
@@ -103,7 +103,7 @@ func testProcessFieldMissing(t *testing.T) {
 	queueMessage := NewOECMessage(message, nil, mockActionSpecs)
 
 	_, err := queueMessage.Process()
-	expectedErr := errors.New("SQS message with alertId[] does not contain action property.")
+	expectedErr := errors.New("SQS message with entityId[] does not contain action property.")
 	assert.EqualError(t, err, expectedErr.Error())
 }
 
@@ -119,7 +119,7 @@ func (mqm *MockQueueMessage) Message() *sqs.Message {
 	}
 
 	body := "mockBody"
-	messageAttr := map[string]*sqs.MessageAttributeValue{integrationId: {StringValue: &mockIntegrationId}}
+	messageAttr := map[string]*sqs.MessageAttributeValue{ownerId: {StringValue: &mockOwnerId}}
 
 	return &sqs.Message{
 		MessageId:         &mockMessageId,

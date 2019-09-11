@@ -39,8 +39,8 @@ func TestSendResultToOpsGenie(t *testing.T) {
 			t.Errorf("Expected request to have ‘mappedAction=testAction’, got: ‘%s’", actionResult.Action)
 		}
 
-		if actionResult.AlertId != "testAlert" {
-			t.Errorf("Expected request to have ‘alertId=testAlert’, got: ‘%s’", actionResult.AlertId)
+		if actionResult.EntityId != "testAlert" {
+			t.Errorf("Expected request to have ‘entityId=testAlert’, got: ‘%s’", actionResult.EntityId)
 		}
 
 		if actionResult.IsSuccessful != true {
@@ -56,7 +56,7 @@ func TestSendResultToOpsGenie(t *testing.T) {
 
 	actionResult := &ActionResultPayload{
 		Action:         "testAction",
-		AlertId:        "testAlert",
+		EntityId:       "testAlert",
 		IsSuccessful:   true,
 		FailureMessage: "fail",
 	}

@@ -1,7 +1,7 @@
 package queue
 
 type OECToken struct {
-	IntegrationId   string        `json:"integrationId,omitempty"`
+	OwnerId         string        `json:"ownerId,omitempty"`
 	OECMetadataList []OECMetadata `json:"queueProperties,omitempty"`
 }
 

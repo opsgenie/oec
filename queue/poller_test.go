@@ -245,7 +245,7 @@ func NewMockPoller() Poller {
 }
 
 func NewMockPollerForQueueProcessor(workerPool WorkerPool, queueProvider QueueProvider,
-	conf *conf.Configuration, integrationId string,
+	conf *conf.Configuration, ownerId string,
 	repositories git.Repositories) Poller {
 	return NewMockPoller()
 }
