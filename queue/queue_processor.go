@@ -203,12 +203,12 @@ func (qp *OECQueueProcessor) receiveToken() (*OECToken, error) {
 	return token, nil
 }
 
-func (qp *OECQueueProcessor) addPoller(queueProvider QueueProvider, integrationId string) Poller {
+func (qp *OECQueueProcessor) addPoller(queueProvider QueueProvider, ownerId string) Poller {
 	poller := newPollerFunc(
 		qp.workerPool,
 		queueProvider,
 		qp.configuration,
-		integrationId,
+		ownerId,
 		qp.repositories,
 	)
 	qp.pollers[queueProvider.OECMetadata().QueueUrl()] = poller
@@ -249,7 +249,7 @@ func (qp *OECQueueProcessor) refreshPollers(token *OECToken) {
 				logrus.Errorf("Poller[%s] could not be added: %s.", queueUrl, err)
 				continue
 			}
-			qp.addPoller(queueProvider, token.IntegrationId).StartPolling()
+			qp.addPoller(queueProvider, token.OwnerId).StartPolling()
 			logrus.Debugf("Poller[%s] is added.", queueUrl)
 		}
 	}

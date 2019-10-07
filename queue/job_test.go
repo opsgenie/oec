@@ -27,7 +27,7 @@ func newJobTest() *SqsJob {
 		executeMutex:  &sync.Mutex{},
 		apiKey:        mockApiKey,
 		baseUrl:       mockBaseUrl,
-		integrationId: mockIntegrationId,
+		ownerId:       mockOwnerId,
 		state:         JobInitial,
 	}
 }
@@ -163,7 +163,7 @@ func TestExecuteWithInvalidQueueMessage(t *testing.T) {
 
 	sqsJob.queueMessage.(*MockQueueMessage).MessageFunc = func() *sqs.Message {
 		falseIntegrationId := "falseIntegrationId"
-		messageAttr := map[string]*sqs.MessageAttributeValue{integrationId: {StringValue: &falseIntegrationId}}
+		messageAttr := map[string]*sqs.MessageAttributeValue{ownerId: {StringValue: &falseIntegrationId}}
 		return &sqs.Message{MessageAttributes: messageAttr, MessageId: &mockMessageId}
 	}
 

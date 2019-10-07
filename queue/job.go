@@ -25,22 +25,22 @@ type SqsJob struct {
 	queueProvider QueueProvider
 	queueMessage  QueueMessage
 
-	integrationId string
-	apiKey        string
-	baseUrl       string
+	ownerId string
+	apiKey  string
+	baseUrl string
 
 	state        int32
 	executeMutex *sync.Mutex
 }
 
-func NewSqsJob(queueMessage QueueMessage, queueProvider QueueProvider, apiKey, baseUrl, integrationId string) Job {
+func NewSqsJob(queueMessage QueueMessage, queueProvider QueueProvider, apiKey, baseUrl, ownerId string) Job {
 	return &SqsJob{
 		queueProvider: queueProvider,
 		queueMessage:  queueMessage,
 		executeMutex:  &sync.Mutex{},
 		apiKey:        apiKey,
 		baseUrl:       baseUrl,
-		integrationId: integrationId,
+		ownerId:       ownerId,
 		state:         JobInitial,
 	}
 }
@@ -77,7 +77,7 @@ func (j *SqsJob) Execute() error {
 	messageAttr := j.SqsMessage().MessageAttributes
 
 	if messageAttr == nil ||
-		*messageAttr[integrationId].StringValue != j.integrationId {
+		*messageAttr[ownerId].StringValue != j.ownerId {
 		j.state = JobError
 		return errors.Errorf("Message[%s] is invalid, will not be processed.", messageId)
 	}

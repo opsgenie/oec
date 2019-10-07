@@ -227,14 +227,14 @@ func TestAddTwoDifferentPollersTest(t *testing.T) {
 
 	processor := newQueueProcessorTest()
 
-	poller := processor.addPoller(NewMockQueueProvider(), mockIntegrationId).(*OECPoller)
+	poller := processor.addPoller(NewMockQueueProvider(), mockOwnerId).(*OECPoller)
 
 	mockQueueProvider2 := NewMockQueueProvider().(*MockQueueProvider)
 	mockQueueProvider2.OECMetadataFunc = func() OECMetadata {
 		return mockOECMetadata2
 	}
 
-	processor.addPoller(mockQueueProvider2, mockIntegrationId)
+	processor.addPoller(mockQueueProvider2, mockOwnerId)
 
 	assert.Equal(t, mockOECMetadata1, poller.QueueProvider().OECMetadata())
 	assert.Equal(t, processor.configuration.PollerConf, poller.conf.PollerConf)

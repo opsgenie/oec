@@ -10,7 +10,7 @@ import (
 	"sync"
 )
 
-const integrationId = "integrationId"
+const ownerId = "ownerId"
 
 type SQS interface {
 	ChangeMessageVisibility(input *sqs.ChangeMessageVisibilityInput) (*sqs.ChangeMessageVisibilityOutput, error)
@@ -112,7 +112,7 @@ func (qp *OECQueueProvider) ReceiveMessage(maxNumOfMessage int64, visibilityTime
 
 	request := &sqs.ReceiveMessageInput{
 		MessageAttributeNames: []*string{
-			aws.String(integrationId),
+			aws.String(ownerId),
 		},
 		QueueUrl:            &queueUrl,
 		MaxNumberOfMessages: aws.Int64(maxNumOfMessage),

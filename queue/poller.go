@@ -27,7 +27,7 @@ type OECPoller struct {
 	workerPool    WorkerPool
 	queueProvider QueueProvider
 
-	integrationId      string
+	ownerId            string
 	conf               *conf.Configuration
 	repositories       git.Repositories
 	queueMessageLogrus *logrus.Logger
@@ -40,7 +40,7 @@ type OECPoller struct {
 }
 
 func NewPoller(workerPool WorkerPool, queueProvider QueueProvider,
-	conf *conf.Configuration, integrationId string,
+	conf *conf.Configuration, ownerId string,
 	repositories git.Repositories) Poller {
 
 	return &OECPoller{
@@ -51,7 +51,7 @@ func NewPoller(workerPool WorkerPool, queueProvider QueueProvider,
 		startStopMu:        &sync.Mutex{},
 		conf:               conf,
 		repositories:       repositories,
-		integrationId:      integrationId,
+		ownerId:            ownerId,
 		workerPool:         workerPool,
 		queueProvider:      queueProvider,
 		queueMessageLogrus: newQueueMessageLogrus(queueProvider.OECMetadata().Region()),
@@ -155,7 +155,7 @@ func (p *OECPoller) poll() (shouldWait bool) {
 			p.queueProvider,
 			p.conf.ApiKey,
 			p.conf.BaseUrl,
-			p.integrationId,
+			p.ownerId,
 		)
 
 		isSubmitted, err := p.workerPool.Submit(job)

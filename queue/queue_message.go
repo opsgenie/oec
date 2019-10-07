@@ -45,24 +45,26 @@ func (qm *OECQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 		return nil, err
 	}
 
-	alertId := queuePayload.Alert.AlertId
+	entityId := queuePayload.Entity.Id
+	entityType := queuePayload.Entity.Type
 	action := queuePayload.MappedAction.Name
 	if action == "" {
 		action = queuePayload.Action
 	}
 
 	if action == "" {
-		return nil, errors.Errorf("SQS message with alertId[%s] does not contain action property.", alertId)
+		return nil, errors.Errorf("SQS message with entityId[%s] does not contain action property.", entityId)
 	}
 
 	mappedAction, ok := qm.actionSpecs.ActionMappings[conf.ActionName(action)]
 	if !ok {
-		return nil, errors.Errorf("There is no mapped action found for action[%s]. SQS message with alertId[%s] will be ignored.", action, alertId)
+		return nil, errors.Errorf("There is no mapped action found for action[%s]. SQS message with entityId[%s] will be ignored.", action, entityId)
 	}
 
 	result := &runbook.ActionResultPayload{
-		AlertId: alertId,
-		Action:  action,
+		EntityId:   entityId,
+		EntityType: entityType,
+		Action:     action,
 	}
 
 	start := time.Now()
@@ -72,11 +74,11 @@ func (qm *OECQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 	switch err := err.(type) {
 	case *runbook.ExecError:
 		result.FailureMessage = fmt.Sprintf("Err: %s, Stderr: %s", err.Error(), err.Stderr)
-		logrus.Debugf("Action[%s] execution of message[%s] with alertId[%s] failed: %s Stderr: %s", action, *qm.message.MessageId, alertId, err.Error(), err.Stderr)
+		logrus.Debugf("Action[%s] execution of message[%s] with entityId[%s] failed: %s Stderr: %s", action, *qm.message.MessageId, entityId, err.Error(), err.Stderr)
 
 	case nil:
 		result.IsSuccessful = true
-		logrus.Debugf("Action[%s] execution of message[%s] with alertId[%s] has been completed and it took %f seconds.", action, *qm.message.MessageId, alertId, took.Seconds())
+		logrus.Debugf("Action[%s] execution of message[%s] with entityId[%s] has been completed and it took %f seconds.", action, *qm.message.MessageId, entityId, took.Seconds())
 
 	default:
 		return nil, err
