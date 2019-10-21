@@ -8,6 +8,8 @@ import (
 	"github.com/opsgenie/oec/retryer"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/natefinch/lumberjack.v2"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"strconv"
@@ -53,6 +55,7 @@ type OECQueueProcessor struct {
 
 	configuration *conf.Configuration
 	repositories  git.Repositories
+	actionLoggers map[string]io.Writer
 
 	successRefreshPeriod time.Duration
 	errorRefreshPeriod   time.Duration
@@ -86,6 +89,7 @@ func NewQueueProcessor(conf *conf.Configuration) QueueProcessor {
 		workerPool:           NewWorkerPool(&conf.PoolConf),
 		configuration:        conf,
 		repositories:         git.NewRepositories(),
+		actionLoggers:        newActionLoggers(conf.ActionMappings),
 		pollers:              make(map[string]Poller),
 		quit:                 make(chan struct{}),
 		isRunning:            false,
@@ -210,6 +214,7 @@ func (qp *OECQueueProcessor) addPoller(queueProvider QueueProvider, ownerId stri
 		qp.configuration,
 		ownerId,
 		qp.repositories,
+		qp.actionLoggers,
 	)
 	qp.pollers[queueProvider.OECMetadata().QueueUrl()] = poller
 	return poller
@@ -315,5 +320,31 @@ func (qp *OECQueueProcessor) startPullingRepositories(pullPeriod time.Duration) 
 			qp.repositories.PullAll()
 			ticker = time.NewTicker(pullPeriod)
 		}
+	}
+}
+
+func newActionLoggers(mappings conf.ActionMappings) map[string]io.Writer {
+	actionLoggers := make(map[string]io.Writer)
+	for _, action := range mappings {
+		if action.Stdout != "" {
+			if _, ok := actionLoggers[action.Stdout]; !ok {
+				actionLoggers[action.Stdout] = newLogger(action.Stdout)
+			}
+		}
+		if action.Stderr != "" {
+			if _, ok := actionLoggers[action.Stderr]; !ok {
+				actionLoggers[action.Stderr] = newLogger(action.Stderr)
+			}
+		}
+	}
+	return actionLoggers
+}
+
+func newLogger(filename string) *lumberjack.Logger {
+	return &lumberjack.Logger{
+		Filename:  filename,
+		MaxSize:   3, // MB
+		MaxAge:    1, // Days
+		LocalTime: true,
 	}
 }

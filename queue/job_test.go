@@ -36,7 +36,7 @@ func TestJobId(t *testing.T) {
 
 	job := newJobTest()
 
-	actualId := job.JobId()
+	actualId := job.Id()
 
 	assert.Equal(t, mockMessageId, actualId)
 }
@@ -113,7 +113,7 @@ func TestExecuteInNotInitialState(t *testing.T) {
 	err := sqsJob.Execute()
 	assert.NotNil(t, err)
 
-	expectedErr := errors.Errorf("Job[%s] is already executing or finished.", sqsJob.JobId())
+	expectedErr := errors.Errorf("Job[%s] is already executing or finished.", sqsJob.Id())
 	assert.EqualError(t, err, expectedErr.Error())
 }
 
@@ -128,7 +128,7 @@ func TestExecuteWithProcessError(t *testing.T) {
 	err := sqsJob.Execute()
 	assert.NotNil(t, err)
 
-	expectedErr := errors.Errorf("Message[%s] could not be processed: %s", sqsJob.JobId(), "Process Error")
+	expectedErr := errors.Errorf("Message[%s] could not be processed: %s", sqsJob.Id(), "Process Error")
 	assert.EqualError(t, err, expectedErr.Error())
 
 	expectedState := int32(JobError)
@@ -148,7 +148,7 @@ func TestExecuteWithDeleteError(t *testing.T) {
 	err := sqsJob.Execute()
 	assert.NotNil(t, err)
 
-	expectedErr := errors.Errorf("Message[%s] could not be deleted from the queue[%s]: %s", sqsJob.JobId(), sqsJob.queueProvider.OECMetadata().Region(), "Delete Error")
+	expectedErr := errors.Errorf("Message[%s] could not be deleted from the queue[%s]: %s", sqsJob.Id(), sqsJob.queueProvider.OECMetadata().Region(), "Delete Error")
 	assert.EqualError(t, err, expectedErr.Error())
 
 	expectedState := int32(JobError)
@@ -170,7 +170,7 @@ func TestExecuteWithInvalidQueueMessage(t *testing.T) {
 	err := sqsJob.Execute()
 	assert.NotNil(t, err)
 
-	expectedErr := errors.Errorf("Message[%s] is invalid, will not be processed.", sqsJob.JobId())
+	expectedErr := errors.Errorf("Message[%s] is invalid, will not be processed.", sqsJob.Id())
 	assert.EqualError(t, err, expectedErr.Error())
 
 	expectedState := int32(JobError)
@@ -189,7 +189,7 @@ func NewMockJob() *MockJob {
 	return &MockJob{}
 }
 
-func (mj *MockJob) JobId() string {
+func (mj *MockJob) Id() string {
 	if mj.JobIdFunc != nil {
 		return mj.JobIdFunc()
 	}

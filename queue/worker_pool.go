@@ -148,7 +148,7 @@ func (wp *WorkerPoolImpl) Submit(job Job) (isSubmitted bool, err error) {
 		return false, errors.New("Worker pool is not working")
 	}
 
-	logrus.Debugf("Job[%s] is being submmitted", job.JobId())
+	logrus.Debugf("Job[%s] is being submitted", job.Id())
 
 	select {
 	case wp.jobQueue <- job:
@@ -167,7 +167,7 @@ func (wp *WorkerPoolImpl) Submit(job Job) (isSubmitted bool, err error) {
 			return true, nil
 		}
 
-		logrus.Debugf("Job[%s] could not be submitted", job.JobId())
+		logrus.Debugf("Job[%s] could not be submitted", job.Id())
 		return false, nil
 	}
 }
@@ -293,7 +293,7 @@ func (w *Worker) doJob(job Job) {
 	defer w.workerPool.AddNumberOfIdleWorker(1)
 	w.workerPool.AddNumberOfIdleWorker(-1)
 
-	logrus.Debugf("Job[%s] is submitted to Worker[%s]", job.JobId(), w.id.String())
+	logrus.Debugf("Job[%s] is submitted to Worker[%s]", job.Id(), w.id.String())
 
 	err := job.Execute() // todo panic recover, stay the pool as working
 	if err != nil {
@@ -301,7 +301,7 @@ func (w *Worker) doJob(job Job) {
 		return
 	}
 
-	logrus.Debugf("Job[%s] has been processed by Worker[%s].", job.JobId(), w.id.String())
+	logrus.Debugf("Job[%s] has been processed by Worker[%s].", job.Id(), w.id.String())
 }
 
 func (w *Worker) work(initialJob Job) {

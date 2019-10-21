@@ -17,7 +17,7 @@ const (
 )
 
 type Job interface {
-	JobId() string
+	Id() string
 	Execute() error
 }
 
@@ -45,11 +45,11 @@ func NewSqsJob(queueMessage QueueMessage, queueProvider QueueProvider, apiKey, b
 	}
 }
 
-func (j *SqsJob) JobId() string {
+func (j *SqsJob) Id() string {
 	return *j.queueMessage.Message().MessageId
 }
 
-func (j *SqsJob) SqsMessage() *sqs.Message {
+func (j *SqsJob) sqsMessage() *sqs.Message {
 	return j.queueMessage.Message()
 }
 
@@ -59,14 +59,14 @@ func (j *SqsJob) Execute() error {
 	j.executeMutex.Lock()
 
 	if j.state != JobInitial {
-		return errors.Errorf("Job[%s] is already executing or finished.", j.JobId())
+		return errors.Errorf("Job[%s] is already executing or finished.", j.Id())
 	}
 	j.state = JobExecuting
 
 	region := j.queueProvider.OECMetadata().Region()
-	messageId := j.JobId()
+	messageId := j.Id()
 
-	err := j.queueProvider.DeleteMessage(j.SqsMessage())
+	err := j.queueProvider.DeleteMessage(j.sqsMessage())
 	if err != nil {
 		j.state = JobError
 		return errors.Errorf("Message[%s] could not be deleted from the queue[%s]: %s", messageId, region, err)
@@ -74,7 +74,7 @@ func (j *SqsJob) Execute() error {
 
 	logrus.Debugf("Message[%s] is deleted from the queue[%s].", messageId, region)
 
-	messageAttr := j.SqsMessage().MessageAttributes
+	messageAttr := j.sqsMessage().MessageAttributes
 
 	if messageAttr == nil ||
 		*messageAttr[ownerId].StringValue != j.ownerId {
