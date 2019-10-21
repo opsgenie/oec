@@ -43,7 +43,7 @@ func main() {
 
 	logger := &lumberjack.Logger{
 		Filename:  defaultLogFilepath,
-		MaxSize:   3,  // MB
+		MaxSize:   10, // MB
 		MaxAge:    10, // Days
 		LocalTime: true,
 	}
@@ -53,7 +53,7 @@ func main() {
 	logrus.Infof("OEC version is %s", OECVersion)
 	logrus.Infof("OEC commit version is %s", OECCommitVersion)
 
-	go util.CheckLogFile(logger, time.Second*10, defaultLogFilepath)
+	go util.CheckLogFile(logger, time.Second*10)
 
 	configuration, err := conf.ReadConfFile()
 	if err != nil {

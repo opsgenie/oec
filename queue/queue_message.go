@@ -9,7 +9,6 @@ import (
 	"github.com/opsgenie/oec/runbook"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/natefinch/lumberjack.v2"
 	"io"
 	"time"
 )
@@ -20,17 +19,19 @@ type QueueMessage interface {
 }
 
 type OECQueueMessage struct {
-	message      *sqs.Message
-	repositories git.Repositories
-	actionSpecs  *conf.ActionSpecifications
+	message       *sqs.Message
+	repositories  git.Repositories
+	actionSpecs   *conf.ActionSpecifications
+	actionLoggers map[string]io.Writer
 }
 
-func NewOECMessage(message *sqs.Message, repositories git.Repositories, actionSpecs *conf.ActionSpecifications) QueueMessage {
+func NewOECMessage(message *sqs.Message, repositories git.Repositories, actionSpecs *conf.ActionSpecifications, actionLoggers map[string]io.Writer) QueueMessage {
 
 	return &OECQueueMessage{
-		message:      message,
-		repositories: repositories,
-		actionSpecs:  actionSpecs,
+		message:       message,
+		repositories:  repositories,
+		actionSpecs:   actionSpecs,
+		actionLoggers: actionLoggers,
 	}
 }
 
@@ -89,33 +90,7 @@ func (qm *OECQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 
 func (qm *OECQueueMessage) execute(mappedAction *conf.MappedAction) error {
 
-	args := append(qm.actionSpecs.GlobalFlags.Args(), mappedAction.Flags.Args()...)
-	args = append(args, []string{"-payload", *qm.message.Body}...)
-	args = append(args, qm.actionSpecs.GlobalArgs...)
-	args = append(args, mappedAction.Args...)
-	env := append(qm.actionSpecs.GlobalEnv, mappedAction.Env...)
-
-	var outFile, errFile io.Writer
-
-	if mappedAction.Stdout != "" {
-		outFile = &lumberjack.Logger{
-			Filename:  mappedAction.Stdout,
-			MaxSize:   3, // MB
-			MaxAge:    1, // Days
-			LocalTime: true,
-		}
-	}
-	if mappedAction.Stderr != "" {
-		errFile = &lumberjack.Logger{
-			Filename:  mappedAction.Stderr,
-			MaxSize:   3, // MB
-			MaxAge:    1, // Days
-			LocalTime: true,
-		}
-	}
-
 	sourceType := mappedAction.SourceType
-
 	switch sourceType {
 	case conf.GitSourceType:
 		if qm.repositories == nil {
@@ -130,8 +105,18 @@ func (qm *OECQueueMessage) execute(mappedAction *conf.MappedAction) error {
 		repository.RLock()
 		defer repository.RUnlock()
 		fallthrough
+
 	case conf.LocalSourceType:
-		return runbook.ExecuteFunc(mappedAction.Filepath, args, env, outFile, errFile)
+		args := append(qm.actionSpecs.GlobalFlags.Args(), mappedAction.Flags.Args()...)
+		args = append(args, []string{"-payload", *qm.message.Body}...)
+		args = append(args, qm.actionSpecs.GlobalArgs...)
+		args = append(args, mappedAction.Args...)
+		env := append(qm.actionSpecs.GlobalEnv, mappedAction.Env...)
+
+		stdout := qm.actionLoggers[mappedAction.Stdout]
+		stderr := qm.actionLoggers[mappedAction.Stderr]
+
+		return runbook.ExecuteFunc(mappedAction.Filepath, args, env, stdout, stderr)
 	default:
 		return errors.Errorf("Unknown runbook sourceType[%s].", sourceType)
 	}
