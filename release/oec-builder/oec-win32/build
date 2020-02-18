@@ -6,10 +6,6 @@ cp -R $OEC_REPO/. $GOPATH/src/github.com/opsgenie/oec && \
 cd $GOPATH/src/github.com/opsgenie/oec/windows_service/main && \
 GOOS=windows GOARCH=386 go build -o oecService32.exe oecService.go && \
 
-#upload oecService32 to s3
-mkdir -p $OUTPUT/oec-packages && \
-mv oecService32.exe $OUTPUT/oec-packages/ && \
-
 cd ~ && \
 cd $GOPATH/src/github.com/opsgenie/oec && \
 export GIT_COMMIT=$(git rev-list -1 HEAD) && \
@@ -18,6 +14,6 @@ cd main && \
 GOOS=windows GOARCH=386 go build -ldflags "-X main.OECCommitVersion=$GIT_COMMIT -X main.OECVersion=$OEC_VERSION" \
   -o OpsgenieEdgeConnector32.exe main.go && \
 
-
-#upload OpsgenieEdgeConnector to s3
-mv OpsgenieEdgeConnector32.exe $OUTPUT/oec-packages/
+zip -r oec-win-386.zip OpsgenieEdgeConnector32.exe oecService32.exe && \
+mkdir -p $OUTPUT/oec-packages && \
+mv oec-win-386.zip $OUTPUT/oec-packages/
