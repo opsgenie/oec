@@ -5,6 +5,7 @@ cp -R $OEC_REPO/. $GOPATH/src/github.com/opsgenie/oec && \
 
 cd ~ && \
 cd $GOPATH/src/github.com/opsgenie/oec && \
+dep ensure && \
 export GIT_COMMIT=$(git rev-list -1 HEAD) && \
 
 cd main && \
