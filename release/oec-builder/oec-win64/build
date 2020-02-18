@@ -6,7 +6,7 @@ cp -R $OEC_REPO/. $GOPATH/src/github.com/opsgenie/oec && \
 cd $GOPATH/src/github.com/opsgenie/oec && \
 dep ensure && \
 cd $GOPATH/src/github.com/opsgenie/oec/windows_service/main && \
-GOOS=windows GOARCH=amd64 go build -o oecService64.exe oecService.go && \
+GOOS=windows GOARCH=amd64 go build -o $OUTPUT/oec-packages/oecService64.exe oecService.go && \
 
 cd ~ && \
 cd $GOPATH/src/github.com/opsgenie/oec && \
@@ -14,8 +14,7 @@ export GIT_COMMIT=$(git rev-list -1 HEAD) && \
 
 cd main && \
 GOOS=windows GOARCH=amd64 go build -ldflags "-X main.OECCommitVersion=$GIT_COMMIT -X main.OECVersion=$OEC_VERSION" \
-  -o OpsgenieEdgeConnector64.exe main.go && \
+  -o $OUTPUT/oec-packages/OpsgenieEdgeConnector64.exe main.go && \
 
-zip -r oec-win-amd64.zip OpsgenieEdgeConnector64.exe ../windows_service/main/oecService64.exe
-mkdir -p $OUTPUT/oec-packages && \
-mv oec-win-amd64.zip $OUTPUT/oec-packages/
+cd $OUTPUT/oec-packages && \
+zip -r oec-win-amd64.zip ./
