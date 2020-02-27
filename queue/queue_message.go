@@ -9,7 +9,6 @@ import (
 	"github.com/opsgenie/oec/runbook"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/natefinch/lumberjack.v2"
 	"io"
 	"time"
 )
@@ -20,17 +19,19 @@ type QueueMessage interface {
 }
 
 type OECQueueMessage struct {
-	message      *sqs.Message
-	repositories git.Repositories
-	actionSpecs  *conf.ActionSpecifications
+	message       *sqs.Message
+	repositories  git.Repositories
+	actionSpecs   *conf.ActionSpecifications
+	actionLoggers map[string]io.Writer
 }
 
-func NewOECMessage(message *sqs.Message, repositories git.Repositories, actionSpecs *conf.ActionSpecifications) QueueMessage {
+func NewOECMessage(message *sqs.Message, repositories git.Repositories, actionSpecs *conf.ActionSpecifications, actionLoggers map[string]io.Writer) QueueMessage {
 
 	return &OECQueueMessage{
-		message:      message,
-		repositories: repositories,
-		actionSpecs:  actionSpecs,
+		message:       message,
+		repositories:  repositories,
+		actionSpecs:   actionSpecs,
+		actionLoggers: actionLoggers,
 	}
 }
 
@@ -45,24 +46,26 @@ func (qm *OECQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 		return nil, err
 	}
 
-	alertId := queuePayload.Alert.AlertId
+	entityId := queuePayload.Entity.Id
+	entityType := queuePayload.Entity.Type
 	action := queuePayload.MappedAction.Name
 	if action == "" {
 		action = queuePayload.Action
 	}
 
 	if action == "" {
-		return nil, errors.Errorf("SQS message with alertId[%s] does not contain action property.", alertId)
+		return nil, errors.Errorf("SQS message with entityId[%s] does not contain action property.", entityId)
 	}
 
 	mappedAction, ok := qm.actionSpecs.ActionMappings[conf.ActionName(action)]
 	if !ok {
-		return nil, errors.Errorf("There is no mapped action found for action[%s]. SQS message with alertId[%s] will be ignored.", action, alertId)
+		return nil, errors.Errorf("There is no mapped action found for action[%s]. SQS message with entityId[%s] will be ignored.", action, entityId)
 	}
 
 	result := &runbook.ActionResultPayload{
-		AlertId: alertId,
-		Action:  action,
+		EntityId:   entityId,
+		EntityType: entityType,
+		Action:     action,
 	}
 
 	start := time.Now()
@@ -72,11 +75,11 @@ func (qm *OECQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 	switch err := err.(type) {
 	case *runbook.ExecError:
 		result.FailureMessage = fmt.Sprintf("Err: %s, Stderr: %s", err.Error(), err.Stderr)
-		logrus.Debugf("Action[%s] execution of message[%s] with alertId[%s] failed: %s Stderr: %s", action, *qm.message.MessageId, alertId, err.Error(), err.Stderr)
+		logrus.Debugf("Action[%s] execution of message[%s] with entityId[%s] failed: %s Stderr: %s", action, *qm.message.MessageId, entityId, err.Error(), err.Stderr)
 
 	case nil:
 		result.IsSuccessful = true
-		logrus.Debugf("Action[%s] execution of message[%s] with alertId[%s] has been completed and it took %f seconds.", action, *qm.message.MessageId, alertId, took.Seconds())
+		logrus.Debugf("Action[%s] execution of message[%s] with entityId[%s] has been completed and it took %f seconds.", action, *qm.message.MessageId, entityId, took.Seconds())
 
 	default:
 		return nil, err
@@ -87,33 +90,7 @@ func (qm *OECQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 
 func (qm *OECQueueMessage) execute(mappedAction *conf.MappedAction) error {
 
-	args := append(qm.actionSpecs.GlobalFlags.Args(), mappedAction.Flags.Args()...)
-	args = append(args, []string{"-payload", *qm.message.Body}...)
-	args = append(args, qm.actionSpecs.GlobalArgs...)
-	args = append(args, mappedAction.Args...)
-	env := append(qm.actionSpecs.GlobalEnv, mappedAction.Env...)
-
-	var outFile, errFile io.Writer
-
-	if mappedAction.Stdout != "" {
-		outFile = &lumberjack.Logger{
-			Filename:  mappedAction.Stdout,
-			MaxSize:   3, // MB
-			MaxAge:    1, // Days
-			LocalTime: true,
-		}
-	}
-	if mappedAction.Stderr != "" {
-		errFile = &lumberjack.Logger{
-			Filename:  mappedAction.Stderr,
-			MaxSize:   3, // MB
-			MaxAge:    1, // Days
-			LocalTime: true,
-		}
-	}
-
 	sourceType := mappedAction.SourceType
-
 	switch sourceType {
 	case conf.GitSourceType:
 		if qm.repositories == nil {
@@ -128,8 +105,18 @@ func (qm *OECQueueMessage) execute(mappedAction *conf.MappedAction) error {
 		repository.RLock()
 		defer repository.RUnlock()
 		fallthrough
+
 	case conf.LocalSourceType:
-		return runbook.ExecuteFunc(mappedAction.Filepath, args, env, outFile, errFile)
+		args := append(qm.actionSpecs.GlobalFlags.Args(), mappedAction.Flags.Args()...)
+		args = append(args, []string{"-payload", *qm.message.Body}...)
+		args = append(args, qm.actionSpecs.GlobalArgs...)
+		args = append(args, mappedAction.Args...)
+		env := append(qm.actionSpecs.GlobalEnv, mappedAction.Env...)
+
+		stdout := qm.actionLoggers[mappedAction.Stdout]
+		stderr := qm.actionLoggers[mappedAction.Stderr]
+
+		return runbook.ExecuteFunc(mappedAction.Filepath, args, env, stdout, stderr)
 	default:
 		return errors.Errorf("Unknown runbook sourceType[%s].", sourceType)
 	}

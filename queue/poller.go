@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/natefinch/lumberjack.v2"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,9 +28,10 @@ type OECPoller struct {
 	workerPool    WorkerPool
 	queueProvider QueueProvider
 
-	integrationId      string
+	ownerId            string
 	conf               *conf.Configuration
 	repositories       git.Repositories
+	actionLoggers      map[string]io.Writer
 	queueMessageLogrus *logrus.Logger
 
 	isRunning   bool
@@ -40,8 +42,8 @@ type OECPoller struct {
 }
 
 func NewPoller(workerPool WorkerPool, queueProvider QueueProvider,
-	conf *conf.Configuration, integrationId string,
-	repositories git.Repositories) Poller {
+	conf *conf.Configuration, ownerId string,
+	repositories git.Repositories, actionLoggers map[string]io.Writer) Poller {
 
 	return &OECPoller{
 		quit:               make(chan struct{}),
@@ -51,7 +53,8 @@ func NewPoller(workerPool WorkerPool, queueProvider QueueProvider,
 		startStopMu:        &sync.Mutex{},
 		conf:               conf,
 		repositories:       repositories,
-		integrationId:      integrationId,
+		actionLoggers:      actionLoggers,
+		ownerId:            ownerId,
 		workerPool:         workerPool,
 		queueProvider:      queueProvider,
 		queueMessageLogrus: newQueueMessageLogrus(queueProvider.OECMetadata().Region()),
@@ -151,11 +154,12 @@ func (p *OECPoller) poll() (shouldWait bool) {
 				messages[i],
 				p.repositories,
 				&p.conf.ActionSpecifications,
+				p.actionLoggers,
 			),
 			p.queueProvider,
 			p.conf.ApiKey,
 			p.conf.BaseUrl,
-			p.integrationId,
+			p.ownerId,
 		)
 
 		isSubmitted, err := p.workerPool.Submit(job)
@@ -234,14 +238,13 @@ func newQueueMessageLogrus(region string) *logrus.Logger {
 	)
 
 	err := queueMessageLogger.Rotate()
-
 	if err != nil {
 		logrus.Info("Cannot create log file for queueMessages. Reason: ", err)
 	}
 
 	queueMessageLogrus.SetOutput(queueMessageLogger)
 
-	go util.CheckLogFile(queueMessageLogger, time.Second*10, logFilePath)
+	go util.CheckLogFile(queueMessageLogger, time.Second*10)
 
 	return queueMessageLogrus
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	"io"
 	"sync"
 	"testing"
 )
@@ -245,8 +246,8 @@ func NewMockPoller() Poller {
 }
 
 func NewMockPollerForQueueProcessor(workerPool WorkerPool, queueProvider QueueProvider,
-	conf *conf.Configuration, integrationId string,
-	repositories git.Repositories) Poller {
+	conf *conf.Configuration, ownerId string,
+	repositories git.Repositories, actionLoggers map[string]io.Writer) Poller {
 	return NewMockPoller()
 }
 

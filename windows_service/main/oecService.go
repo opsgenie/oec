@@ -31,28 +31,17 @@ type Program struct {
 
 	service service.Service
 	cmd     *exec.Cmd
-
-	exit chan struct{}
 }
 
 func (p *Program) Start(s service.Service) error {
 	p.cmd = exec.Command("cmd", append([]string{"/C", p.OECPath}, p.Args...)...)
 	p.cmd.Env = append(os.Environ(), p.Env...)
 
-	p.exit = make(chan struct{})
-
 	go p.run()
 	return nil
 }
 func (p *Program) run() {
 	logger.Info("Starting ", p.DisplayName)
-	defer func() {
-		if service.Interactive() {
-			p.Stop(p.service)
-		} else {
-			p.service.Stop()
-		}
-	}()
 
 	if p.Stderr != "" {
 		file, err := os.OpenFile(p.Stderr, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0777)
@@ -73,21 +62,11 @@ func (p *Program) run() {
 		p.cmd.Stdout = file
 	}
 
-	unexpectedExit := make(chan struct{})
-	go func() {
-		select {
-		case <-unexpectedExit:
-		case <-p.exit:
-			sendCtrlCEvent(p.cmd.Process.Pid, p.Stderr)
-		}
-	}()
-
 	err := p.cmd.Run()
 	if err != nil {
 		logger.Warningf("Error running: %v", err)
 	}
 
-	close(unexpectedExit)
 	return
 }
 
@@ -106,6 +85,7 @@ func sendCtrlCEvent(pid int, stderr string) {
 	if err != nil {
 		file.Write(errMessageCtrlC("LoadDLL", err))
 	}
+	defer kernel32.Release()
 
 	freeConsole, err := kernel32.FindProc("FreeConsole")
 	if err != nil {
@@ -125,11 +105,11 @@ func sendCtrlCEvent(pid int, stderr string) {
 		file.Write(errMessageCtrlC("AttachConsole", err))
 	}
 
-	setConsoleCtrlHandler, e := kernel32.FindProc("SetConsoleCtrlHandler")
-	if e != nil {
+	setConsoleCtrlHandler, err := kernel32.FindProc("SetConsoleCtrlHandler")
+	if err != nil {
 		file.Write(errMessageCtrlC("FindProc[SetConsoleCtrlHandler]", err))
 	}
-	r, _, e = setConsoleCtrlHandler.Call(0, 1)
+	r, _, err = setConsoleCtrlHandler.Call(0, 1)
 	if r == 0 {
 		file.Write(errMessageCtrlC("SetConsoleCtrlHandler", err))
 	}
@@ -142,19 +122,10 @@ func sendCtrlCEvent(pid int, stderr string) {
 	if r == 0 {
 		file.Write(errMessageCtrlC("GenerateConsoleCtrlEvent", err))
 	}
-
-	r, _, err = freeConsole.Call()
-	if r == 0 {
-		file.Write(errMessageCtrlC("FreeConsole", err))
-	}
-	r, _, e = setConsoleCtrlHandler.Call(0, 0)
-	if r == 0 {
-		file.Write(errMessageCtrlC("SetConsoleCtrlHandler", err))
-	}
 }
 
 func (p *Program) Stop(s service.Service) error {
-	close(p.exit)
+	sendCtrlCEvent(p.cmd.Process.Pid, p.Stderr)
 
 	return nil
 }

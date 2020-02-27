@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"bytes"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/opsgenie/oec/conf"
 	"github.com/opsgenie/oec/git"
@@ -14,10 +15,10 @@ import (
 )
 
 var (
-	mockMessageId     = "mockMessageId"
-	mockApiKey        = "mockApiKey"
-	mockBaseUrl       = "mockBaseUrl"
-	mockIntegrationId = "mockIntegrationId"
+	mockMessageId = "mockMessageId"
+	mockApiKey    = "mockApiKey"
+	mockBaseUrl   = "mockBaseUrl"
+	mockOwnerId   = "mockOwnerId"
 )
 
 var mockActionSpecs = &conf.ActionSpecifications{
@@ -29,6 +30,8 @@ var mockActionMappings = conf.ActionMappings{
 		SourceType: "local",
 		Filepath:   "/path/to/runbook.bin",
 		Env:        []string{"e1=v1", "e2=v2"},
+		Stdout:     "/path/to/stdout",
+		Stderr:     "/path/to/stderr",
 	},
 	"Close": conf.MappedAction{
 		SourceType: "git",
@@ -42,6 +45,14 @@ var mockActionMappings = conf.ActionMappings{
 	},
 }
 
+var mockStdout = bytes.NewBufferString("stdout")
+var mockStderr = bytes.NewBufferString("stderr")
+
+var mockActionLoggers = map[string]io.Writer{
+	"/path/to/stdout": mockStdout,
+	"/path/to/stderr": mockStderr,
+}
+
 func mockExecute(executablePath string, args, environmentVars []string, stdout, stderr io.Writer) error {
 	return nil
 }
@@ -52,7 +63,7 @@ func TestGetMessage(t *testing.T) {
 	expectedMessage.SetMessageId("messageId")
 	expectedMessage.SetBody("messageBody")
 
-	queueMessage := NewOECMessage(expectedMessage, nil, mockActionSpecs)
+	queueMessage := NewOECMessage(expectedMessage, nil, mockActionSpecs, mockActionLoggers)
 	actualMessage := queueMessage.Message()
 
 	assert.Equal(t, expectedMessage, actualMessage)
@@ -69,12 +80,16 @@ func TestProcess(t *testing.T) {
 
 func testProcessSuccessfully(t *testing.T) {
 
-	runbook.ExecuteFunc = mockExecute
-
 	body := `{"action":"Create"}`
 	id := "MessageId"
 	message := &sqs.Message{Body: &body, MessageId: &id}
-	queueMessage := NewOECMessage(message, nil, mockActionSpecs)
+	queueMessage := NewOECMessage(message, nil, mockActionSpecs, mockActionLoggers)
+
+	runbook.ExecuteFunc = func(executablePath string, args, environmentVars []string, stdout, stderr io.Writer) error {
+		assert.Equal(t, mockStdout, stdout)
+		assert.Equal(t, mockStderr, stderr)
+		return nil
+	}
 
 	result, err := queueMessage.Process()
 	assert.Nil(t, err)
@@ -87,10 +102,10 @@ func testProcessMappedActionNotFound(t *testing.T) {
 
 	body := `{"action":"Ack"}`
 	message := &sqs.Message{Body: &body}
-	queueMessage := NewOECMessage(message, nil, mockActionSpecs)
+	queueMessage := NewOECMessage(message, nil, mockActionSpecs, mockActionLoggers)
 
 	_, err := queueMessage.Process()
-	expectedErr := errors.New("There is no mapped action found for action[Ack]. SQS message with alertId[] will be ignored.")
+	expectedErr := errors.New("There is no mapped action found for action[Ack]. SQS message with entityId[] will be ignored.")
 	assert.EqualError(t, err, expectedErr.Error())
 }
 
@@ -100,10 +115,10 @@ func testProcessFieldMissing(t *testing.T) {
 
 	body := `{"alert":{}}`
 	message := &sqs.Message{Body: &body}
-	queueMessage := NewOECMessage(message, nil, mockActionSpecs)
+	queueMessage := NewOECMessage(message, nil, mockActionSpecs, mockActionLoggers)
 
 	_, err := queueMessage.Process()
-	expectedErr := errors.New("SQS message with alertId[] does not contain action property.")
+	expectedErr := errors.New("SQS message with entityId[] does not contain action property.")
 	assert.EqualError(t, err, expectedErr.Error())
 }
 
@@ -119,7 +134,7 @@ func (mqm *MockQueueMessage) Message() *sqs.Message {
 	}
 
 	body := "mockBody"
-	messageAttr := map[string]*sqs.MessageAttributeValue{integrationId: {StringValue: &mockIntegrationId}}
+	messageAttr := map[string]*sqs.MessageAttributeValue{ownerId: {StringValue: &mockOwnerId}}
 
 	return &sqs.Message{
 		MessageId:         &mockMessageId,
