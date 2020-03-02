@@ -10,7 +10,7 @@ export GIT_COMMIT=$(git rev-list -1 HEAD) && \
 
 cd main && \
 GOOS=linux GOARCH=amd64 go build -ldflags "-X main.OECCommitVersion=$GIT_COMMIT -X main.OECVersion=$OEC_VERSION" \
-  -o $OUTPUT/oec-packages/OpsgenieEdgeConnector main.go && \
+  -o $OUTPUT/oec-packages-linux/OpsgenieEdgeConnector main.go && \
 
-cd $OUTPUT/oec-packages && \
+cd $OUTPUT/oec-packages-linux && \
 zip -r oec-linux-amd64.zip ./
