@@ -1,0 +1,20 @@
+#!/bin/bash
+
+mkdir -p $GOPATH/src/github.com/opsgenie/oec && \
+cp -R $OEC_REPO/. $GOPATH/src/github.com/opsgenie/oec && \
+
+cd $GOPATH/src/github.com/opsgenie/oec && \
+dep ensure && \
+cd $GOPATH/src/github.com/opsgenie/oec/windows_service/main && \
+GOOS=windows GOARCH=386 go build -o $OUTPUT/oec-packages-win32/oecService32.exe oecService.go && \
+
+cd ~ && \
+cd $GOPATH/src/github.com/opsgenie/oec && \
+export GIT_COMMIT=$(git rev-list -1 HEAD) && \
+
+cd main && \
+GOOS=windows GOARCH=386 go build -ldflags "-X main.OECCommitVersion=$GIT_COMMIT -X main.OECVersion=$OEC_VERSION" \
+  -o $OUTPUT/oec-packages-win32/OpsgenieEdgeConnector32.exe main.go && \
+
+cd $OUTPUT/oec-packages-win32 && \
+zip -r oec-win-386.zip ./
