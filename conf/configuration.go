@@ -101,6 +101,10 @@ func ReadConfFile() (*Configuration, error) {
 	if err != nil {
 		return nil, err
 	}
+	
+	if os.Getenv("OEC_TOKEN") != "" {
+	conf.ApiKey = os.Getenv("OEC_TOKEN")
+	}
 
 	err = validateConfiguration(conf)
 	if err != nil {
