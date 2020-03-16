@@ -1,0 +1,16 @@
+#!/bin/bash
+
+mkdir -p $GOPATH/src/github.com/opsgenie/oec && \
+cp -R $OEC_REPO/. $GOPATH/src/github.com/opsgenie/oec && \
+
+cd ~ && \
+cd $GOPATH/src/github.com/opsgenie/oec && \
+dep ensure && \
+export GIT_COMMIT=$(git rev-list -1 HEAD) && \
+
+cd main && \
+GOOS=linux GOARCH=amd64 go build -ldflags "-X main.OECCommitVersion=$GIT_COMMIT -X main.OECVersion=$OEC_VERSION" \
+  -o $OUTPUT/oec-packages-linux/OpsgenieEdgeConnector main.go && \
+
+cd $OUTPUT/oec-packages-linux && \
+zip -r oec-linux-amd64.zip ./
