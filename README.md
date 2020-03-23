@@ -1,5 +1,11 @@
 # OPSGENIE EDGE CONNECTOR
 
+[![Build Status](https://travis-ci.com/opsgenie/oec.svg?branch=master)](https://travis-ci.com/opsgenie/oec)
+[![Coverage Status](https://coveralls.io/repos/github/opsgenie/oec/badge.svg?branch=master)](https://coveralls.io/github/opsgenie/oec?branch=master)
+[![Go Report Card](https://goreportcard.com/badge/github.com/opsgenie/oec)](https://goreportcard.com/report/github.com/opsgenie/oec)
+[![GoDoc](https://godoc.org/github.com/opsgenie/oec?status.svg)](https://godoc.org/github.com/opsgenie/oec)
+
+
 Opsgenie Edge Connector (OEC) is a lightweight application that provides:
 
 * Opsgenie integration for systems that don't need the inbound internet
