@@ -85,7 +85,7 @@ func TestExecuteWithErrorStream(t *testing.T) {
 }
 
 func TestExecuteWithError(t *testing.T) {
-	if runtime.GOOS != "windows" {
+	if runtime.GOOS == "darwin" {
 		content := []byte("sacmasapan")
 		tmpFilePath, err := util.CreateTempTestFile(content, shFileExt)
 		defer os.Remove(tmpFilePath)
@@ -103,7 +103,7 @@ func TestExecuteWithError(t *testing.T) {
 		assert.Equal(t, "", cmdOutput.String(), "Output stream from executed file was not empty.")
 		assert.Contains(t, cmdErr.String(), "command not found", "Error stream from executed file does not contain err message.")
 		assert.Contains(t, err.(*ExecError).Stderr, cmdErr.String(), "ExecError is not same as cmdErr.")
-	} else {
+	} else if runtime.GOOS == "windows" {
 		content := []byte("sacmasapan")
 		tmpFilePath, err := util.CreateTempTestFile(content, batFileExt)
 		defer os.Remove(tmpFilePath)
@@ -118,8 +118,26 @@ func TestExecuteWithError(t *testing.T) {
 		assert.IsType(t, &ExecError{}, err)
 		assert.Error(t, err, "Error from Execute operation was empty.")
 		assert.Equal(t, err.Error(), "exit status 1", "Error message was not equal to expected.")
+		assert.Contains(t, cmdErr.String(), "not recognized as an internal or external command",
+			"Error stream from executed file does not contain err message.")
+		assert.Contains(t, err.(*ExecError).Stderr, cmdErr.String(), "ExecError is not same as cmdErr.")
+	} else if runtime.GOOS == "linux" {
+		content := []byte("sacmasapan")
+		tmpFilePath, err := util.CreateTempTestFile(content, shFileExt)
+		defer os.Remove(tmpFilePath)
+
+		if err != nil {
+			t.Error(err.Error())
+		}
+
+		cmdOutput, cmdErr := &bytes.Buffer{}, &bytes.Buffer{}
+		err = Execute(tmpFilePath, nil, nil, cmdOutput, cmdErr)
+
+		assert.IsType(t, &ExecError{}, err)
+		assert.Error(t, err, "Error from Execute operation was empty.")
+		assert.Equal(t, err.Error(), "exit status 127", "Error message was not equal to expected.")
 		assert.Equal(t, "", cmdOutput.String(), "Output stream from executed file was not empty.")
-		assert.Contains(t, cmdErr.String(), "command not found", "Error stream from executed file does not contain err message.")
+		assert.Contains(t, cmdErr.String(), "not found", "Error stream from executed file does not contain err message.")
 		assert.Contains(t, err.(*ExecError).Stderr, cmdErr.String(), "ExecError is not same as cmdErr.")
 	}
 }
