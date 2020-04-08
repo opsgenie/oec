@@ -28,13 +28,7 @@ var OECCommitVersion string
 
 func main() {
 
-	logrus.SetFormatter(
-		&logrus.TextFormatter{
-			ForceColors:     true,
-			FullTimestamp:   true,
-			TimestampFormat: time.RFC3339Nano,
-		},
-	)
+	logrus.SetFormatter(conf.PrepareLogFormat())
 
 	err := os.Chmod(filepath.Join("/var", "log", "opsgenie"), 0744)
 	if err != nil {
