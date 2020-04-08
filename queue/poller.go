@@ -229,13 +229,7 @@ func newQueueMessageLogrus(region string) *logrus.Logger {
 	}
 
 	queueMessageLogrus := logrus.New()
-	queueMessageLogrus.SetFormatter(
-		&logrus.TextFormatter{
-			ForceColors:     true,
-			FullTimestamp:   true,
-			TimestampFormat: time.RFC3339Nano,
-		},
-	)
+	queueMessageLogrus.SetFormatter(conf.PrepareLogFormat())
 
 	err := queueMessageLogger.Rotate()
 	if err != nil {
