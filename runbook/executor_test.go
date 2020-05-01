@@ -2,11 +2,12 @@ package runbook
 
 import (
 	"bytes"
-	"github.com/opsgenie/oec/util"
-	"github.com/stretchr/testify/assert"
 	"os"
 	"runtime"
 	"testing"
+
+	"github.com/opsgenie/oec/util"
+	"github.com/stretchr/testify/assert"
 )
 
 const shFileExt = ".sh"
@@ -85,7 +86,8 @@ func TestExecuteWithErrorStream(t *testing.T) {
 }
 
 func TestExecuteWithError(t *testing.T) {
-	if runtime.GOOS == "darwin" {
+	switch goos := runtime.GOOS; goos {
+	case "darwin":
 		content := []byte("sacmasapan")
 		tmpFilePath, err := util.CreateTempTestFile(content, shFileExt)
 		defer os.Remove(tmpFilePath)
@@ -103,7 +105,7 @@ func TestExecuteWithError(t *testing.T) {
 		assert.Equal(t, "", cmdOutput.String(), "Output stream from executed file was not empty.")
 		assert.Contains(t, cmdErr.String(), "command not found", "Error stream from executed file does not contain err message.")
 		assert.Contains(t, err.(*ExecError).Stderr, cmdErr.String(), "ExecError is not same as cmdErr.")
-	} else if runtime.GOOS == "windows" {
+	case "windows":
 		content := []byte("sacmasapan")
 		tmpFilePath, err := util.CreateTempTestFile(content, batFileExt)
 		defer os.Remove(tmpFilePath)
@@ -121,7 +123,7 @@ func TestExecuteWithError(t *testing.T) {
 		assert.Contains(t, cmdErr.String(), "not recognized as an internal or external command",
 			"Error stream from executed file does not contain err message.")
 		assert.Contains(t, err.(*ExecError).Stderr, cmdErr.String(), "ExecError is not same as cmdErr.")
-	} else if runtime.GOOS == "linux" {
+	case "linux":
 		content := []byte("sacmasapan")
 		tmpFilePath, err := util.CreateTempTestFile(content, shFileExt)
 		defer os.Remove(tmpFilePath)
