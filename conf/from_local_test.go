@@ -1,10 +1,11 @@
 package conf
 
 import (
-	"github.com/opsgenie/oec/util"
-	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
+
+	"github.com/opsgenie/oec/util"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestReadConfigurationFromLocal(t *testing.T) {

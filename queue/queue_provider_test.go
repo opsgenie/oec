@@ -1,15 +1,16 @@
 package queue
 
 import (
+	"strconv"
+	"sync"
+	"testing"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
-	"strconv"
-	"sync"
-	"testing"
 )
 
 func newQueueProviderTest() *OECQueueProvider {

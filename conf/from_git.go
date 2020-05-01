@@ -1,9 +1,10 @@
 package conf
 
 import (
-	"github.com/opsgenie/oec/git"
 	"os"
 	"path/filepath"
+
+	"github.com/opsgenie/oec/git"
 )
 
 var cloneMasterFunc = git.CloneMaster

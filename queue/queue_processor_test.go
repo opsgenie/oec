@@ -3,11 +3,6 @@ package queue
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/opsgenie/oec/conf"
-	"github.com/opsgenie/oec/git"
-	"github.com/opsgenie/oec/retryer"
-	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -16,6 +11,12 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/opsgenie/oec/conf"
+	"github.com/opsgenie/oec/git"
+	"github.com/opsgenie/oec/retryer"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 )
 
 var mockConf = &conf.Configuration{

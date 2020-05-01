@@ -1,15 +1,16 @@
 package queue
 
 import (
+	"io"
+	"sync"
+	"testing"
+
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/opsgenie/oec/conf"
 	"github.com/opsgenie/oec/git"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
-	"io"
-	"sync"
-	"testing"
 )
 
 var mockPollerConf = &conf.PollerConf{
