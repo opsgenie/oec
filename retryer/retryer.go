@@ -3,14 +3,15 @@ package retryer
 import (
 	"bytes"
 	"fmt"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"io"
 	"io/ioutil"
 	"math"
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 const maxRetryCount = 5

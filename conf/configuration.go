@@ -1,13 +1,14 @@
 package conf
 
 import (
-	"github.com/opsgenie/oec/git"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/opsgenie/oec/git"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -101,9 +102,9 @@ func ReadConfFile() (*Configuration, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if os.Getenv("OEC_API_KEY") != "" {
-	conf.ApiKey = os.Getenv("OEC_API_KEY")
+		conf.ApiKey = os.Getenv("OEC_API_KEY")
 	}
 
 	err = validateConfiguration(conf)
@@ -194,7 +195,7 @@ func readConfFileFromSource(confSourceType string) (*Configuration, error) {
 	case LocalSourceType:
 		confFilepath := os.Getenv("OEC_CONF_LOCAL_FILEPATH")
 
-		if len(confFilepath) <= 0 {
+		if len(confFilepath) == 0 {
 			confFilepath = addHomeDirPrefix(defaultConfFilepath)
 		} else {
 			confFilepath = addHomeDirPrefix(confFilepath)

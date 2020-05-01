@@ -1,6 +1,13 @@
 package queue
 
 import (
+	"io"
+	"os"
+	"path/filepath"
+	"strconv"
+	"sync"
+	"time"
+
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/opsgenie/oec/conf"
 	"github.com/opsgenie/oec/git"
@@ -8,12 +15,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/natefinch/lumberjack.v2"
-	"io"
-	"os"
-	"path/filepath"
-	"strconv"
-	"sync"
-	"time"
 )
 
 type Poller interface {

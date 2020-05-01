@@ -3,11 +3,12 @@ package runbook
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/opsgenie/oec/retryer"
-	"github.com/pkg/errors"
 	"io/ioutil"
 	"net/http"
 	"strconv"
+
+	"github.com/opsgenie/oec/retryer"
+	"github.com/pkg/errors"
 )
 
 const resultPath = "/v2/integrations/oec/actionExecutionResult"

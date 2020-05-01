@@ -1,12 +1,13 @@
 package queue
 
 import (
+	"sync"
+	"time"
+
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/opsgenie/oec/runbook"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"sync"
-	"time"
 )
 
 const (

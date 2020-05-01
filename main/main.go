@@ -3,12 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/opsgenie/oec/conf"
-	"github.com/opsgenie/oec/queue"
-	"github.com/opsgenie/oec/util"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/sirupsen/logrus"
-	"gopkg.in/natefinch/lumberjack.v2"
 	"io"
 	"net/http"
 	"os"
@@ -18,6 +12,13 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/opsgenie/oec/conf"
+	"github.com/opsgenie/oec/queue"
+	"github.com/opsgenie/oec/util"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/sirupsen/logrus"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var metricAddr = flag.String("oec-metrics", "7070", "The address to listen on for HTTP requests.")
@@ -79,14 +80,11 @@ func main() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
-	select {
-	case <-signals:
-		logrus.Infof("OEC will be stopped gracefully.")
-		err := queueProcessor.StopProcessing()
-		if err != nil {
-			logrus.Fatalln(err)
-		}
+	<-signals
+	logrus.Infof("OEC will be stopped gracefully.")
+	err = queueProcessor.StopProcessing()
+	if err != nil {
+		logrus.Fatalln(err)
 	}
-
 	os.Exit(0)
 }

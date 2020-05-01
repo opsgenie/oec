@@ -1,13 +1,14 @@
 package queue
 
 import (
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/opsgenie/oec/conf"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"sync"
-	"sync/atomic"
-	"time"
 )
 
 type WorkerPool interface {

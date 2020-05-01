@@ -1,12 +1,13 @@
 package git
 
 import (
+	"os"
+	"sync"
+
 	"github.com/opsgenie/oec/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/src-d/go-git.v4"
-	"os"
-	"sync"
 )
 
 type GitOptions struct {

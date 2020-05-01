@@ -3,18 +3,19 @@ package queue
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/opsgenie/oec/conf"
-	"github.com/opsgenie/oec/git"
-	"github.com/opsgenie/oec/retryer"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
-	"gopkg.in/natefinch/lumberjack.v2"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/opsgenie/oec/conf"
+	"github.com/opsgenie/oec/git"
+	"github.com/opsgenie/oec/retryer"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var UserAgentHeader string

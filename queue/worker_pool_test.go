@@ -1,9 +1,6 @@
 package queue
 
 import (
-	"github.com/opsgenie/oec/conf"
-	"github.com/sirupsen/logrus"
-	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"math/cmplx"
 	"os"
@@ -11,6 +8,10 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/opsgenie/oec/conf"
+	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 )
 
 var mockPoolConf = &conf.PoolConf{
@@ -30,7 +31,6 @@ var dummyJob = func() {
 		dummy = cmplx.Conj(dummy) - cmplx.Acos(dummy)
 		dummy = cmplx.Sinh(dummy) - cmplx.Conj(dummy)
 	}
-	return
 }
 
 func TestMain(m *testing.M) {

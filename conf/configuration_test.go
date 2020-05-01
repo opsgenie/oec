@@ -1,12 +1,13 @@
 package conf
 
 import (
+	"os"
+	"testing"
+
 	"github.com/opsgenie/oec/git"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
-	"os"
-	"testing"
 )
 
 var readConfigurationFromGitCalled = false
@@ -46,7 +47,7 @@ func expectedConf() *Configuration {
 		"-apiKey", expectedConf.ApiKey,
 		"-opsgenieUrl", expectedConf.BaseUrl,
 		"-logLevel", "INFO"},
-		expectedConf.GlobalArgs...
+		expectedConf.GlobalArgs...,
 	)
 
 	if expectedConf.LogrusLevel == 0 {
@@ -107,19 +108,19 @@ const testLocalConfFilePath = "/path/to/test/conf/file.json"
 func mockReadConfigurationFromGit(owner, repo, filepath, token string) (*Configuration, error) {
 	readConfigurationFromGitCalled = true
 
-	if len(owner) <= 0 {
+	if len(owner) == 0 {
 		return nil, errors.New("Owner was empty.")
 	}
 
-	if len(repo) <= 0 {
+	if len(repo) == 0 {
 		return nil, errors.New("Repo was empty.")
 	}
 
-	if len(filepath) <= 0 {
+	if len(filepath) == 0 {
 		return nil, errors.New("Filepath was empty.")
 	}
 
-	if len(token) <= 0 {
+	if len(token) == 0 {
 		return nil, errors.New("Token was empty.")
 	}
 

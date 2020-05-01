@@ -1,10 +1,11 @@
 package conf
 
 import (
+	"testing"
+
 	"github.com/opsgenie/oec/git"
 	"github.com/opsgenie/oec/util"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestReadConfigurationFromGit(t *testing.T) {

@@ -2,13 +2,14 @@ package runbook
 
 import (
 	"encoding/json"
-	"github.com/opsgenie/oec/retryer"
-	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/opsgenie/oec/retryer"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSendResultToOpsGenie(t *testing.T) {

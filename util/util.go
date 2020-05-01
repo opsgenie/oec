@@ -1,12 +1,13 @@
 package util
 
 import (
-	"github.com/sirupsen/logrus"
-	"gopkg.in/natefinch/lumberjack.v2"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/sirupsen/logrus"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 func Min(x, y int64) int64 {

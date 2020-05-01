@@ -3,14 +3,15 @@ package queue
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"time"
+
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/opsgenie/oec/conf"
 	"github.com/opsgenie/oec/git"
 	"github.com/opsgenie/oec/runbook"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"io"
-	"time"
 )
 
 type QueueMessage interface {
