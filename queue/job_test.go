@@ -15,30 +15,31 @@ import (
 
 var mockActionResultPayload = &runbook.ActionResultPayload{Action: "MockAction"}
 
-func newJobTest() *SqsJob {
-	mockQueueMessage := NewMockQueueMessage().(*MockQueueMessage)
-	mockQueueMessage.ProcessFunc = func() (payload *runbook.ActionResultPayload, e error) {
+func newJobTest() *job {
+	mockMessageHandler := &MockMessageHandler{}
+	mockMessageHandler.HandleFunc = func(message sqs.Message) (payload *runbook.ActionResultPayload, e error) {
 		return mockActionResultPayload, nil
 	}
 
-	return &SqsJob{
-		queueProvider: NewMockQueueProvider(),
-		queueMessage:  mockQueueMessage,
-		executeMutex:  &sync.Mutex{},
-		apiKey:        mockApiKey,
-		baseUrl:       mockBaseUrl,
-		ownerId:       mockOwnerId,
-		state:         JobInitial,
+	body := "mockBody"
+	messageAttr := map[string]*sqs.MessageAttributeValue{ownerId: {StringValue: &mockOwnerId}}
+
+	message := sqs.Message{
+		MessageId:         &mockMessageId,
+		Body:              &body,
+		MessageAttributes: messageAttr,
 	}
-}
 
-func TestJobId(t *testing.T) {
-
-	job := newJobTest()
-
-	actualId := job.Id()
-
-	assert.Equal(t, mockMessageId, actualId)
+	return &job{
+		queueProvider:  NewMockQueueProvider(),
+		messageHandler: mockMessageHandler,
+		message:        message,
+		executeMutex:   &sync.Mutex{},
+		apiKey:         mockApiKey,
+		baseUrl:        mockBaseUrl,
+		ownerId:        mockOwnerId,
+		state:          jobInitial,
+	}
 }
 
 func TestExecute(t *testing.T) {
@@ -66,7 +67,7 @@ func TestExecute(t *testing.T) {
 	wg.Wait()
 	assert.Nil(t, err)
 
-	expectedState := int32(JobFinished)
+	expectedState := int32(jobFinished)
 	actualState := sqsJob.state
 
 	assert.Equal(t, expectedState, actualState)
@@ -98,7 +99,7 @@ func TestMultipleExecute(t *testing.T) {
 	}
 
 	wg.Wait()
-	expectedState := int32(JobFinished)
+	expectedState := int32(jobFinished)
 	actualState := sqsJob.state
 
 	assert.Equal(t, expectedState, actualState) // only one execute finished
@@ -108,7 +109,7 @@ func TestMultipleExecute(t *testing.T) {
 func TestExecuteInNotInitialState(t *testing.T) {
 
 	sqsJob := newJobTest()
-	sqsJob.state = JobExecuting
+	sqsJob.state = jobExecuting
 
 	err := sqsJob.Execute()
 	assert.NotNil(t, err)
@@ -121,7 +122,7 @@ func TestExecuteWithProcessError(t *testing.T) {
 
 	sqsJob := newJobTest()
 
-	sqsJob.queueMessage.(*MockQueueMessage).ProcessFunc = func() (payload *runbook.ActionResultPayload, e error) {
+	sqsJob.messageHandler.(*MockMessageHandler).HandleFunc = func(message sqs.Message) (payload *runbook.ActionResultPayload, e error) {
 		return nil, errors.New("Process Error")
 	}
 
@@ -131,7 +132,7 @@ func TestExecuteWithProcessError(t *testing.T) {
 	expectedErr := errors.Errorf("Message[%s] could not be processed: %s", sqsJob.Id(), "Process Error")
 	assert.EqualError(t, err, expectedErr.Error())
 
-	expectedState := int32(JobError)
+	expectedState := int32(jobError)
 	actualState := sqsJob.state
 
 	assert.Equal(t, expectedState, actualState)
@@ -141,17 +142,17 @@ func TestExecuteWithDeleteError(t *testing.T) {
 
 	sqsJob := newJobTest()
 
-	sqsJob.queueProvider.(*MockQueueProvider).DeleteMessageFunc = func(message *sqs.Message) error {
+	sqsJob.queueProvider.(*MockSQSProvider).DeleteMessageFunc = func(message *sqs.Message) error {
 		return errors.New("Delete Error")
 	}
 
 	err := sqsJob.Execute()
 	assert.NotNil(t, err)
 
-	expectedErr := errors.Errorf("Message[%s] could not be deleted from the queue[%s]: %s", sqsJob.Id(), sqsJob.queueProvider.OECMetadata().Region(), "Delete Error")
+	expectedErr := errors.Errorf("Message[%s] could not be deleted from the queue[%s]: %s", sqsJob.Id(), sqsJob.queueProvider.Properties().Region(), "Delete Error")
 	assert.EqualError(t, err, expectedErr.Error())
 
-	expectedState := int32(JobError)
+	expectedState := int32(jobError)
 	actualState := sqsJob.state
 
 	assert.Equal(t, expectedState, actualState)
@@ -161,11 +162,9 @@ func TestExecuteWithInvalidQueueMessage(t *testing.T) {
 
 	sqsJob := newJobTest()
 
-	sqsJob.queueMessage.(*MockQueueMessage).MessageFunc = func() *sqs.Message {
-		falseIntegrationId := "falseIntegrationId"
-		messageAttr := map[string]*sqs.MessageAttributeValue{ownerId: {StringValue: &falseIntegrationId}}
-		return &sqs.Message{MessageAttributes: messageAttr, MessageId: &mockMessageId}
-	}
+	falseIntegrationId := "falseIntegrationId"
+	messageAttr := map[string]*sqs.MessageAttributeValue{ownerId: {StringValue: &falseIntegrationId}}
+	sqsJob.message = sqs.Message{MessageAttributes: messageAttr, MessageId: &mockMessageId}
 
 	err := sqsJob.Execute()
 	assert.NotNil(t, err)
@@ -173,32 +172,8 @@ func TestExecuteWithInvalidQueueMessage(t *testing.T) {
 	expectedErr := errors.Errorf("Message[%s] is invalid, will not be processed.", sqsJob.Id())
 	assert.EqualError(t, err, expectedErr.Error())
 
-	expectedState := int32(JobError)
+	expectedState := int32(jobError)
 	actualState := sqsJob.state
 
 	assert.Equal(t, expectedState, actualState)
-}
-
-// Mock Job
-type MockJob struct {
-	JobIdFunc   func() string
-	ExecuteFunc func() error
-}
-
-func NewMockJob() *MockJob {
-	return &MockJob{}
-}
-
-func (mj *MockJob) Id() string {
-	if mj.JobIdFunc != nil {
-		return mj.JobIdFunc()
-	}
-	return "mockJobId"
-}
-
-func (mj *MockJob) Execute() error {
-	if mj.ExecuteFunc != nil {
-		return mj.ExecuteFunc()
-	}
-	return nil
 }

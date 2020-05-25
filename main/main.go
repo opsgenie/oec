@@ -49,7 +49,7 @@ func main() {
 
 	go util.CheckLogFile(logger, time.Second*10)
 
-	configuration, err := conf.ReadConfFile()
+	configuration, err := conf.Read()
 	if err != nil {
 		logrus.Fatalf("Could not read configuration: %s", err)
 	}
@@ -63,14 +63,14 @@ func main() {
 		logrus.Error("OEC-metrics error: ", http.ListenAndServe(":"+*metricAddr, nil))
 	}()
 
-	queueProcessor := queue.NewQueueProcessor(configuration)
+	queueProcessor := queue.NewProcessor(configuration)
 	queue.UserAgentHeader = fmt.Sprintf("%s/%s %s (%s/%s)", OECVersion, OECCommitVersion, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 
 	go func() {
 		if configuration.AppName != "" {
 			logrus.Infof("%s is starting.", configuration.AppName)
 		}
-		err = queueProcessor.StartProcessing()
+		err = queueProcessor.Start()
 		if err != nil {
 			logrus.Fatalln(err)
 		}
@@ -82,7 +82,7 @@ func main() {
 	select {
 	case <-signals:
 		logrus.Infof("OEC will be stopped gracefully.")
-		err := queueProcessor.StopProcessing()
+		err := queueProcessor.Stop()
 		if err != nil {
 			logrus.Fatalln(err)
 		}

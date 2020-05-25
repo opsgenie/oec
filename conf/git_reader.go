@@ -3,14 +3,14 @@ package conf
 import (
 	"github.com/opsgenie/oec/git"
 	"os"
-	"path/filepath"
+	fpath "path/filepath"
 )
 
 var cloneMasterFunc = git.CloneMaster
 
-func readConfigurationFromGit(url, privateKeyFilepath, passPhrase, confFilepath string) (*Configuration, error) {
+func readFileFromGit(url, privateKeyFilepath, passPhrase, filepath string) (*Configuration, error) {
 
-	err := checkFileExtension(confFilepath)
+	err := checkFileExtension(filepath)
 	if err != nil {
 		return nil, err
 	}
@@ -22,7 +22,7 @@ func readConfigurationFromGit(url, privateKeyFilepath, passPhrase, confFilepath 
 
 	defer os.RemoveAll(repoFilepath)
 
-	confFilepath = filepath.Join(repoFilepath, confFilepath)
+	filepath = fpath.Join(repoFilepath, filepath)
 
-	return readConfigurationFromFile(confFilepath)
+	return readFile(filepath)
 }

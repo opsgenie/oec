@@ -1,4 +1,4 @@
-package queue
+package worker_pool
 
 import (
 	"github.com/opsgenie/oec/conf"
@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-var mockPoolConf = &conf.PoolConf{
+var testPoolConf = &conf.PoolConf{
 	MaxNumberOfWorker:        16,
 	MinNumberOfWorker:        2,
 	QueueSize:                queueSize,
@@ -46,7 +46,7 @@ func TestValidateNewWorkerPool(t *testing.T) {
 		-1,
 		-1,
 	}
-	pool := NewWorkerPool(configuration).(*WorkerPoolImpl)
+	pool := New(configuration).(*workerPool)
 
 	assert.Equal(t, int32(minNumberOfWorker), pool.poolConf.MinNumberOfWorker)
 	assert.Equal(t, int32(maxNumberOfWorker), pool.poolConf.MaxNumberOfWorker)
@@ -63,7 +63,7 @@ func TestValidateWorkerNumbersNewWorkerPool(t *testing.T) {
 		0,
 		0,
 	}
-	pool := NewWorkerPool(configuration).(*WorkerPoolImpl)
+	pool := New(configuration).(*workerPool)
 
 	assert.Equal(t, int32(1), pool.poolConf.MinNumberOfWorker)
 	assert.Equal(t, int32(1), pool.poolConf.MaxNumberOfWorker)
@@ -74,7 +74,7 @@ func TestValidateWorkerNumbersNewWorkerPool(t *testing.T) {
 
 func TestStartPool(t *testing.T) {
 
-	pool := NewWorkerPool(mockPoolConf).(*WorkerPoolImpl)
+	pool := New(testPoolConf).(*workerPool)
 
 	err := pool.Start()
 
@@ -130,7 +130,7 @@ func BenchmarkWorkerPool(b *testing.B) {
 
 	for _, size := range sizes {
 
-		pool := NewWorkerPool(
+		pool := New(
 			&conf.PoolConf{
 				int32(size.workerSize),
 				2,
@@ -199,7 +199,7 @@ func BenchmarkWorkerPoolWithComparableFixedWorkerSize(b *testing.B) {
 			maxWorkers = "FixedWorkers"
 		}
 
-		pool := NewWorkerPool(
+		pool := New(
 			&conf.PoolConf{
 				int32(testCase.maxNumberOfWorker),
 				int32(minNumberOfWorker),
@@ -237,66 +237,26 @@ func BenchmarkWorkerPoolWithComparableFixedWorkerSize(b *testing.B) {
 	}
 }
 
-// Mock
-type MockWorkerPool struct {
-	IsRunningFunc               func() bool
-	NumberOfAvailableWorkerFunc func() int32
-	StartFunc                   func() error
-	StopFunc                    func() error
-	StopNowFunc                 func() error
-	SubmitFunc                  func(Job) (bool, error)
-	SubmitChannelFunc           func() chan<- Job
+// Mock Job
+type MockJob struct {
+	JobIdFunc   func() string
+	ExecuteFunc func() error
 }
 
-func NewMockWorkerPool() *MockWorkerPool {
-	return &MockWorkerPool{}
+func NewMockJob() *MockJob {
+	return &MockJob{}
 }
 
-func (m *MockWorkerPool) IsRunning() bool {
-	if m.IsRunningFunc != nil {
-		return m.IsRunningFunc()
+func (mj *MockJob) Id() string {
+	if mj.JobIdFunc != nil {
+		return mj.JobIdFunc()
 	}
-	return false
+	return "mockJobId"
 }
 
-func (m *MockWorkerPool) NumberOfAvailableWorker() int32 {
-	if m.NumberOfAvailableWorkerFunc != nil {
-		return m.NumberOfAvailableWorkerFunc()
-	}
-	return 0
-}
-
-func (m *MockWorkerPool) Start() error {
-	if m.StartFunc != nil {
-		return m.StartFunc()
-	}
-	return nil
-}
-
-func (m *MockWorkerPool) Stop() error {
-	if m.StopFunc != nil {
-		return m.StopFunc()
-	}
-	return nil
-}
-
-func (m *MockWorkerPool) StopNow() error {
-	if m.StopNowFunc != nil {
-		return m.StopNowFunc()
-	}
-	return nil
-}
-
-func (m *MockWorkerPool) Submit(job Job) (bool, error) {
-	if m.SubmitFunc != nil {
-		return m.SubmitFunc(job)
-	}
-	return false, nil
-}
-
-func (m *MockWorkerPool) SubmitChannel() chan<- Job {
-	if m.SubmitChannelFunc != nil {
-		return m.SubmitChannelFunc()
+func (mj *MockJob) Execute() error {
+	if mj.ExecuteFunc != nil {
+		return mj.ExecuteFunc()
 	}
 	return nil
 }

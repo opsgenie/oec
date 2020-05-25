@@ -21,21 +21,21 @@ var (
 	mockOwnerId   = "mockOwnerId"
 )
 
-var mockActionSpecs = &conf.ActionSpecifications{
+var mockActionSpecs = conf.ActionSpecifications{
 	ActionMappings: mockActionMappings,
 }
 
 var mockActionMappings = conf.ActionMappings{
 	"Create": conf.MappedAction{
 		SourceType: "local",
-		Filepath:   "/path/to/runbook.bin",
+		Filepath:   "/path/to/action.bin",
 		Env:        []string{"e1=v1", "e2=v2"},
 		Stdout:     "/path/to/stdout",
 		Stderr:     "/path/to/stderr",
 	},
 	"Close": conf.MappedAction{
 		SourceType: "git",
-		GitOptions: git.GitOptions{
+		GitOptions: git.Options{
 			Url:                "testUrl",
 			PrivateKeyFilepath: "testKeyPath",
 			Passphrase:         "testPass",
@@ -57,18 +57,6 @@ func mockExecute(executablePath string, args, environmentVars []string, stdout, 
 	return nil
 }
 
-func TestGetMessage(t *testing.T) {
-
-	expectedMessage := &sqs.Message{}
-	expectedMessage.SetMessageId("messageId")
-	expectedMessage.SetBody("messageBody")
-
-	queueMessage := NewOECMessage(expectedMessage, nil, mockActionSpecs, mockActionLoggers)
-	actualMessage := queueMessage.Message()
-
-	assert.Equal(t, expectedMessage, actualMessage)
-}
-
 func TestProcess(t *testing.T) {
 
 	t.Run("TestProcessSuccessfully", testProcessSuccessfully)
@@ -82,8 +70,8 @@ func testProcessSuccessfully(t *testing.T) {
 
 	body := `{"action":"Create"}`
 	id := "MessageId"
-	message := &sqs.Message{Body: &body, MessageId: &id}
-	queueMessage := NewOECMessage(message, nil, mockActionSpecs, mockActionLoggers)
+	message := sqs.Message{Body: &body, MessageId: &id}
+	queueMessage := NewMessageHandler(nil, mockActionSpecs, mockActionLoggers)
 
 	runbook.ExecuteFunc = func(executablePath string, args, environmentVars []string, stdout, stderr io.Writer) error {
 		assert.Equal(t, mockStdout, stdout)
@@ -91,7 +79,7 @@ func testProcessSuccessfully(t *testing.T) {
 		return nil
 	}
 
-	result, err := queueMessage.Process()
+	result, err := queueMessage.Handle(message)
 	assert.Nil(t, err)
 	assert.Equal(t, "Create", result.Action)
 }
@@ -101,10 +89,10 @@ func testProcessMappedActionNotFound(t *testing.T) {
 	runbook.ExecuteFunc = mockExecute
 
 	body := `{"action":"Ack"}`
-	message := &sqs.Message{Body: &body}
-	queueMessage := NewOECMessage(message, nil, mockActionSpecs, mockActionLoggers)
+	message := sqs.Message{Body: &body}
+	messageHandler := NewMessageHandler(nil, mockActionSpecs, mockActionLoggers)
 
-	_, err := queueMessage.Process()
+	_, err := messageHandler.Handle(message)
 	expectedErr := errors.New("There is no mapped action found for action[Ack]. SQS message with entityId[] will be ignored.")
 	assert.EqualError(t, err, expectedErr.Error())
 }
@@ -114,38 +102,22 @@ func testProcessFieldMissing(t *testing.T) {
 	runbook.ExecuteFunc = mockExecute
 
 	body := `{"alert":{}}`
-	message := &sqs.Message{Body: &body}
-	queueMessage := NewOECMessage(message, nil, mockActionSpecs, mockActionLoggers)
+	message := sqs.Message{Body: &body}
+	messageHandler := NewMessageHandler(nil, mockActionSpecs, mockActionLoggers)
 
-	_, err := queueMessage.Process()
+	_, err := messageHandler.Handle(message)
 	expectedErr := errors.New("SQS message with entityId[] does not contain action property.")
 	assert.EqualError(t, err, expectedErr.Error())
 }
 
 // Mock Queue Message
-type MockQueueMessage struct {
-	MessageFunc func() *sqs.Message
-	ProcessFunc func() (*runbook.ActionResultPayload, error)
+type MockMessageHandler struct {
+	HandleFunc func(message sqs.Message) (*runbook.ActionResultPayload, error)
 }
 
-func (mqm *MockQueueMessage) Message() *sqs.Message {
-	if mqm.MessageFunc != nil {
-		return mqm.MessageFunc()
-	}
-
-	body := "mockBody"
-	messageAttr := map[string]*sqs.MessageAttributeValue{ownerId: {StringValue: &mockOwnerId}}
-
-	return &sqs.Message{
-		MessageId:         &mockMessageId,
-		Body:              &body,
-		MessageAttributes: messageAttr,
-	}
-}
-
-func (mqm *MockQueueMessage) Process() (*runbook.ActionResultPayload, error) {
-	if mqm.ProcessFunc != nil {
-		return mqm.ProcessFunc()
+func (mqm *MockMessageHandler) Handle(message sqs.Message) (*runbook.ActionResultPayload, error) {
+	if mqm.HandleFunc != nil {
+		return mqm.HandleFunc(message)
 	}
 
 	multip := time.Duration(rand.Int31n(100 * 3))
@@ -153,6 +125,6 @@ func (mqm *MockQueueMessage) Process() (*runbook.ActionResultPayload, error) {
 	return &runbook.ActionResultPayload{}, nil
 }
 
-func NewMockQueueMessage() QueueMessage {
-	return &MockQueueMessage{}
+func NewMockMessageHandler() MessageHandler {
+	return &MockMessageHandler{}
 }

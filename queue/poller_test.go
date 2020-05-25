@@ -3,11 +3,10 @@ package queue
 import (
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/opsgenie/oec/conf"
-	"github.com/opsgenie/oec/git"
+	"github.com/opsgenie/oec/worker_pool"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
-	"io"
 	"sync"
 	"testing"
 )
@@ -18,8 +17,8 @@ var mockPollerConf = &conf.PollerConf{
 	maxNumberOfMessages,
 }
 
-func newPollerTest() *OECPoller {
-	return &OECPoller{
+func newPollerTest() *poller {
+	return &poller{
 		quit:        make(chan struct{}),
 		wakeUp:      make(chan struct{}),
 		isRunning:   false,
@@ -29,11 +28,12 @@ func newPollerTest() *OECPoller {
 			ApiKey:               mockApiKey,
 			BaseUrl:              mockBaseUrl,
 			PollerConf:           *mockPollerConf,
-			ActionSpecifications: *mockActionSpecs,
+			ActionSpecifications: mockActionSpecs,
 		},
 
 		workerPool:         NewMockWorkerPool(),
 		queueProvider:      NewMockQueueProvider(),
+		messageHandler:     NewMockMessageHandler(),
 		queueMessageLogrus: &logrus.Logger{},
 	}
 }
@@ -42,16 +42,16 @@ func TestStartAndStopPolling(t *testing.T) {
 
 	poller := newPollerTest()
 
-	err := poller.StartPolling()
+	err := poller.Start()
 	assert.Nil(t, err)
 	assert.Equal(t, true, poller.isRunning)
 
-	err = poller.StartPolling()
+	err = poller.Start()
 	assert.NotNil(t, err)
 	assert.Equal(t, "Poller is already running.", err.Error())
 	assert.Equal(t, true, poller.isRunning)
 
-	err = poller.StopPolling()
+	err = poller.Stop()
 	assert.Nil(t, err)
 	assert.Equal(t, false, poller.isRunning)
 }
@@ -60,7 +60,7 @@ func TestStopPollingNonPollingState(t *testing.T) {
 
 	poller := newPollerTest()
 
-	err := poller.StopPolling()
+	err := poller.Stop()
 	assert.NotNil(t, err)
 	assert.Equal(t, "Poller is not running.", err.Error())
 }
@@ -84,7 +84,7 @@ func TestPollWithReceiveError(t *testing.T) {
 	poller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() int32 {
 		return 1
 	}
-	poller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = func(i int64, i2 int64) ([]*sqs.Message, error) {
+	poller.queueProvider.(*MockSQSProvider).ReceiveMessageFunc = func(i int64, i2 int64) ([]*sqs.Message, error) {
 		return nil, errors.New("")
 	}
 
@@ -99,7 +99,7 @@ func TestPollZeroMessage(t *testing.T) {
 	poller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() int32 {
 		return 1
 	}
-	poller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = func(i int64, i2 int64) ([]*sqs.Message, error) {
+	poller.queueProvider.(*MockSQSProvider).ReceiveMessageFunc = func(i int64, i2 int64) ([]*sqs.Message, error) {
 		return []*sqs.Message{}, nil
 	}
 
@@ -119,7 +119,7 @@ func TestPollMaxMessage(t *testing.T) {
 	}
 
 	maxNumberOfMessages := 0
-	poller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
+	poller.queueProvider.(*MockSQSProvider).ReceiveMessageFunc = func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
 		maxNumberOfMessages = int(numOfMessage)
 		return nil, errors.New("Receive Error")
 	}
@@ -140,7 +140,7 @@ func TestPollMaxMessageUpperBound(t *testing.T) {
 	}
 
 	maxNumberOfMessages := int64(0)
-	poller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
+	poller.queueProvider.(*MockSQSProvider).ReceiveMessageFunc = func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
 		maxNumberOfMessages = numOfMessage
 		return nil, errors.New("Receive Error")
 	}
@@ -159,16 +159,16 @@ func TestPollMessageSubmitFail(t *testing.T) {
 	poller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() int32 {
 		return int32(expected)
 	}
-	poller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = mockSuccessReceiveFunc
+	poller.queueProvider.(*MockSQSProvider).ReceiveMessageFunc = mockSuccessReceiveFunc
 
 	submitCount := 0
-	poller.workerPool.(*MockWorkerPool).SubmitFunc = func(job Job) (bool, error) {
+	poller.workerPool.(*MockWorkerPool).SubmitFunc = func(job worker_pool.Job) (bool, error) {
 		submitCount++
 		return false, nil
 	}
 
 	releaseCount := 0
-	poller.queueProvider.(*MockQueueProvider).ChangeMessageVisibilityFunc = func(message *sqs.Message, visibilityTimeout int64) error {
+	poller.queueProvider.(*MockSQSProvider).ChangeMessageVisibilityFunc = func(message *sqs.Message, visibilityTimeout int64) error {
 		if visibilityTimeout == 0 {
 			releaseCount++
 		}
@@ -191,16 +191,16 @@ func TestPollMessageSubmitError(t *testing.T) {
 	poller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() int32 {
 		return int32(expected)
 	}
-	poller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = mockSuccessReceiveFunc
+	poller.queueProvider.(*MockSQSProvider).ReceiveMessageFunc = mockSuccessReceiveFunc
 
 	submitCount := 0
-	poller.workerPool.(*MockWorkerPool).SubmitFunc = func(job Job) (bool, error) {
+	poller.workerPool.(*MockWorkerPool).SubmitFunc = func(job worker_pool.Job) (bool, error) {
 		submitCount++
 		return false, errors.New("Submit Error")
 	}
 
 	releaseCount := 0
-	poller.queueProvider.(*MockQueueProvider).ChangeMessageVisibilityFunc = func(message *sqs.Message, visibilityTimeout int64) error {
+	poller.queueProvider.(*MockSQSProvider).ChangeMessageVisibilityFunc = func(message *sqs.Message, visibilityTimeout int64) error {
 		if visibilityTimeout == 0 {
 			releaseCount++
 		}
@@ -221,9 +221,9 @@ func TestPollMessageSubmitSuccess(t *testing.T) {
 	poller.workerPool.(*MockWorkerPool).NumberOfAvailableWorkerFunc = func() int32 {
 		return 5
 	}
-	poller.queueProvider.(*MockQueueProvider).ReceiveMessageFunc = mockSuccessReceiveFunc
+	poller.queueProvider.(*MockSQSProvider).ReceiveMessageFunc = mockSuccessReceiveFunc
 
-	poller.workerPool.(*MockWorkerPool).SubmitFunc = func(job Job) (bool, error) {
+	poller.workerPool.(*MockWorkerPool).SubmitFunc = func(job worker_pool.Job) (bool, error) {
 		return true, nil
 	}
 
@@ -238,27 +238,26 @@ type MockPoller struct {
 	StopPollingFunc  func() error
 
 	RefreshClientFunc func(assumeRoleResult AssumeRoleResult) error
-	QueueProviderFunc func() QueueProvider
+	QueueProviderFunc func() SQSProvider
 }
 
 func NewMockPoller() Poller {
 	return &MockPoller{}
 }
 
-func NewMockPollerForQueueProcessor(workerPool WorkerPool, queueProvider QueueProvider,
-	conf *conf.Configuration, ownerId string,
-	repositories git.Repositories, actionLoggers map[string]io.Writer) Poller {
+func NewMockPollerForQueueProcessor(workerPool worker_pool.WorkerPool, queueProvider SQSProvider,
+	messageHandler MessageHandler, conf *conf.Configuration, ownerId string) Poller {
 	return NewMockPoller()
 }
 
-func (p *MockPoller) StartPolling() error {
+func (p *MockPoller) Start() error {
 	if p.StartPollingFunc != nil {
 		return p.StartPollingFunc()
 	}
 	return nil
 }
 
-func (p *MockPoller) StopPolling() error {
+func (p *MockPoller) Stop() error {
 	if p.StopPollingFunc != nil {
 		return p.StopPollingFunc()
 	}
@@ -272,7 +271,7 @@ func (p *MockPoller) RefreshClient(assumeRoleResult AssumeRoleResult) error {
 	return nil
 }
 
-func (p *MockPoller) QueueProvider() QueueProvider {
+func (p *MockPoller) QueueProvider() SQSProvider {
 	if p.QueueProviderFunc != nil {
 		return p.QueueProviderFunc()
 	}

@@ -8,12 +8,12 @@ import (
 	"testing"
 )
 
-func TestReadConfigurationFromJsonFile(t *testing.T) {
+func TestReadJsonFile(t *testing.T) {
 
-	confPath, err := util.CreateTempTestFile(mockJsonConfFileContent, ".json")
+	confPath, err := util.CreateTempTestFile(mockJsonFileContent, ".json")
 	assert.Nil(t, err)
 
-	actualConf, err := readConfigurationFromFile(confPath)
+	actualConf, err := readFile(confPath)
 
 	defer os.Remove(confPath)
 
@@ -22,12 +22,12 @@ func TestReadConfigurationFromJsonFile(t *testing.T) {
 		"Actual configuration was not equal to expected configuration.")
 }
 
-func TestReadConfigurationFromYamlFile(t *testing.T) {
+func TestReadYamlFile(t *testing.T) {
 
-	confPath, err := util.CreateTempTestFile(mockYamlConfFileContent, ".yaml")
+	confPath, err := util.CreateTempTestFile(mockYamlFileContent, ".yaml")
 	assert.Nil(t, err)
 
-	actualConf, err := readConfigurationFromFile(confPath)
+	actualConf, err := readFile(confPath)
 
 	defer os.Remove(confPath)
 
@@ -36,12 +36,12 @@ func TestReadConfigurationFromYamlFile(t *testing.T) {
 		"Actual configuration was not equal to expected configuration.")
 }
 
-func TestReadConfigurationFromInvalidFile(t *testing.T) {
+func TestReadInvalidFile(t *testing.T) {
 
-	confPath, err := util.CreateTempTestFile(mockYamlConfFileContent, ".invalid")
+	confPath, err := util.CreateTempTestFile(mockYamlFileContent, ".invalid")
 	assert.Nil(t, err)
 
-	_, err = readConfigurationFromFile(confPath)
+	_, err = readFile(confPath)
 
 	defer os.Remove(confPath)
 

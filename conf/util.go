@@ -28,7 +28,7 @@ func checkFileExtension(filepath string) error {
 	}
 }
 
-func readConfigurationFromFile(filepath string) (*Configuration, error) {
+func readFile(filepath string) (*Configuration, error) {
 
 	file, err := ioutil.ReadFile(filepath)
 	if err != nil {

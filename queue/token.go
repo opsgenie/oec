@@ -1,13 +1,13 @@
 package queue
 
-type OECToken struct {
-	OwnerId         string        `json:"ownerId,omitempty"`
-	OECMetadataList []OECMetadata `json:"queueProperties,omitempty"`
+type token struct {
+	OwnerId             string       `json:"ownerId,omitempty"`
+	QueuePropertiesList []Properties `json:"queueProperties,omitempty"`
 }
 
-type OECMetadata struct {
-	AssumeRoleResult   AssumeRoleResult   `json:"assumeRoleResult,omitempty"`
-	QueueConfiguration QueueConfiguration `json:"queueConfiguration,omitempty"`
+type Properties struct {
+	AssumeRoleResult AssumeRoleResult `json:"assumeRoleResult,omitempty"`
+	Configuration    Configuration    `json:"queueConfiguration,omitempty"`
 }
 
 type AssumeRoleResult struct {
@@ -27,21 +27,21 @@ type AssumeRole struct {
 	Arn string `json:"arn,omitempty"`
 }
 
-type QueueConfiguration struct {
+type Configuration struct {
 	SuccessRefreshPeriodInSeconds int64  `json:"credentialSuccessRefreshPeriod,omitempty"`
 	ErrorRefreshPeriodInSeconds   int64  `json:"credentialErrorRefreshPeriod,omitempty"`
 	Region                        string `json:"region,omitempty"`
-	QueueUrl                      string `json:"queueUrl,omitempty"`
+	Url                           string `json:"queueUrl,omitempty"`
 }
 
-func (m OECMetadata) ExpireTimeMillis() int64 {
-	return m.AssumeRoleResult.Credentials.ExpireTimeMillis
+func (p Properties) ExpireTimeMillis() int64 {
+	return p.AssumeRoleResult.Credentials.ExpireTimeMillis
 }
 
-func (m OECMetadata) Region() string {
-	return m.QueueConfiguration.Region
+func (p Properties) Region() string {
+	return p.Configuration.Region
 }
 
-func (m OECMetadata) QueueUrl() string {
-	return m.QueueConfiguration.QueueUrl
+func (p Properties) Url() string {
+	return p.Configuration.Url
 }

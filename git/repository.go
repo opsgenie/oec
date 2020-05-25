@@ -9,34 +9,34 @@ import (
 	"sync"
 )
 
-type GitOptions struct {
+type Options struct {
 	Url                string `json:"url" yaml:"url"`
 	PrivateKeyFilepath string `json:"privateKeyFilepath" yaml:"privateKeyFilepath"`
 	Passphrase         string `json:"passphrase" yaml:"passphrase"`
 }
 
-type GitUrl string
+type Url string
 
-type Repositories map[GitUrl]*Repository
+type Repositories map[Url]*Repository
 
 func NewRepositories() Repositories {
-	return Repositories(make(map[GitUrl]*Repository))
+	return make(map[Url]*Repository)
 }
 
 func (r Repositories) NotEmpty() bool {
 	return len(r) != 0
 }
 
-func (r Repositories) Get(gitUrl string) (*Repository, error) {
-	if repository, contains := r[GitUrl(gitUrl)]; contains {
+func (r Repositories) Get(url string) (*Repository, error) {
+	if repository, contains := r[Url(url)]; contains {
 		return repository, nil
 	}
-	return nil, errors.Errorf("Git repository[%s] could not be found.", gitUrl)
+	return nil, errors.Errorf("Git repository[%s] could not be found.", url)
 }
 
-func (r Repositories) DownloadAll(gitOptionsList []GitOptions) (err error) {
+func (r Repositories) DownloadAll(optionsList []Options) (err error) {
 
-	for _, options := range gitOptionsList {
+	for _, options := range optionsList {
 		err = r.Download(&options)
 		if err != nil {
 			return err
@@ -46,9 +46,9 @@ func (r Repositories) DownloadAll(gitOptionsList []GitOptions) (err error) {
 	return nil
 }
 
-func (r Repositories) Download(options *GitOptions) (err error) {
+func (r Repositories) Download(options *Options) (err error) {
 
-	if _, contains := r[GitUrl(options.Url)]; !contains {
+	if _, contains := r[Url(options.Url)]; !contains {
 		repositoryPath, err := CloneMaster(options.Url, options.PrivateKeyFilepath, options.Passphrase)
 		if err != nil {
 			return errors.Errorf("Git repository[%s] could not be downloaded: %s", options.Url, err.Error())
@@ -56,7 +56,7 @@ func (r Repositories) Download(options *GitOptions) (err error) {
 
 		logrus.Debugf("Git repository[%s] is downloaded.", options.Url)
 
-		r[GitUrl(options.Url)] = NewRepository(repositoryPath, *options)
+		r[Url(options.Url)] = NewRepository(repositoryPath, *options)
 		return nil
 	}
 
@@ -92,11 +92,11 @@ func (r Repositories) RemoveAll() {
 
 type Repository struct {
 	Path    string
-	Options GitOptions
+	Options Options
 	rw      *sync.RWMutex
 }
 
-func NewRepository(path string, options GitOptions) *Repository {
+func NewRepository(path string, options Options) *Repository {
 	repository := &Repository{
 		rw:      &sync.RWMutex{},
 		Path:    path,

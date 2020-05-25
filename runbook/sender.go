@@ -16,6 +16,14 @@ var SendResultToOpsGenieFunc = SendResultToOpsGenie
 
 var client = &retryer.Retryer{}
 
+type ActionResultPayload struct {
+	IsSuccessful   bool   `json:"isSuccessful,omitempty"`
+	EntityId       string `json:"entityId,omitempty"`
+	EntityType     string `json:"entityType,omitempty"`
+	Action         string `json:"action,omitempty"`
+	FailureMessage string `json:"failureMessage,omitempty"`
+}
+
 func SendResultToOpsGenie(resultPayload *ActionResultPayload, apiKey, baseUrl string) error {
 
 	body, err := json.Marshal(resultPayload)
@@ -25,7 +33,7 @@ func SendResultToOpsGenie(resultPayload *ActionResultPayload, apiKey, baseUrl st
 
 	resultUrl := baseUrl + resultPath
 
-	request, err := retryer.NewRequest("POST", resultUrl, bytes.NewReader(body))
+	request, err := retryer.NewRequest(http.MethodPost, resultUrl, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
