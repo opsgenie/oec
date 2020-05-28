@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-func TestReadConfigurationFromLocal(t *testing.T) {
+func TestReadFileFromLocal(t *testing.T) {
 
-	confPath, err := util.CreateTempTestFile(mockJsonConfFileContent, ".json")
+	confPath, err := util.CreateTempTestFile(mockJsonFileContent, ".json")
 	assert.Nil(t, err)
 
-	actualConf, _ := readConfigurationFromLocal(confPath)
+	actualConf, _ := readFileFromLocal(confPath)
 
 	defer os.Remove(confPath)
 

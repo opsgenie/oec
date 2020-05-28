@@ -7,16 +7,16 @@ import (
 	"testing"
 )
 
-func TestReadConfigurationFromGit(t *testing.T) {
+func TestReadFileFromGit(t *testing.T) {
 
 	defer func() { cloneMasterFunc = git.CloneMaster }()
 
-	confPath, err := util.CreateTempTestFile(mockJsonConfFileContent, ".json")
+	confPath, err := util.CreateTempTestFile(mockJsonFileContent, ".json")
 	cloneMasterFunc = func(url, privateKeyFilepath, passPhrase string) (repositoryPath string, err error) {
 		return "", nil
 	}
 
-	config, err := readConfigurationFromGit("", "", "", confPath)
+	config, err := readFileFromGit("", "", "", confPath)
 
 	assert.Nil(t, err)
 	assert.Equal(t, mockConf, config)

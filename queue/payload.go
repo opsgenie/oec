@@ -1,17 +1,17 @@
 package queue
 
-type QueuePayload struct {
-	Entity       Entity       `json:"entity"`
+type payload struct {
+	Entity       entity       `json:"entity"`
 	Action       string       `json:"action"`
-	MappedAction MappedAction `json:"mappedActionV2"`
+	MappedAction mappedAction `json:"mappedActionV2"`
 }
 
-type Entity struct {
+type entity struct {
 	Id   string `json:"id"`
 	Type string `json:"type"`
 }
 
-type MappedAction struct {
+type mappedAction struct {
 	Name       string `json:"name"`
 	ExtraField string `json:"extraField"`
 }

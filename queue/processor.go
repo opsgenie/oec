@@ -6,6 +6,7 @@ import (
 	"github.com/opsgenie/oec/conf"
 	"github.com/opsgenie/oec/git"
 	"github.com/opsgenie/oec/retryer"
+	"github.com/opsgenie/oec/worker_pool"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -20,12 +21,6 @@ import (
 var UserAgentHeader string
 
 const (
-	maxNumberOfWorker        = 12
-	minNumberOfWorker        = 4
-	queueSize                = 0
-	keepAliveTimeInMillis    = 6000
-	monitoringPeriodInMillis = 15000
-
 	pollingWaitIntervalInMillis = 100
 	visibilityTimeoutInSec      = 30
 	maxNumberOfMessages         = 10
@@ -39,16 +34,14 @@ const (
 const tokenPath = "/v2/integrations/oec/credentials"
 
 var newPollerFunc = NewPoller
-var newRequestFunc = retryer.NewRequest
 
-type QueueProcessor interface {
-	StartProcessing() error
-	StopProcessing() error
-	IsRunning() bool
+type Processor interface {
+	Start() error
+	Stop() error
 }
 
-type OECQueueProcessor struct {
-	workerPool WorkerPool
+type processor struct {
+	workerPool worker_pool.WorkerPool
 	pollers    map[string]Poller
 
 	retryer *retryer.Retryer
@@ -66,7 +59,7 @@ type OECQueueProcessor struct {
 	quit        chan struct{}
 }
 
-func NewQueueProcessor(conf *conf.Configuration) QueueProcessor {
+func NewProcessor(conf *conf.Configuration) Processor {
 
 	if conf.PollerConf.MaxNumberOfMessages <= 0 {
 		logrus.Infof("Max number of messages should be greater than 0, default value[%d] is set.", maxNumberOfMessages)
@@ -83,10 +76,10 @@ func NewQueueProcessor(conf *conf.Configuration) QueueProcessor {
 		conf.PollerConf.VisibilityTimeoutInSeconds = visibilityTimeoutInSec
 	}
 
-	return &OECQueueProcessor{
+	return &processor{
 		successRefreshPeriod: successRefreshPeriod,
 		errorRefreshPeriod:   errorRefreshPeriod,
-		workerPool:           NewWorkerPool(&conf.PoolConf),
+		workerPool:           worker_pool.New(&conf.PoolConf),
 		configuration:        conf,
 		repositories:         git.NewRepositories(),
 		actionLoggers:        newActionLoggers(conf.ActionMappings),
@@ -99,14 +92,7 @@ func NewQueueProcessor(conf *conf.Configuration) QueueProcessor {
 	}
 }
 
-func (qp *OECQueueProcessor) IsRunning() bool {
-	defer qp.startStopMu.Unlock()
-	qp.startStopMu.Lock()
-
-	return qp.isRunning
-}
-
-func (qp *OECQueueProcessor) StartProcessing() error {
+func (qp *processor) Start() error {
 	defer qp.startStopMu.Unlock()
 	qp.startStopMu.Lock()
 
@@ -142,7 +128,7 @@ func (qp *OECQueueProcessor) StartProcessing() error {
 	return nil
 }
 
-func (qp *OECQueueProcessor) StopProcessing() error {
+func (qp *processor) Stop() error {
 	defer qp.startStopMu.Unlock()
 	qp.startStopMu.Lock()
 
@@ -163,11 +149,11 @@ func (qp *OECQueueProcessor) StopProcessing() error {
 	return nil
 }
 
-func (qp *OECQueueProcessor) receiveToken() (*OECToken, error) {
+func (qp *processor) receiveToken() (*token, error) {
 
 	tokenUrl := qp.configuration.BaseUrl + tokenPath
 
-	request, err := newRequestFunc("GET", tokenUrl, nil)
+	request, err := retryer.NewRequest(http.MethodGet, tokenUrl, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -177,10 +163,10 @@ func (qp *OECQueueProcessor) receiveToken() (*OECToken, error) {
 
 	query := request.URL.Query()
 	for _, poller := range qp.pollers {
-		oecMetadata := poller.QueueProvider().OECMetadata()
+		queueProperties := poller.QueueProvider().Properties()
 		query.Add(
-			oecMetadata.Region(),
-			strconv.FormatInt(oecMetadata.ExpireTimeMillis(), 10),
+			queueProperties.Region(),
+			strconv.FormatInt(queueProperties.ExpireTimeMillis(), 10),
 		)
 	}
 	request.URL.RawQuery = query.Encode()
@@ -198,7 +184,7 @@ func (qp *OECQueueProcessor) receiveToken() (*OECToken, error) {
 
 	responseToken := bytes.NewBufferString(response.Header.Get("Token"))
 
-	token := &OECToken{}
+	token := &token{}
 	err = json.NewDecoder(responseToken).Decode(&token)
 	if err != nil {
 		return nil, err
@@ -207,39 +193,50 @@ func (qp *OECQueueProcessor) receiveToken() (*OECToken, error) {
 	return token, nil
 }
 
-func (qp *OECQueueProcessor) addPoller(queueProvider QueueProvider, ownerId string) Poller {
+func (qp *processor) addPoller(queueProperties Properties, ownerId string) (Poller, error) {
+
+	queueProvider, err := NewSqsProvider(queueProperties)
+	if err != nil {
+		return nil, err
+	}
+
+	messageHandler := &messageHandler{
+		repositories:  qp.repositories,
+		actionSpecs:   qp.configuration.ActionSpecifications,
+		actionLoggers: qp.actionLoggers,
+	}
+
 	poller := newPollerFunc(
 		qp.workerPool,
 		queueProvider,
+		messageHandler,
 		qp.configuration,
 		ownerId,
-		qp.repositories,
-		qp.actionLoggers,
 	)
-	qp.pollers[queueProvider.OECMetadata().QueueUrl()] = poller
-	return poller
+	qp.pollers[queueProvider.Properties().Url()] = poller
+	return poller, nil
 }
 
-func (qp *OECQueueProcessor) removePoller(queueUrl string) Poller {
+func (qp *processor) removePoller(queueUrl string) Poller {
 	poller := qp.pollers[queueUrl]
 	delete(qp.pollers, queueUrl)
 	return poller
 }
 
-func (qp *OECQueueProcessor) refreshPollers(token *OECToken) {
+func (qp *processor) refreshPollers(token *token) {
 	pollerKeys := make(map[string]struct{}, len(qp.pollers))
 	for key := range qp.pollers {
 		pollerKeys[key] = struct{}{}
 	}
 
-	for _, oecMetadata := range token.OECMetadataList {
-		queueUrl := oecMetadata.QueueUrl()
+	for _, queueProperties := range token.QueuePropertiesList {
+		queueUrl := queueProperties.Url()
 
-		// refresh existing pollers if there comes new assumeRoleResult
+		// refresh existing pollers if there comes new AssumeRoleResult
 		if poller, contains := qp.pollers[queueUrl]; contains {
-			isTokenRefreshed := oecMetadata.AssumeRoleResult != AssumeRoleResult{}
+			isTokenRefreshed := queueProperties.AssumeRoleResult != AssumeRoleResult{}
 			if isTokenRefreshed {
-				err := poller.RefreshClient(oecMetadata.AssumeRoleResult)
+				err := poller.RefreshClient(queueProperties.AssumeRoleResult)
 				if err != nil {
 					logrus.Errorf("Client of queue provider[%s] could not be refreshed.", queueUrl)
 				}
@@ -249,29 +246,29 @@ func (qp *OECQueueProcessor) refreshPollers(token *OECToken) {
 
 			// add new pollers
 		} else {
-			queueProvider, err := NewQueueProvider(oecMetadata)
+			poller, err := qp.addPoller(queueProperties, token.OwnerId)
 			if err != nil {
 				logrus.Errorf("Poller[%s] could not be added: %s.", queueUrl, err)
 				continue
 			}
-			qp.addPoller(queueProvider, token.OwnerId).StartPolling()
+			poller.Start()
 			logrus.Debugf("Poller[%s] is added.", queueUrl)
 		}
 	}
 
 	// remove unnecessary pollers
 	for queueUrl := range pollerKeys {
-		qp.removePoller(queueUrl).StopPolling()
+		qp.removePoller(queueUrl).Stop()
 		logrus.Debugf("Poller[%s] is removed.", queueUrl)
 	}
 
-	if len(token.OECMetadataList) != 0 { // pick first oecMetadata to refresh waitPeriods, can be change for further usage
-		qp.successRefreshPeriod = time.Second * time.Duration(token.OECMetadataList[0].QueueConfiguration.SuccessRefreshPeriodInSeconds)
-		qp.errorRefreshPeriod = time.Second * time.Duration(token.OECMetadataList[0].QueueConfiguration.ErrorRefreshPeriodInSeconds)
+	if len(token.QueuePropertiesList) != 0 { // pick first Properties to refresh waitPeriods, can be change for further usage
+		qp.successRefreshPeriod = time.Second * time.Duration(token.QueuePropertiesList[0].Configuration.SuccessRefreshPeriodInSeconds)
+		qp.errorRefreshPeriod = time.Second * time.Duration(token.QueuePropertiesList[0].Configuration.ErrorRefreshPeriodInSeconds)
 	}
 }
 
-func (qp *OECQueueProcessor) run() {
+func (qp *processor) run() {
 
 	logrus.Infof("Queue processor has started to run. Refresh client period: %s.", qp.successRefreshPeriod.String())
 
@@ -282,7 +279,7 @@ func (qp *OECQueueProcessor) run() {
 		case <-qp.quit:
 			ticker.Stop()
 			for _, poller := range qp.pollers {
-				poller.StopPolling()
+				poller.Stop()
 			}
 			qp.isRunningWg.Done()
 			return
@@ -302,7 +299,7 @@ func (qp *OECQueueProcessor) run() {
 	}
 }
 
-func (qp *OECQueueProcessor) startPullingRepositories(pullPeriod time.Duration) {
+func (qp *processor) startPullingRepositories(pullPeriod time.Duration) {
 
 	logrus.Infof("Repositories will be updated in every %s.", pullPeriod.String())
 
@@ -312,7 +309,7 @@ func (qp *OECQueueProcessor) startPullingRepositories(pullPeriod time.Duration) 
 		select {
 		case <-qp.quit:
 			ticker.Stop()
-			logrus.Info("All git repositories are removed.")
+			logrus.Info("All git repositories will be removed.")
 			qp.isRunningWg.Done()
 			return
 		case <-ticker.C:

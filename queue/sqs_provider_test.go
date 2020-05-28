@@ -2,7 +2,6 @@ package queue
 
 import (
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/pkg/errors"
@@ -12,12 +11,12 @@ import (
 	"testing"
 )
 
-func newQueueProviderTest() *OECQueueProvider {
-	return &OECQueueProvider{
-		oecMetadata:     mockOECMetadata1,
+func newQueueProviderTest() *sqsProvider {
+	return &sqsProvider{
+		queueProperties: mockQueueProperties1,
 		refreshClientMu: &sync.RWMutex{},
 		expirationMu:    &sync.RWMutex{},
-		client:          NewMockSqsClient(nil),
+		client:          &mockSqsClient{},
 	}
 }
 
@@ -137,12 +136,12 @@ func TestRefreshClient(t *testing.T) {
 	assert.Nil(t, err)
 
 	expectedConfig := aws.NewConfig().
-		WithRegion(provider.OECMetadata().Region()).
+		WithRegion(provider.Properties().Region()).
 		WithCredentials(mockCreds)
 
 	assert.Equal(t, expectedConfig.Credentials, provider.client.(*sqs.SQS).Config.Credentials)
 	assert.Equal(t, expectedConfig.Region, provider.client.(*sqs.SQS).Config.Region)
-	assert.Equal(t, mockAssumeRoleResult2, provider.oecMetadata.AssumeRoleResult)
+	assert.Equal(t, mockAssumeRoleResult2, provider.queueProperties.AssumeRoleResult)
 }
 
 // Mock SqsClient
@@ -173,60 +172,56 @@ func (c *mockSqsClient) ReceiveMessage(input *sqs.ReceiveMessageInput) (*sqs.Rec
 	return &sqs.ReceiveMessageOutput{Messages: []*sqs.Message{}}, nil // empty slice of message
 }
 
-func NewMockSqsClient(p client.ConfigProvider, cfgs ...*aws.Config) SQS {
-	return new(mockSqsClient)
-}
-
-// Mock QueueProvider
-type MockQueueProvider struct {
+// Mock SQSProvider
+type MockSQSProvider struct {
 	ChangeMessageVisibilityFunc func(message *sqs.Message, visibilityTimeout int64) error
 	DeleteMessageFunc           func(message *sqs.Message) error
 	ReceiveMessageFunc          func(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error)
-	OECMetadataFunc             func() OECMetadata
+	QueuePropertiesFunc         func() Properties
 	RefreshClientFunc           func(assumeRoleResult AssumeRoleResult) error
 	IsTokenExpiredFunc          func() bool
 }
 
-func NewMockQueueProvider() QueueProvider {
-	return &MockQueueProvider{}
+func NewMockQueueProvider() SQSProvider {
+	return &MockSQSProvider{}
 }
 
-func (mqp *MockQueueProvider) IsTokenExpired() bool {
+func (mqp *MockSQSProvider) IsTokenExpired() bool {
 	if mqp.IsTokenExpiredFunc != nil {
 		return mqp.IsTokenExpiredFunc()
 	}
 	return false
 }
 
-func (mqp *MockQueueProvider) ChangeMessageVisibility(message *sqs.Message, visibilityTimeout int64) error {
+func (mqp *MockSQSProvider) ChangeMessageVisibility(message *sqs.Message, visibilityTimeout int64) error {
 	if mqp.ChangeMessageVisibilityFunc != nil {
 		return mqp.ChangeMessageVisibilityFunc(message, visibilityTimeout)
 	}
 	return nil
 }
 
-func (mqp *MockQueueProvider) DeleteMessage(message *sqs.Message) error {
+func (mqp *MockSQSProvider) DeleteMessage(message *sqs.Message) error {
 	if mqp.DeleteMessageFunc != nil {
 		return mqp.DeleteMessageFunc(message)
 	}
 	return nil
 }
 
-func (mqp *MockQueueProvider) ReceiveMessage(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
+func (mqp *MockSQSProvider) ReceiveMessage(numOfMessage int64, visibilityTimeout int64) ([]*sqs.Message, error) {
 	if mqp.ReceiveMessageFunc != nil {
 		return mqp.ReceiveMessageFunc(numOfMessage, visibilityTimeout)
 	}
 	return []*sqs.Message{}, nil
 }
 
-func (mqp *MockQueueProvider) OECMetadata() OECMetadata {
-	if mqp.OECMetadataFunc != nil {
-		return mqp.OECMetadataFunc()
+func (mqp *MockSQSProvider) Properties() Properties {
+	if mqp.QueuePropertiesFunc != nil {
+		return mqp.QueuePropertiesFunc()
 	}
-	return mockOECMetadata1
+	return mockQueueProperties1
 }
 
-func (mqp *MockQueueProvider) RefreshClient(assumeRoleResult AssumeRoleResult) error {
+func (mqp *MockSQSProvider) RefreshClient(assumeRoleResult AssumeRoleResult) error {
 	if mqp.RefreshClientFunc != nil {
 		return mqp.RefreshClientFunc(assumeRoleResult)
 	}
