@@ -1,0 +1,145 @@
+name: Go
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version'     
+        required: true
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    steps:
+
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v2
+      with:
+        go-version: ^1.13
+      id: go
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v2
+
+    - name: Create Output Directory
+      run: mkdir -p .release
+
+    - name: Get dependencies
+      run: |
+        go get -v -t -d ./...
+        if [ -f Gopkg.toml ]; then
+            curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+            dep ensure
+        fi
+
+    - name: Build Linux 64
+      run: go build -mod=vendor -a -ldflags "-X main.OECCommitVersion=$GITHUB_SHA -X main.OECVersion=${{ github.event.inputs.version }}" -o ../.release/oec-packages-linux/OpsgenieEdgeConnector main.go
+      working-directory: main
+      if: success() 
+      env:
+        CGO_ENABLED: 0 
+        GOOS: linux 
+        GOARCH: amd64
+        GO111MODULE: on
+
+    - uses: montudor/action-zip@v0.1.0
+      name: Compressing Linux Package
+      with:
+        args: zip -qq -j -r .release/oec-linux-amd64-${{ github.event.inputs.version }}.zip .release/oec-packages-linux/
+
+    - name: Build Win 32 Service
+      run: go build -mod=vendor -o ../../.release/oec-packages-win32/oecService32.exe oecService.go
+      working-directory: windows_service/main
+      if: success() 
+      env:
+        CGO_ENABLED: 0 
+        GOOS: windows 
+        GOARCH: 386
+        GO111MODULE: on
+  
+    - name: Build Win 32
+      run: go build -mod=vendor -a -ldflags "-X main.OECCommitVersion=$GITHUB_SHA -X main.OECVersion=${{ github.event.inputs.version }}" -o ../.release/oec-packages-win32/OpsgenieEdgeConnector32.exe main.go
+      working-directory: main
+      if: success() 
+      env:
+        CGO_ENABLED: 0 
+        GOOS: windows 
+        GOARCH: 386
+        GO111MODULE: on
+    
+    - uses: montudor/action-zip@v0.1.0
+      name: Compressing Windows 32 Package
+      with:
+        args: zip -qq -j -r .release/oec-win-386-${{ github.event.inputs.version }}.zip .release/oec-packages-win32/
+
+    - name: Build Win 64 Service
+      run: go build -mod=vendor -o ../../.release/oec-packages-win64/oecService64.exe oecService.go
+      working-directory: windows_service/main
+      if: success() 
+      env:
+        CGO_ENABLED: 0 
+        GOOS: windows 
+        GOARCH: 386
+        GO111MODULE: on
+  
+    - name: Build Win 64
+      run: go build -mod=vendor -a -ldflags "-X main.OECCommitVersion=$GITHUB_SHA -X main.OECVersion=${{ github.event.inputs.version }}" -o ../.release/oec-packages-win64/OpsgenieEdgeConnector64.exe main.go
+      working-directory: main
+      if: success() 
+      env:
+        CGO_ENABLED: 0 
+        GOOS: windows 
+        GOARCH: amd64
+        GO111MODULE: on
+    
+    - uses: montudor/action-zip@v0.1.0
+      name: Compressing Windows 64 Package
+      with:
+        args: zip -qq -j -r .release/oec-win-amd64-${{ github.event.inputs.version }}.zip .release/oec-packages-win64/
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.event.inputs.version }}
+        release_name: Release ${{ github.event.inputs.version }}
+        draft: true
+
+    - name: Upload Linux 64 bit Release 
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: .release/oec-linux-amd64-${{ github.event.inputs.version }}.zip
+        asset_name: oec-linux-amd64-${{ github.event.inputs.version }}.zip
+        asset_content_type: application/zip
+
+    - name: Upload Win 32 bit Release 
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: .release/oec-win-386-${{ github.event.inputs.version }}.zip
+        asset_name: oec-win-386-${{ github.event.inputs.version }}.zip
+        asset_content_type: application/zip
+
+    - name: Upload Win 64 bit Release  
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: .release/oec-win-amd64-${{ github.event.inputs.version }}.zip
+        asset_name: oec-win-amd64-${{ github.event.inputs.version }}.zip
+        asset_content_type: application/zip
+        
+    - name: Upload Artifacts 
+      uses: actions/upload-artifact@v2
+      with:
+        name: Release Artifacts
+        path: .release/**
