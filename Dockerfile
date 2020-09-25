@@ -4,6 +4,7 @@ RUN chmod +x /usr/bin/dep
 ADD . $GOPATH/src/github.com/opsgenie/oec
 WORKDIR $GOPATH/src/github.com/opsgenie/oec/main
 RUN export GIT_COMMIT=$(git rev-list -1 HEAD) && \
+    dep init && \
     dep ensure -v && \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo \
         -ldflags "-X main.OECCommitVersion=$GIT_COMMIT -X main.OECVersion=1.0.1" -o nocgo -o /oec .
