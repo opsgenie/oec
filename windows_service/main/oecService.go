@@ -44,29 +44,32 @@ func (p *Program) run() {
 	logger.Info("Starting ", p.DisplayName)
 
 	if p.Stderr != "" {
-		file, err := os.OpenFile(p.Stderr, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0777)
+		stderr, err := os.OpenFile(p.Stderr, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0777)
 		if err != nil {
-			logger.Warningf("Failed to open std err %q: %v", p.Stderr, err)
+			logger.Errorf("Failed to open std err %q: %v", p.Stderr, err)
+			p.service.Stop()
 			return
 		}
-		defer file.Close()
-		p.cmd.Stderr = file
+		defer stderr.Close()
+		p.cmd.Stderr = stderr
 	}
 	if p.Stdout != "" {
-		file, err := os.OpenFile(p.Stdout, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0777)
+		stdout, err := os.OpenFile(p.Stdout, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0777)
 		if err != nil {
-			logger.Warningf("Failed to open std out %q: %v", p.Stdout, err)
+			logger.Errorf("Failed to open std out %q: %v", p.Stdout, err)
+			p.service.Stop()
 			return
 		}
-		defer file.Close()
-		p.cmd.Stdout = file
+		defer stdout.Close()
+		p.cmd.Stdout = stdout
 	}
 
 	err := p.cmd.Run()
 	if err != nil {
-		logger.Warningf("Error running: %v", err)
+		logger.Errorf("Failed to run OEC: %v", err)
 	}
 
+	p.service.Stop()
 	return
 }
 
@@ -125,8 +128,12 @@ func sendCtrlCEvent(pid int, stderr string) {
 }
 
 func (p *Program) Stop(s service.Service) error {
+	// already terminated ungracefully
+	if p.cmd.ProcessState != nil {
+		return nil
+	}
+	// terminate gracefully
 	sendCtrlCEvent(p.cmd.Process.Pid, p.Stderr)
-
 	return nil
 }
 
@@ -156,6 +163,28 @@ func getConfig(path string) (*Config, error) {
 		return nil, err
 	}
 	return conf, nil
+}
+
+func validateConfig(config *Config) {
+	if config.Stderr != "" {
+		stderr, err := os.OpenFile(config.Stderr, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0777)
+		if err != nil {
+			log.Fatalf("Failed to open std err %q: %v", config.Stderr, err)
+		}
+		defer stderr.Close()
+	}
+	if config.Stdout != "" {
+		stdout, err := os.OpenFile(config.Stdout, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0777)
+		if err != nil {
+			log.Fatalf("Failed to open std out %q: %v", config.Stdout, err)
+		}
+		defer stdout.Close()
+	}
+
+	_, err := os.Stat(config.OECPath)
+	if err != nil {
+		log.Fatalf("Failed to find OEC executable %q: %v", config.OECPath, err)
+	}
 }
 
 func main() {
@@ -203,6 +232,9 @@ func main() {
 	if len(os.Args) > 1 {
 		action := os.Args[1]
 
+		if action == "start" {
+			validateConfig(config)
+		}
 		err := service.Control(svc, action)
 		if err != nil {
 			if strings.Contains(err.Error(), "Unknown action") {
