@@ -21,15 +21,7 @@ jobs:
       - name: Run tests
         run: go test -v -coverprofile=covprofile ./...
       - name: Send coverage
+        if: ${{ matrix.os == 'macos-latest' && matrix.go == '1.14'}}
         uses: shogo82148/actions-goveralls@v1.4.2
         with:
           path-to-profile: covprofile
-          flag-name: go-${{ matrix.go }}-OS-${{ matrix.os }}
-          parallel: true
-  finish:
-    needs: ci-test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: shogo82148/actions-goveralls@v1.4.2
-        with:
-          parallel-finished: true
