@@ -48,7 +48,7 @@ func TestSendResultToOpsGenie(t *testing.T) {
 		}
 
 		if actionResult.FailureMessage != "fail" {
-			t.Errorf("Expected request to have ‘failureMessage=true’, got: ‘%s’", actionResult.FailureMessage)
+			t.Errorf("Expected request to have ‘resultMessage=true’, got: ‘%s’", actionResult.FailureMessage)
 		}
 
 	}))

@@ -31,7 +31,7 @@ const (
 	repositoryRefreshPeriod = time.Minute
 )
 
-const tokenPath = "/v2/integrations/oec/credentials"
+const tokenPath = "/v1/oec/credentials"
 
 var newPollerFunc = NewPoller
 

@@ -66,6 +66,7 @@ func TestExecuteWithErrorStream(t *testing.T) {
 		assert.NoError(t, err, "Error from Execute operation was not empty.")
 		assert.Equal(t, "", cmdOutput.String(), "Output stream from executed file was not empty.")
 		assert.Equal(t, "test error\n", cmdErr.String(), "Error stream was not equal to expected.")
+
 	} else {
 		content := []byte("@echo off\r\necho test error>&2\r\n")
 		tmpFilePath, err := util.CreateTempTestFile(content, batFileExt)
@@ -118,6 +119,7 @@ func TestExecuteWithError(t *testing.T) {
 		assert.IsType(t, &ExecError{}, err)
 		assert.Error(t, err, "Error from Execute operation was empty.")
 		assert.Equal(t, err.Error(), "exit status 1", "Error message was not equal to expected.")
+		//assert.Equal(t, "", res, "Result string from executed file was not empty.")
 		assert.Contains(t, cmdErr.String(), "not recognized as an internal or external command",
 			"Error stream from executed file does not contain err message.")
 		assert.Contains(t, err.(*ExecError).Stderr, cmdErr.String(), "ExecError is not same as cmdErr.")
