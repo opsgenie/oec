@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go/service/sqs"
@@ -40,11 +41,13 @@ func (mh *messageHandler) Handle(message sqs.Message) (*runbook.ActionResultPayl
 
 	entityId := queuePayload.Entity.Id
 	entityType := queuePayload.Entity.Type
+
+	actionType := queuePayload.ActionType
+
 	action := queuePayload.MappedAction.Name
 	if action == "" {
 		action = queuePayload.Action
 	}
-
 	if action == "" {
 		return nil, errors.Errorf("SQS message with entityId[%s] does not contain action property.", entityId)
 	}
@@ -54,23 +57,42 @@ func (mh *messageHandler) Handle(message sqs.Message) (*runbook.ActionResultPayl
 		return nil, errors.Errorf("There is no mapped action found for action[%s]. SQS message with entityId[%s] will be ignored.", action, entityId)
 	}
 
+	if mappedAction.Type != actionType {
+		return nil, errors.Errorf("The mapped action found for action[%s] with type[%s] but action is coming with type[%s]. SQS message with entityId[%s] will be ignored.",
+			action, mappedAction.Type, actionType, entityId)
+	}
+
 	result := &runbook.ActionResultPayload{
 		EntityId:   entityId,
 		EntityType: entityType,
 		Action:     action,
+		ActionType: actionType,
+		RequestId:  queuePayload.RequestId,
 	}
 
 	start := time.Now()
-	err = mh.execute(&mappedAction, *message.Body)
+	executionResult, err := mh.execute(&mappedAction, *message.Body)
 	took := time.Since(start)
 
 	switch err := err.(type) {
 	case *runbook.ExecError:
+		result.IsSuccessful = false
 		result.FailureMessage = fmt.Sprintf("Err: %s, Stderr: %s", err.Error(), err.Stderr)
 		logrus.Debugf("Action[%s] execution of message[%s] with entityId[%s] failed: %s Stderr: %s", action, *message.MessageId, entityId, err.Error(), err.Stderr)
-
 	case nil:
 		result.IsSuccessful = true
+		if !queuePayload.DiscardScriptResponse && queuePayload.ActionType == HttpActionType {
+			httpResult := &runbook.HttpResponse{}
+			err := json.Unmarshal([]byte(executionResult), httpResult)
+			if err != nil {
+				result.IsSuccessful = false
+				logrus.Debugf("Http Action[%s] execution of message[%s] with entityId[%s] failed, could not parse http response fields: %s, error: %s",
+					action, *message.MessageId, entityId, executionResult, err.Error())
+				result.FailureMessage = "Could not parse http response fields: " + executionResult
+			} else {
+				result.HttpResponse = httpResult
+			}
+		}
 		logrus.Debugf("Action[%s] execution of message[%s] with entityId[%s] has been completed and it took %f seconds.", action, *message.MessageId, entityId, took.Seconds())
 
 	default:
@@ -80,18 +102,18 @@ func (mh *messageHandler) Handle(message sqs.Message) (*runbook.ActionResultPayl
 	return result, nil
 }
 
-func (mh *messageHandler) execute(mappedAction *conf.MappedAction, messageBody string) error {
+func (mh *messageHandler) execute(mappedAction *conf.MappedAction, messageBody string) (string, error) {
 
 	sourceType := mappedAction.SourceType
 	switch sourceType {
 	case conf.GitSourceType:
 		if mh.repositories == nil {
-			return errors.New("Repositories should be provided.")
+			return "", errors.New("Repositories should be provided.")
 		}
 
 		repository, err := mh.repositories.Get(mappedAction.GitOptions.Url)
 		if err != nil {
-			return err
+			return "", err
 		}
 
 		repository.RLock()
@@ -106,10 +128,19 @@ func (mh *messageHandler) execute(mappedAction *conf.MappedAction, messageBody s
 		env := append(mh.actionSpecs.GlobalEnv, mappedAction.Env...)
 
 		stdout := mh.actionLoggers[mappedAction.Stdout]
+		stdoutBuff := &bytes.Buffer{}
+		if mappedAction.Type == HttpActionType {
+			if stdout != nil {
+				stdout = io.MultiWriter(stdoutBuff, mh.actionLoggers[mappedAction.Stdout])
+			} else {
+				stdout = stdoutBuff
+			}
+		}
 		stderr := mh.actionLoggers[mappedAction.Stderr]
 
-		return runbook.ExecuteFunc(mappedAction.Filepath, args, env, stdout, stderr)
+		err := runbook.ExecuteFunc(mappedAction.Filepath, args, env, stdout, stderr)
+		return stdoutBuff.String(), err
 	default:
-		return errors.Errorf("Unknown action sourceType[%s].", sourceType)
+		return "", errors.Errorf("Unknown action sourceType[%s].", sourceType)
 	}
 }

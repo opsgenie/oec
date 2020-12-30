@@ -186,8 +186,7 @@ func TestReceiveToken(t *testing.T) {
 		assert.True(t, strings.Contains(actualRequest.URL.RawQuery, expectedQuery))
 	}
 
-	//assert.Equal(t, "api.opsgenie.com", actualRequest.URL.Host)
-	assert.Equal(t, "/v2/integrations/oec/credentials", actualRequest.URL.Path)
+	assert.Equal(t, "/v1/oec/credentials", actualRequest.URL.Path)
 }
 
 func TestReceiveTokenInvalidJson(t *testing.T) {

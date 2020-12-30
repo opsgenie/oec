@@ -22,11 +22,13 @@ var mockConf = &Configuration{
 
 var mockActionMappings = ActionMappings{
 	"Create": MappedAction{
+		Type:       "custom",
 		SourceType: "local",
 		Filepath:   "/path/to/action.bin",
 		Env:        []string{"e1=v1", "e2=v2"},
 	},
 	"Close": MappedAction{
+		Type:       "custom",
 		SourceType: "git",
 		GitOptions: git.Options{
 			Url:                "testUrl",
@@ -34,6 +36,17 @@ var mockActionMappings = ActionMappings{
 		},
 		Env:      []string{"e1=v1", "e2=v2"},
 		Filepath: "/path/to/action.bin",
+	},
+	"WithHttpAction": MappedAction{
+		Type:       "http",
+		SourceType: "local",
+		Filepath:   "/path/to/http-executor",
+		Flags: Flags{
+			"url":     "https://opsgenie.com",
+			"headers": "{\"Authentication\":\"Basic JNjDkNsKaMs\"}",
+			"params":  "{\"Key1\":\"Value1\"}",
+			"method":  "PUT",
+		},
 	},
 }
 
@@ -46,7 +59,7 @@ func expectedConf() *Configuration {
 		"-apiKey", expectedConf.ApiKey,
 		"-opsgenieUrl", expectedConf.BaseUrl,
 		"-logLevel", "INFO"},
-		expectedConf.GlobalArgs...
+		expectedConf.GlobalArgs...,
 	)
 
 	if expectedConf.LogrusLevel == 0 {
@@ -76,6 +89,19 @@ var mockJsonFileContent = []byte(`{
                 "e1=v1", "e2=v2"
             ],
 			"filepath": "/path/to/action.bin"
+        },
+		"WithHttpAction" : {
+			"type" : "http",
+            "filepath": "/path/to/http-executor",
+			"url": "https://opsgenie.com",
+			"headers": {
+				"Authentication": "Basic JNjDkNsKaMs"
+			},
+			"params": {
+				"Key1" : "Value1"
+			},
+			"method" : "PUT",
+            "sourceType": "local"
         }
     }
 }`)
@@ -100,6 +126,16 @@ actionMappings:
     - e1=v1
     - e2=v2
     filepath: "/path/to/action.bin"
+  WithHttpAction:
+    type: "http"
+    filepath: "/path/to/http-executor"
+    url: "https://opsgenie.com"
+    headers: 
+      Authentication: "Basic JNjDkNsKaMs"
+    params: 
+      Key1: Value1
+    method: PUT
+    sourceType: local
 `)
 
 const testLocalConfFilePath = "/path/to/test/conf/file.json"
