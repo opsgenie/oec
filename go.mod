@@ -8,6 +8,7 @@ require (
 	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/aws/aws-sdk-go v1.23.20
 	github.com/go-git/go-git/v5 v5.2.0
+	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/kardianos/service v1.0.0
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
