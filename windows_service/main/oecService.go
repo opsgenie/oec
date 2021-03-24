@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/kardianos/service"
+	"gopkg.in/natefinch/lumberjack.v2"
 	"log"
 	"os"
 	"os/exec"
@@ -50,8 +51,13 @@ func (p *Program) run() {
 			p.service.Stop()
 			return
 		}
-		defer stderr.Close()
-		p.cmd.Stderr = stderr
+		stderr.Close()
+		p.cmd.Stderr = &lumberjack.Logger{
+			Filename:  p.Stderr,
+			MaxSize:   10, // MB
+			MaxAge:    10, // Days
+			LocalTime: true,
+		}
 	}
 	if p.Stdout != "" {
 		stdout, err := os.OpenFile(p.Stdout, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0777)
@@ -60,8 +66,13 @@ func (p *Program) run() {
 			p.service.Stop()
 			return
 		}
-		defer stdout.Close()
-		p.cmd.Stdout = stdout
+		stdout.Close()
+		p.cmd.Stdout = &lumberjack.Logger{
+			Filename:  p.Stdout,
+			MaxSize:   10, // MB
+			MaxAge:    10, // Days
+			LocalTime: true,
+		}
 	}
 
 	err := p.cmd.Run()

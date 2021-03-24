@@ -80,7 +80,7 @@ jobs:
       env:
         CGO_ENABLED: 0 
         GOOS: windows 
-        GOARCH: 386
+        GOARCH: amd64
         GO111MODULE: on
   
     - name: Build Win 64
