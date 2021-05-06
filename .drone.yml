@@ -1,0 +1,400 @@
+---
+kind: pipeline
+type: kubernetes
+name: docker-image
+
+image_pull_secrets:
+  - drone_dockerconfig
+
+steps:
+- name: git-metadata
+  image: prod-docker-parchment-docker-jfrog-io.us-west-2.aws.parchment.com/drone-plugins/git-metadata:stable
+  pull: always
+  settings:
+- name: pre-commit-verify
+  image: prod-docker-parchment-docker-jfrog-io.us-west-2.aws.parchment.com/drone-plugins/ruby-builder:stable
+  depends_on: [git-metadata]
+  pull: always
+  commands:
+    - /pre-commit-verify.rb
+  when:
+    event:
+    - pull_request
+- name: semver-get
+  image: prod-docker-parchment-docker-jfrog-io.us-west-2.aws.parchment.com/drone-plugins/version-bump:stable
+  depends_on: [git-metadata]
+  pull: always
+  settings:
+    bump_only: 'true'
+    semver_commit: 'false'
+  when:
+    event:
+    - pull_request
+- name: npmrc
+  image: prod-docker-index-docker-io.us-west-2.aws.parchment.com/plugins/docker
+  depends_on: [semver-get]
+  commands:
+    - touch /root/npm/.npmrc; chmod 600 /root/npm/.npmrc; echo "$NPMRC" > /root/npm/.npmrc
+  volumes:
+  - name: npm
+    path: /root/npm
+  when:
+    event:
+    - pull_request
+- name: settings-xml
+  image: prod-docker-index-docker-io.us-west-2.aws.parchment.com/infrastructureascode/aws-cli:1.16.220
+  depends_on: [pre-commit-verify]
+  environment:
+    AWS_ACCESS_KEY_ID:
+      from_secret: aws_access_key_id
+    AWS_SECRET_ACCESS_KEY:
+      from_secret: aws_secret_access_key
+  volumes:
+    - name: shared-m2
+      path: /root/.m2
+  commands:
+    - aws s3 cp s3://parchment-chef/settings.xml /root/.m2/settings.xml
+- name: build
+  image: prod-docker-index-docker-io.us-west-2.aws.parchment.com/plugins/docker
+  depends_on:
+    - npmrc
+    - settings-xml
+  settings:
+    daemon_off: 'true'
+    repo: parchment-docker-local.jfrog.io/oec
+    registry: parchment-docker-local.jfrog.io
+    username:
+      from_secret: docker_username
+    password:
+      from_secret: docker_password
+    tags:
+      - latest
+      - pr-${DRONE_PULL_REQUEST}
+      - commit-${DRONE_COMMIT_SHA}
+    build_args_from_env:
+      - BUNDLE_PARCHMENT__JFROG__IO
+      - NPM_CONFIG_USERCONFIG
+      - MAVEN_USERNAME
+      - MAVEN_PASSWORD
+  privileged: true
+  volumes:
+  - name: dockersock
+    path: /run
+  - name: npm
+    path: /root/npm
+  - name: shared-gem
+    path: /root/.gem
+  - name: shared-npm
+    path: /drone/src/.npm
+  - name: shared-m2
+    path: /root/.m2
+  environment:
+    BUNDLE_PARCHMENT__JFROG__IO:
+      from_secret: bundler_ro
+    NPM_CONFIG_USERCONFIG: /root/npm/.npmrc
+    DOCKER_USERNAME:
+      from_secret: docker_username
+    DOCKER_PASSWORD:
+      from_secret: docker_password
+    MAVEN_USERNAME:
+      from_secret: maven_username
+    MAVEN_PASSWORD:
+      from_secret: maven_password
+  when:
+    event:
+    - pull_request
+- name: semver-commit
+  image: prod-docker-parchment-docker-jfrog-io.us-west-2.aws.parchment.com/drone-plugins/version-bump:stable
+  depends_on: [git-metadata]
+  pull: always
+  settings:
+    bump_only: 'true'
+  when:
+    event:
+    - push
+    branch:
+      include:
+        - main
+# See docker-retag plugin for more info on how to specify a new tag explicitly
+- name: publish-version
+  image: prod-docker-parchment-docker-jfrog-io.us-west-2.aws.parchment.com/drone-plugins/docker-retag:stable
+  depends_on: [semver-commit]
+  pull: always
+  volumes:
+  - name: dockersock
+    path: /run
+  settings:
+    image: parchment-docker-local.jfrog.io/oec
+    create_git_tag: 'true'
+    dockerconfig:
+      from_secret: dockerconfig
+  when:
+    event:
+    - push
+    branch:
+      include:
+        - main
+- name: deployment-create
+  image: prod-docker-parchment-docker-jfrog-io.us-west-2.aws.parchment.com/drone-plugins/github-deployment:stable
+  depends_on: [publish-version]
+  pull: always
+  settings:
+    status: pending
+    required_contexts: none
+    deploy_target: qa
+    access_token:
+      from_secret: github_token
+  when:
+    event:
+    - push
+    branch:
+      include:
+        - main
+- name: promote
+  image: prod-docker-parchment-docker-jfrog-io.us-west-2.aws.parchment.com/drone-plugins/consul-promote:stable
+  pull: always
+  depends_on: [deployment-create]
+  settings:
+    consul_endpoints:
+      from_secret: consul_endpoints
+    datacenter_map:
+      from_secret: datacenter_map
+    consul_path_prefix: versions/infra
+    consul_path_key: oec
+    deploy_target: qa
+    deploy_search: oec
+    chef_key:
+      from_secret: chef_key
+    smoke_key:
+      from_secret: smoke_key
+    smoke_image: oec
+    smoke_controller_type: statefulset
+    smoke_label_key: app
+  when:
+    event:
+    - push
+    branch:
+      include:
+        - main
+- name: deployment-update
+  image: prod-docker-parchment-docker-jfrog-io.us-west-2.aws.parchment.com/drone-plugins/github-deployment:stable
+  depends_on: [promote]
+  pull: always
+  settings:
+    deploy_target: qa
+    access_token:
+      from_secret: github_token
+    required_contexts: none
+  when:
+    status:
+    - success
+    - failure
+    event:
+    - push
+    branch:
+      include:
+        - main
+
+services:
+- name: docker
+  image: prod-docker-index-docker-io.us-west-2.aws.parchment.com/library/docker:19.03.14-dind
+  privileged: true
+  volumes:
+  - name: dockersock
+    path: /var/run
+  settings:
+    registry: parchment-docker-local.jfrog.io
+    username:
+      from_secret: docker_username
+    password:
+      from_secret: docker_password
+
+volumes:
+- name: dockersock
+  temp: {}
+- name: npm
+  temp: {}
+- name: shared-gem
+  host:
+    path: /mnt/runner-shared/drone/.gem
+- name: shared-npm
+  host:
+    path: /mnt/runner-shared/drone/.npm
+- name: shared-m2
+  host:
+    path: /mnt/runner-shared/drone/.m2
+
+trigger:
+  event:
+    - push
+    - pull_request
+  branch:
+    - main
+---
+kind: pipeline
+type: kubernetes
+name: promote
+
+image_pull_secrets:
+  - drone_dockerconfig
+
+steps:
+- name: git-metadata
+  image: prod-docker-parchment-docker-jfrog-io.us-west-2.aws.parchment.com/drone-plugins/git-metadata:stable
+  pull: always
+  settings:
+- name: deployment-create
+  image: prod-docker-parchment-docker-jfrog-io.us-west-2.aws.parchment.com/drone-plugins/github-deployment:stable
+  pull: always
+  settings:
+    status: pending
+    access_token:
+      from_secret: github_token
+- name: promote-stable
+  image: prod-docker-parchment-docker-jfrog-io.us-west-2.aws.parchment.com/drone-plugins/docker-retag:stable
+  pull: always
+  volumes:
+  - name: dockersock
+    path: /run
+  settings:
+    image: parchment-docker-local.jfrog.io/oec
+    new_tag: stable
+    dockerconfig:
+      from_secret: dockerconfig
+- name: promote
+  image: prod-docker-parchment-docker-jfrog-io.us-west-2.aws.parchment.com/drone-plugins/consul-promote:stable
+  pull: always
+  settings:
+    consul_endpoints:
+      from_secret: consul_endpoints
+    datacenter_map:
+      from_secret: datacenter_map
+    consul_path_prefix: versions/infra
+    consul_path_key: oec
+    deploy_search: oec
+    chef_key:
+      from_secret: chef_key
+    smoke_key:
+      from_secret: smoke_key
+    smoke_image: oec
+    smoke_controller_type: statefulset
+    smoke_label_key: app
+- name: deployment-update
+  image: prod-docker-parchment-docker-jfrog-io.us-west-2.aws.parchment.com/drone-plugins/github-deployment:stable
+  pull: always
+  settings:
+    access_token:
+      from_secret: github_token
+  when:
+    status:
+    - success
+    - failure
+
+services:
+- name: docker
+  image: prod-docker-index-docker-io.us-west-2.aws.parchment.com/library/docker:19.03.14-dind
+  privileged: true
+  volumes:
+  - name: dockersock
+    path: /var/run
+
+volumes:
+- name: dockersock
+  temp: {}
+
+trigger:
+  event:
+    - promote
+---
+kind: secret
+name: drone_dockerconfig
+get:
+  path: drone/data/ci
+  name: dockerconfig
+---
+kind: secret
+name: dockerconfig
+get:
+  path: drone/data/ci
+  name: dockerconfig
+---
+kind: secret
+name: docker_username
+get:
+  path: drone/data/ci
+  name: docker_username
+---
+kind: secret
+name: docker_password
+get:
+  path: drone/data/ci
+  name: docker_password
+---
+kind: secret
+name: aws_access_key_id
+get:
+  path: drone/data/ci
+  name: aws_access_key_id
+---
+kind: secret
+name: aws_secret_access_key
+get:
+  path: drone/data/ci
+  name: aws_secret_access_key
+---
+kind: secret
+name: maven_username
+get:
+  path: drone/data/ci
+  name: maven_username
+---
+kind: secret
+name: maven_password
+get:
+  path: drone/data/ci
+  name: maven_password
+---
+kind: secret
+name: github_token
+get:
+  path: drone/data/github
+  name: access_token
+---
+kind: secret
+name: bundler_ro
+get:
+  path: drone/data/ci
+  name: bundler_ro
+---
+kind: secret
+name: npmrc
+get:
+  path: drone/data/ci
+  name: npmrc
+---
+kind: secret
+name: chef_key
+get:
+  path: drone/data/consul-promote
+  name: chef_key
+---
+kind: secret
+name: smoke_key
+get:
+  path: drone/data/consul-promote
+  name: smoke_key
+---
+kind: secret
+name: consul_endpoints
+get:
+  path: drone/data/consul-promote
+  name: consul_endpoints
+---
+kind: secret
+name: datacenter_map
+get:
+  path: drone/data/consul-promote
+  name: datacenter_map
+---
+kind: signature
+hmac: 737fd24ccaa306a825cf076cbcd4768f35ce7e721c01df284adf89e7171dc95d

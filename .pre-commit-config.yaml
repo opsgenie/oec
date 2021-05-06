@@ -1,0 +1,37 @@
+default_stages: [commit]
+minimum_pre_commit_version: 1.15.0
+exclude: '^vendor/'
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v2.2.3
+  hooks:
+  # Git state
+  - id: check-merge-conflict
+  - id: check-added-large-files
+  # Sensitive information
+  - id: detect-private-key
+  - id: detect-aws-credentials
+    args:
+      - --allow-missing-credentials
+  # Generic file state
+  - id: trailing-whitespace
+  - id: mixed-line-ending
+  - id: end-of-file-fixer
+    exclude: '.*\.enc$'
+  - id: check-executables-have-shebangs
+  # Language syntax/formatting
+  - id: check-yaml
+    args:
+      - --allow-multiple-documents
+  - id: check-json
+  - id: pretty-format-json
+    args:
+      - --autofix
+- repo: https://github.com/pryorda/dockerfilelint-precommit-hooks
+  rev: v0.1.0
+  hooks:
+  - id: dockerfilelint
+- repo: https://github.com/mattlqx/pre-commit-sign
+  rev: v1.1.1
+  hooks:
+  - id: sign-commit
