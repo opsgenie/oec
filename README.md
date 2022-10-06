@@ -4,6 +4,8 @@
 [![Coverage Status](https://coveralls.io/repos/github/opsgenie/oec/badge.svg?branch=master)](https://coveralls.io/github/opsgenie/oec?branch=master)
 [![Go Report Card](https://goreportcard.com/badge/github.com/opsgenie/oec)](https://goreportcard.com/report/github.com/opsgenie/oec)
 [![GoDoc](https://godoc.org/github.com/opsgenie/oec?status.svg)](https://godoc.org/github.com/opsgenie/oec)
+[![Contact Support](https://img.shields.io/badge/-Contact%20Support-blue)](https://support.atlassian.com/contact/#/)
+[![Public Issue Tracker](https://img.shields.io/badge/-Public%20Issue%20Tracker-blue)](https://jira.atlassian.com/browse/OPSGENIE-803?jql=project%3DOPSGENIE%20AND%20component%20in%20(%22OEC%20-%20Configuration%22%2C%20%22OEC%20-%20Installation%22)%20and%20resolution%20is%20EMPTY)
 
 
 Opsgenie Edge Connector (OEC) is a lightweight application that provides:
@@ -97,3 +99,7 @@ You can run executable that you build according the building OEC executables sec
 OEC_CONF_SOURCE_TYPE=LOCAL OEC_CONF_LOCAL_FILEPATH=$OEC_FILE_PATH ./main
 ```
 Also you can run OEC by using Docker. For more information, please visit [documentation](https://docs.opsgenie.com/docs/oec-running)
+
+## Contact Support
+You can find open bugs and suggestions for OEC on our [public issue tracker](https://jira.atlassian.com/browse/OPSGENIE-803?jql=project%3DOPSGENIE%20AND%20component%20in%20(%22OEC%20-%20Configuration%22%2C%20%22OEC%20-%20Installation%22)%20and%20resolution%20is%20EMPTY). If you are experiencing an issue with OEC, or if you want to raise a new bug or suggestion you can reach out [Opsgenie support](https://support.atlassian.com/contact/#/).
+
