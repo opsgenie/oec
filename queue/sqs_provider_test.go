@@ -107,7 +107,7 @@ func TestReceiveMessage(t *testing.T) {
 	assert.Equal(t, 2, len(messages))
 	assert.Equal(t, int64(30), *capturedInput.VisibilityTimeout)
 	assert.Equal(t, mockQueueUrl1, *capturedInput.QueueUrl)
-	assert.Equal(t, int64(0), *capturedInput.WaitTimeSeconds) // because of short polling
+	assert.Equal(t, int64(20), *capturedInput.WaitTimeSeconds)
 	assert.Equal(t, int64(10), *capturedInput.MaxNumberOfMessages)
 	assert.Equal(t, 1, len(capturedInput.MessageAttributeNames))
 	assert.Equal(t, "ownerId", *capturedInput.MessageAttributeNames[0])
