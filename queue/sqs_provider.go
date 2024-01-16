@@ -115,7 +115,7 @@ func (qp *sqsProvider) ReceiveMessage(maxNumOfMessage int64, visibilityTimeout i
 		QueueUrl:            &queueUrl,
 		MaxNumberOfMessages: aws.Int64(maxNumOfMessage),
 		VisibilityTimeout:   aws.Int64(visibilityTimeout),
-		WaitTimeSeconds:     aws.Int64(0),
+		WaitTimeSeconds:     aws.Int64(20),
 	}
 
 	qp.refreshClientMu.RLock()
