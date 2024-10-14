@@ -9,7 +9,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ macos-14, windows-latest, ubuntu-latest ]
+        os: [ macos-12, windows-latest, ubuntu-latest ]
         go: [ 1.12, 1.13, 1.14 ]
     steps:
       - name: Checkout the code
