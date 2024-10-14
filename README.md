@@ -8,6 +8,7 @@
 [![Public Issue Tracker](https://img.shields.io/badge/-Public%20Issue%20Tracker-blue)](https://jira.atlassian.com/browse/OPSGENIE-803?jql=project%3DOPSGENIE%20AND%20component%20in%20(%22OEC%20-%20Configuration%22%2C%20%22OEC%20-%20Installation%22)%20and%20resolution%20is%20EMPTY)
 
 
+
 Opsgenie Edge Connector (OEC) is a lightweight application that provides:
 
 * Opsgenie integration for systems that don't need the inbound internet
