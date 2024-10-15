@@ -1,4 +1,4 @@
-FROM golang:1.14 as builder
+FROM golang:1.21 as builder
 ADD . $GOPATH/src/github.com/opsgenie/oec
 WORKDIR $GOPATH/src/github.com/opsgenie/oec/main
 RUN export GIT_COMMIT=$(git rev-list -1 HEAD) && \
