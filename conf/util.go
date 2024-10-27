@@ -2,16 +2,17 @@ package conf
 
 import (
 	"encoding/json"
-	"github.com/opsgenie/oec/git"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"os"
 	fpath "path/filepath"
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/opsgenie/oec/git"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v2"
 )
 
 const unknownFileExtErrMessage = "Unknown configuration file extension[%s]. Only \".json\" and \".yml(.yaml)\" types are allowed."

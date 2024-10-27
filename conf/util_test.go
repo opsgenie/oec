@@ -2,10 +2,11 @@ package conf
 
 import (
 	"fmt"
-	"github.com/opsgenie/oec/util"
-	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
+
+	"github.com/opsgenie/oec/util"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestReadJsonFile(t *testing.T) {

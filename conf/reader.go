@@ -1,12 +1,13 @@
 package conf
 
 import (
-	"github.com/opsgenie/oec/git"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/opsgenie/oec/git"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -54,6 +55,7 @@ func readFileFromSource(confSourceType string) (*Configuration, error) {
 		privateKeyFilepath := os.Getenv("OEC_CONF_GIT_PRIVATE_KEY_FILEPATH")
 		passphrase := os.Getenv("OEC_CONF_GIT_PASSPHRASE")
 		confFilepath := os.Getenv("OEC_CONF_GIT_FILEPATH")
+		branch := os.Getenv("OEC_CONF_GIT_BRANCH")
 
 		if privateKeyFilepath != "" {
 			privateKeyFilepath = addHomeDirPrefix(privateKeyFilepath)
@@ -63,7 +65,7 @@ func readFileFromSource(confSourceType string) (*Configuration, error) {
 			return nil, errors.New("Git configuration filepath could not be empty.")
 		}
 
-		return readFileFromGitFunc(url, privateKeyFilepath, passphrase, confFilepath)
+		return readFileFromGitFunc(url, privateKeyFilepath, passphrase, confFilepath, branch)
 	case LocalSourceType:
 		confFilepath := os.Getenv("OEC_CONF_LOCAL_FILEPATH")
 

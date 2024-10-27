@@ -1,12 +1,13 @@
 package conf
 
 import (
+	"os"
+	"testing"
+
 	"github.com/opsgenie/oec/git"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
-	"os"
-	"testing"
 )
 
 var readFileFromGitCalled = false
@@ -33,6 +34,7 @@ var mockActionMappings = ActionMappings{
 		GitOptions: git.Options{
 			Url:                "testUrl",
 			PrivateKeyFilepath: "testKeyPath",
+			Branch:             "main",
 		},
 		Env:      []string{"e1=v1", "e2=v2"},
 		Filepath: "/path/to/action.bin",
@@ -83,7 +85,8 @@ var mockJsonFileContent = []byte(`{
             "sourceType": "git",
             "gitOptions" : {
                 "url" : "testUrl",
-                "privateKeyFilepath" : "testKeyPath"
+                "privateKeyFilepath" : "testKeyPath",
+                "branch" : "main"
             },
             "env": [
                 "e1=v1", "e2=v2"
@@ -122,6 +125,7 @@ actionMappings:
     gitOptions:
       url: testUrl
       privateKeyFilepath: testKeyPath
+      branch: main
     env:
     - e1=v1
     - e2=v2
@@ -130,9 +134,9 @@ actionMappings:
     type: "http"
     filepath: "/path/to/http-executor"
     url: "https://opsgenie.com"
-    headers: 
+    headers:
       Authentication: "Basic JNjDkNsKaMs"
-    params: 
+    params:
       Key1: Value1
     method: PUT
     sourceType: local
@@ -140,7 +144,7 @@ actionMappings:
 
 const testLocalConfFilePath = "/path/to/test/conf/file.json"
 
-func mockReadFileFromGit(owner, repo, filepath, token string) (*Configuration, error) {
+func mockReadFileFromGit(owner, repo, filepath, token, branch string) (*Configuration, error) {
 	readFileFromGitCalled = true
 
 	if len(owner) <= 0 {
@@ -157,6 +161,10 @@ func mockReadFileFromGit(owner, repo, filepath, token string) (*Configuration, e
 
 	if len(token) <= 0 {
 		return nil, errors.New("Token was empty.")
+	}
+
+	if len(branch) <= 0 {
+		return nil, errors.New("Branch was empty.")
 	}
 
 	conf := *mockConf
@@ -222,6 +230,7 @@ func testReadFileFromGit(t *testing.T) {
 	os.Setenv("OEC_CONF_GIT_PRIVATE_KEY_FILEPATH", "/test_id_rsa")
 	os.Setenv("OEC_CONF_GIT_FILEPATH", "oec/testConf.json")
 	os.Setenv("OEC_CONF_GIT_PASSPHRASE", "pass")
+	os.Setenv("OEC_CONF_GIT_BRANCH", "main")
 
 	readFileFromGitFunc = mockReadFileFromGit
 	configuration, err := Read()

@@ -7,7 +7,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 )
 
-func PullMaster(repositoryPath, privateKeyFilePath, passPhrase string) error {
+func Pull(repositoryPath, privateKeyFilePath, passPhrase string) error {
 	r, err := git.PlainOpen(repositoryPath)
 	if err != nil {
 		return err
@@ -38,15 +38,20 @@ func PullMaster(repositoryPath, privateKeyFilePath, passPhrase string) error {
 	return w.Pull(options)
 }
 
-func FetchAndReset(repositoryPath, privateKeyFilePath, passPhrase string) error {
+func FetchAndReset(repositoryPath, privateKeyFilePath, passPhrase, branch string) error {
 
 	r, err := git.PlainOpen(repositoryPath)
 	if err != nil {
 		return err
 	}
 
+	if branch == "" {
+		branch = "master"
+	}
+
+	refSpec := config.RefSpec("+refs/heads/" + branch + ":refs/remotes/origin/" + branch)
 	options := &git.FetchOptions{
-		RefSpecs: []config.RefSpec{"refs/heads/master:refs/heads/master"},
+		RefSpecs: []config.RefSpec{refSpec},
 	}
 
 	if privateKeyFilePath != "" {
@@ -64,7 +69,8 @@ func FetchAndReset(repositoryPath, privateKeyFilePath, passPhrase string) error 
 		return err
 	}
 
-	ref, err := r.Reference(plumbing.Master, true)
+	remoteRef := plumbing.NewRemoteReferenceName("origin", branch)
+	ref, err := r.Reference(remoteRef, true)
 	if err != nil {
 		return err
 	}

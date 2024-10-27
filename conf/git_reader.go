@@ -1,21 +1,22 @@
 package conf
 
 import (
-	"github.com/opsgenie/oec/git"
 	"os"
 	fpath "path/filepath"
+
+	"github.com/opsgenie/oec/git"
 )
 
 var cloneMasterFunc = git.CloneMaster
 
-func readFileFromGit(url, privateKeyFilepath, passPhrase, filepath string) (*Configuration, error) {
+func readFileFromGit(url, privateKeyFilepath, passPhrase, filepath, branch string) (*Configuration, error) {
 
 	err := checkFileExtension(filepath)
 	if err != nil {
 		return nil, err
 	}
 
-	repoFilepath, err := cloneMasterFunc(url, privateKeyFilepath, passPhrase)
+	repoFilepath, err := cloneMasterFunc(url, privateKeyFilepath, passPhrase, branch)
 	if err != nil {
 		return nil, err
 	}

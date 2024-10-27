@@ -1,18 +1,20 @@
 package git
 
 import (
+	"os"
+	"sync"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/opsgenie/oec/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"os"
-	"sync"
 )
 
 type Options struct {
 	Url                string `json:"url" yaml:"url"`
 	PrivateKeyFilepath string `json:"privateKeyFilepath" yaml:"privateKeyFilepath"`
 	Passphrase         string `json:"passphrase" yaml:"passphrase"`
+	Branch             string `json:"branch" yaml:"branch"`
 }
 
 type Url string
@@ -49,7 +51,7 @@ func (r Repositories) DownloadAll(optionsList []Options) (err error) {
 func (r Repositories) Download(options *Options) (err error) {
 
 	if _, contains := r[Url(options.Url)]; !contains {
-		repositoryPath, err := CloneMaster(options.Url, options.PrivateKeyFilepath, options.Passphrase)
+		repositoryPath, err := CloneMaster(options.Url, options.PrivateKeyFilepath, options.Passphrase, options.Branch)
 		if err != nil {
 			return errors.Errorf("Git repository[%s] could not be downloaded: %s", options.Url, err.Error())
 		}
@@ -120,7 +122,7 @@ func (r *Repository) Pull() error {
 			logrus.Warnf("Git repository[%s] chmod failed: %s", r.Options.Url, err)
 		}
 	}()
-	return FetchAndReset(r.Path, r.Options.PrivateKeyFilepath, r.Options.Passphrase)
+	return FetchAndReset(r.Path, r.Options.PrivateKeyFilepath, r.Options.Passphrase, r.Options.Branch)
 }
 
 func (r *Repository) Remove() error {
