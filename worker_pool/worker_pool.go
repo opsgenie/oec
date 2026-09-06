@@ -48,17 +48,17 @@ func New(poolConf *conf.PoolConf) WorkerPool {
 	}
 
 	if poolConf.MinNumberOfWorker < 0 {
-		logrus.Infof("Min number of workers cannot be lesser than zero, default value[%d] is set.", minNumberOfWorker)
+		logrus.Infof("Min number of workers cannot be less than zero, default value[%d] is set.", minNumberOfWorker)
 		poolConf.MinNumberOfWorker = minNumberOfWorker
 	}
 
 	if poolConf.MinNumberOfWorker > poolConf.MaxNumberOfWorker {
-		logrus.Infof("Min number of workers cannot be greater than max number of workers, min value is decreased current max value[%d].", maxNumberOfWorker)
+		logrus.Infof("Min number of workers cannot be greater than max number of workers, min value is decreased to current max value[%d].", maxNumberOfWorker)
 		poolConf.MinNumberOfWorker = poolConf.MaxNumberOfWorker
 	}
 
 	if poolConf.QueueSize < 0 {
-		logrus.Infof("Queue size of the pool cannot be lesser than zero, default value[%d] is set.", queueSize)
+		logrus.Infof("Queue size of the pool cannot be less than zero, default value[%d] is set.", queueSize)
 		poolConf.QueueSize = queueSize
 	}
 

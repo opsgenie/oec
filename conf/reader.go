@@ -60,7 +60,7 @@ func readFileFromSource(confSourceType string) (*Configuration, error) {
 		}
 
 		if confFilepath == "" {
-			return nil, errors.New("Git configuration filepath could not be empty.")
+			return nil, errors.New("Git configuration filepath cannot be empty.")
 		}
 
 		return readFileFromGitFunc(url, privateKeyFilepath, passphrase, confFilepath)

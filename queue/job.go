@@ -93,7 +93,7 @@ func (j *job) Execute() error {
 			logrus.Warnf("Could not send action result[%+v] of message[%s] to Opsgenie: %s", result, messageId, err)
 		} else {
 			took := time.Since(start)
-			logrus.Debugf("Successfully sent result of message[%s] to OpsGenie and it took %f seconds.", messageId, took.Seconds())
+			logrus.Debugf("Successfully sent result of message[%s] to Opsgenie and it took %f seconds.", messageId, took.Seconds())
 		}
 	}()
 

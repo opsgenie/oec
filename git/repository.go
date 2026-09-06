@@ -60,7 +60,7 @@ func (r Repositories) Download(options *Options) (err error) {
 		return nil
 	}
 
-	logrus.Tracef("Git repository[%s] is already existed.", options.Url)
+	logrus.Tracef("Git repository[%s] already exists.", options.Url)
 	return nil
 }
 

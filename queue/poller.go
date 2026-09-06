@@ -197,13 +197,13 @@ func (p *poller) run() {
 	for {
 		select {
 		case <-p.quit:
-			logrus.Infof("Poller[%s] has stopped to poll.", queueUrl)
+			logrus.Infof("Poller[%s] has stopped polling.", queueUrl)
 			p.isRunningWg.Done()
 			return
 		default:
 			if p.queueProvider.IsTokenExpired() {
 				region := p.queueProvider.Properties().Region()
-				logrus.Warnf("Security token is expired, poller[%s] skips to receive message.", region)
+				logrus.Warnf("Security token is expired, poller[%s] skips receiving messages.", region)
 				p.wait(expiredTokenWaitInterval)
 			} else if shouldWait := p.poll(); shouldWait {
 				p.wait(pollingWaitInterval)
